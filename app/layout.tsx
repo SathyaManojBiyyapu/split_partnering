@@ -6,12 +6,30 @@ import Navbar from "./components/Navbar";
 import Sidebar from "./components/Sidebar";
 import Footer from "./components/Footer";
 
-import { AuthProvider, useAuth } from "./context/AuthContext";
-import { useEffect } from "react";
-import { useRouter, usePathname } from "next/navigation";
+import {
+  AuthProvider,
+  useAuth,
+} from "./context/AuthContext";
 
-import { Inter, Playfair_Display } from "next/font/google";
+import {
+  useEffect,
+  useState,
+  ReactNode,
+} from "react";
+
+import {
+  useRouter,
+  usePathname,
+} from "next/navigation";
+
+import {
+  Inter,
+  Playfair_Display,
+} from "next/font/google";
+
 import { Toaster } from "react-hot-toast";
+
+/* ---------------- FONTS ---------------- */
 
 const inter = Inter({
   subsets: ["latin"],
@@ -25,10 +43,26 @@ const playfair = Playfair_Display({
   display: "swap",
 });
 
-function AuthGuard({ children }: any) {
+/* ---------------- AUTH GUARD ---------------- */
+
+function AuthGuard({
+  children,
+}: {
+  children: ReactNode;
+}) {
   const { user, loading } = useAuth();
+
   const router = useRouter();
   const pathname = usePathname();
+
+  const [mounted, setMounted] =
+    useState(false);
+
+  /* -------- CLIENT MOUNT -------- */
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const protectedPages = [
     "/profile",
@@ -38,11 +72,14 @@ function AuthGuard({ children }: any) {
   ];
 
   useEffect(() => {
-    if (loading) return;
+    if (!mounted || loading) return;
 
-    const guest = localStorage.getItem("guest") === "true";
+    const guest =
+      localStorage.getItem("guest") === "true";
 
-    if (
+    /* -------- PUBLIC PAGES -------- */
+
+    const publicPage =
       pathname === "/" ||
       pathname === "/login" ||
       pathname.startsWith("/help") ||
@@ -50,53 +87,93 @@ function AuthGuard({ children }: any) {
       pathname.startsWith("/categories") ||
       pathname.startsWith("/investors") ||
       pathname.startsWith("/team") ||
-      pathname.startsWith("/contact")
-    ) {
-      return;
-    }
+      pathname.startsWith("/contact");
 
-    if (!protectedPages.some((p) => pathname.startsWith(p))) return;
+    if (publicPage) return;
+
+    /* -------- CHECK PROTECTED -------- */
+
+    const isProtected = protectedPages.some(
+      (page) => pathname.startsWith(page)
+    );
+
+    if (!isProtected) return;
+
+    /* -------- GUEST CHECK -------- */
 
     if (guest) {
       router.push("/login");
       return;
     }
 
+    /* -------- USER CHECK -------- */
+
     if (!user) {
       router.push("/login");
     }
-  }, [user, loading, pathname, router]);
+  }, [
+    mounted,
+    user,
+    loading,
+    pathname,
+    router,
+  ]);
 
-  return children;
+  /* -------- PREVENT HYDRATION MISMATCH -------- */
+
+  if (!mounted) return null;
+
+  return <>{children}</>;
 }
 
-export default function RootLayout({ children }: any) {
+/* ---------------- ROOT LAYOUT ---------------- */
+
+export default function RootLayout({
+  children,
+}: {
+  children: ReactNode;
+}) {
   return (
-    <html lang="en" className={`${inter.variable} ${playfair.variable}`}>
-      <body className="bg-black text-white font-body">
+    <html
+      lang="en"
+      suppressHydrationWarning
+      className={`${inter.variable} ${playfair.variable}`}
+    >
+      <body
+        suppressHydrationWarning
+        className="bg-black text-white font-body"
+      >
         <AuthProvider>
+          {/* NAVBAR */}
           <Navbar />
+
+          {/* SIDEBAR */}
           <Sidebar />
 
-          <main className="pt-0 bg-black">
+          {/* MAIN CONTENT */}
+          <main className="pt-0 bg-black min-h-screen">
             <AuthGuard>{children}</AuthGuard>
           </main>
 
+          {/* FOOTER */}
           <Footer />
-        </AuthProvider>
 
-        <Toaster
-          position="top-center"
-          toastOptions={{
-            duration: 3000,
-            style: {
-              background: "#000",
-              color: "#FFD166",
-              border: "1px solid #FFD166",
-              boxShadow: "0 0 18px rgba(255,209,102,0.6)",
-            },
-          }}
-        />
+          {/* TOASTER */}
+          <Toaster
+            position="top-center"
+            toastOptions={{
+              duration: 3000,
+              style: {
+                background: "#000",
+                color: "#FFD166",
+                border:
+                  "1px solid #FFD166",
+                boxShadow:
+                  "0 0 18px rgba(255,209,102,0.6)",
+              },
+            }}
+          />
+        </AuthProvider>
       </body>
     </html>
   );

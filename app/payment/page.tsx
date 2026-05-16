@@ -265,7 +265,7 @@ function PaymentContent() {
         /* REDIRECT TO RAZORPAY */
 
         window.location.href =
-          "https://rzp.io/rzp/YOUR_RAZORPAY_LINK";
+  "https://razorpay.me/@partnering";
       } catch (error) {
         console.error(
           "Razorpay error:",

@@ -1,8 +1,21 @@
 "use client";
 
-import { Suspense, useState, useEffect } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
-import { db } from "@/firebase/config";
+import {
+  Suspense,
+  useState,
+  useEffect,
+} from "react";
+
+import {
+  useSearchParams,
+  useRouter,
+} from "next/navigation";
+
+import {
+  db,
+  auth,
+} from "@/firebase/config";
+
 import {
   addDoc,
   collection,
@@ -16,11 +29,13 @@ import {
   setDoc,
   getDoc,
 } from "firebase/firestore";
+
 import { partneringInfo } from "@/app/data/partneringInfo";
 
 /* -----------------------------------------
    GROUP SIZE
-------------------------------------------*/
+------------------------------------------ */
+
 const GROUP_SIZE: Record<string, number> = {
   split: 2,
   pass: 2,
@@ -58,13 +73,21 @@ const GROUP_SIZE: Record<string, number> = {
   "previous-papers": 2,
 };
 
-const getRequiredSize = (opt: string) => GROUP_SIZE[opt] || 2;
+const getRequiredSize = (
+  opt: string
+) => GROUP_SIZE[opt] || 2;
 
 /* -----------------------------------------
-   CREATE OR JOIN GROUP (UNCHANGED)
-------------------------------------------*/
-async function createOrJoinGroup(category: string, option: string, rawPhone: string) {
+   CREATE OR JOIN GROUP
+------------------------------------------ */
+
+async function createOrJoinGroup(
+  category: string,
+  option: string,
+  rawPhone: string
+) {
   const cleanPhone = rawPhone.trim();
+
   const groupsRef = collection(db, "groups");
 
   const q = query(
@@ -75,39 +98,76 @@ async function createOrJoinGroup(category: string, option: string, rawPhone: str
 
   const snap = await getDocs(q);
 
+  /* -------- JOIN EXISTING -------- */
+
   for (const gdoc of snap.docs) {
     const g = gdoc.data();
-    const members: string[] = g.members || [];
-    const required = g.requiredSize || getRequiredSize(option);
+
+    const members: string[] =
+      g.members || [];
+
+    const required =
+      g.requiredSize ||
+      getRequiredSize(option);
+
+    /* ALREADY EXISTS */
 
     if (members.includes(cleanPhone)) {
-      return { status: "already", membersCount: members.length };
+      return {
+        status: "already",
+        membersCount: members.length,
+      };
     }
 
+    /* JOIN */
+
     if (members.length < required) {
-      const gRef = doc(db, "groups", gdoc.id);
+      const gRef = doc(
+        db,
+        "groups",
+        gdoc.id
+      );
 
       await updateDoc(gRef, {
         members: arrayUnion(cleanPhone),
-        membersCount: members.length + 1,
+        membersCount:
+          members.length + 1,
       });
 
-      const updated = (await getDoc(gRef)).data() as any;
-      const updatedMembers = updated.members || [];
+      const updatedSnap =
+        await getDoc(gRef);
 
-      if (updatedMembers.length >= required) {
+      const updated =
+        updatedSnap.data() as any;
+
+      const updatedMembers =
+        updated.members || [];
+
+      /* READY */
+
+      if (
+        updatedMembers.length >= required
+      ) {
         await updateDoc(gRef, {
           status: "ready",
           readyAt: serverTimestamp(),
         });
       }
 
-      return { status: "joined", membersCount: updatedMembers.length };
+      return {
+        status: "joined",
+        membersCount:
+          updatedMembers.length,
+      };
     }
   }
 
+  /* -------- CREATE NEW -------- */
+
   const newGroupRef = doc(groupsRef);
-  const required = getRequiredSize(option);
+
+  const required =
+    getRequiredSize(option);
 
   await setDoc(newGroupRef, {
     category,
@@ -119,153 +179,307 @@ async function createOrJoinGroup(category: string, option: string, rawPhone: str
     createdAt: serverTimestamp(),
   });
 
-  return { status: "created", membersCount: 1 };
+  return {
+    status: "created",
+    membersCount: 1,
+  };
 }
 
 /* -----------------------------------------
-   SAVE CONTENT UI (STYLE UPDATED)
-------------------------------------------*/
+   SAVE CONTENT
+------------------------------------------ */
+
 function SaveContent() {
-  const searchParams = useSearchParams();
+  const searchParams =
+    useSearchParams();
+
   const router = useRouter();
 
-  const category = searchParams.get("category") || "";
-  const option = searchParams.get("option") || "";
+  const category =
+    searchParams.get("category") || "";
 
-  const rawPhone =
-    typeof window !== "undefined" ? localStorage.getItem("phone") : null;
+  const option =
+    searchParams.get("option") || "";
 
-  const phone = rawPhone ? rawPhone.trim() : null;
+  const [mounted, setMounted] =
+    useState(false);
 
-  const isGuest =
-    typeof window !== "undefined"
-      ? localStorage.getItem("guest") === "true"
-      : false;
+  const [phone, setPhone] =
+    useState<string | null>(null);
 
-  const [userName, setUserName] = useState<string | null>(null);
-  const info = partneringInfo[category];
+  const [isGuest, setIsGuest] =
+    useState(false);
 
-  /* REQUIRE LOGIN */
+  const [userName, setUserName] =
+    useState<string | null>(null);
+
+  const [loading, setLoading] =
+    useState(false);
+
+  const info =
+    partneringInfo[category];
+
+  /* -------- MOUNT -------- */
+
   useEffect(() => {
+    setMounted(true);
+
+    const savedPhone =
+      localStorage.getItem("phone");
+
+    const guest =
+      localStorage.getItem("guest") ===
+      "true";
+
+    setPhone(savedPhone);
+    setIsGuest(guest);
+  }, []);
+
+  /* -------- REQUIRE LOGIN -------- */
+
+  useEffect(() => {
+    if (!mounted) return;
+
     if (isGuest || !phone) {
-      alert("Please login to continue.");
+      alert(
+        "Please login to continue."
+      );
+
       router.push("/login");
     }
-  }, [isGuest, phone, router]);
+  }, [
+    mounted,
+    isGuest,
+    phone,
+    router,
+  ]);
 
-  /* LOAD USER NAME */
+  /* -------- LOAD USER -------- */
+
   useEffect(() => {
     if (!phone) return;
 
     const fetchUser = async () => {
-      const snap = await getDoc(doc(db, "users", phone));
-      if (snap.exists()) {
-        setUserName((snap.data() as any).name || null);
+      try {
+        const userRef = doc(
+          db,
+          "users",
+          phone
+        );
+
+        const snap = await getDoc(
+          userRef
+        );
+
+        if (snap.exists()) {
+          setUserName(
+            (snap.data() as any).name ||
+              null
+          );
+        }
+      } catch (error) {
+        console.error(
+          "User fetch error:",
+          error
+        );
       }
     };
 
     fetchUser();
   }, [phone]);
 
-  /* SAVE PARTNER */
+  /* -------- SAVE PARTNER -------- */
+
   const savePartner = async () => {
-    if (!phone) return;
+    if (!mounted) return;
+
+    if (!phone) {
+      alert("Phone missing");
+      return;
+    }
+
+    if (!auth.currentUser) {
+      alert("User not logged in");
+      return;
+    }
 
     try {
-      const result = await createOrJoinGroup(category, option, phone);
+      setLoading(true);
 
-      await addDoc(collection(db, "selections"), {
-        phone,
-        userName,
-        category,
-        option,
-        createdAt: serverTimestamp(),
-      });
+      /* CREATE/JOIN */
+
+      const result =
+        await createOrJoinGroup(
+          category,
+          option,
+          phone
+        );
+
+      /* SAVE SELECTION */
+
+      await addDoc(
+        collection(db, "selections"),
+        {
+          uid: auth.currentUser.uid,
+          phone,
+          userName:
+            userName || "Anonymous",
+          category,
+          option,
+          createdAt:
+            serverTimestamp(),
+        }
+      );
 
       alert(
-        `Partner saved!\nStatus: ${result.status}\nMembers: ${result.membersCount}/${getRequiredSize(
+        `Partner saved!\n\nStatus: ${result.status}\nMembers: ${result.membersCount}/${getRequiredSize(
           option
         )}`
       );
 
       router.push("/categories");
-    } catch {
-      alert("Saving failed.");
+    } catch (error: any) {
+      console.error(
+        "SAVE ERROR:",
+        error
+      );
+
+      alert(
+        error?.message ||
+          error?.code ||
+          "Saving failed."
+      );
+    } finally {
+      setLoading(false);
     }
   };
+
+  /* -------- LOADING -------- */
+
+  if (!mounted) {
+    return (
+      <div className="min-h-screen bg-black text-white flex items-center justify-center">
+        Loading...
+      </div>
+    );
+  }
+
+  /* -------- UI -------- */
 
   return (
     <div className="min-h-screen pt-32 px-6 bg-black text-[#F5F5F5]">
       {/* HEADER */}
+
       <h1 className="text-3xl font-semibold text-[#FFD166] tracking-wide mb-4">
         Make Your Match
       </h1>
 
       <p className="text-gray-400 mb-8">
         You selected{" "}
-        <span className="text-[#FFD166] font-medium">{option}</span> under{" "}
+         <span className="text-[#FFD166] font-medium">
+          {option}
+        </span>{" "}
+        under{" "}
         <span className="text-[#FFD166] font-medium">
-          {category.replace("-", " ")}
+          {category.replace(
+            "-",
+            " "
+          )}
         </span>
       </p>
 
-      {/* CATEGORY INFO */}
+      {/* INFO */}
+
       {info && (
-        <div className="
-          mb-8 max-w-3xl
-          border border-[#FFD166]/20
-          p-6 rounded-2xl
-          bg-gradient-to-br from-[#0e0e0e] to-black
-        ">
+        <div
+          className="
+            mb-8 max-w-3xl
+            border border-[#FFD166]/20
+            p-6 rounded-2xl
+            bg-gradient-to-br
+            from-[#0e0e0e]
+            to-black
+          "
+        >
           <h2 className="text-lg font-semibold text-[#FFD166] mb-2">
             {info.title}
           </h2>
 
           {info.topLine && (
-            <p className="text-gray-400 mb-4">{info.topLine}</p>
+            <p className="text-gray-400 mb-4">
+              {info.topLine}
+            </p>
           )}
 
           <ul className="space-y-4 text-sm">
-            {info.sections.map((sec: any, i: number) => (
-              <li key={i}>
-                <span className="font-medium text-[#FFD166]">
-                  {sec.title}
-                </span>
-                <div className="text-gray-400">{sec.text}</div>
-                {sec.example && (
-                  <div className="text-gray-500 mt-1">{sec.example}</div>
-                )}
-              </li>
-            ))}
+            {info.sections.map(
+              (
+                sec: any,
+                i: number
+              ) => (
+                <li key={i}>
+                  <span className="font-medium text-[#FFD166]">
+                    {sec.title}
+                  </span>
+
+                  <div className="text-gray-400">
+                    {sec.text}
+                  </div>
+
+                  {sec.example && (
+                    <div className="text-gray-500 mt-1">
+                      {sec.example}
+                    </div>
+                  )}
+                </li>
+              )
+            )}
           </ul>
 
           <p className="text-[11px] text-gray-500 mt-5 italic">
-            SplitPartnering is a partnering service. We do not buy or sell products.
+            SplitPartnering is a
+            partnering service. We do
+            not buy or sell products.
           </p>
         </div>
       )}
 
-      {/* SAVE BUTTON */}
+      {/* BUTTON */}
+
       <button
         onClick={savePartner}
+        disabled={loading}
         className="
-          px-8 py-3 rounded-xl font-semibold
-          bg-black text-[#E6C972]
+          px-8 py-3 rounded-xl
+          font-semibold
+          bg-black
+          text-[#E6C972]
           border border-[#E6C972]
           shadow-[0_0_18px_rgba(230,201,114,0.75)]
           hover:bg-[#F3DC8A]
           hover:text-black
           hover:shadow-[0_0_36px_rgba(230,201,114,1)]
           transition-all duration-200
+          disabled:opacity-50
         "
       >
-        Make Partner
+        {loading
+          ? "Saving..."
+          : "Make Partner"}
       </button>
 
       {/* BACK */}
+
       <button
-        onClick={() => router.push("/categories")}
-        className="block mt-8 text-[#FFD166] hover:underline text-sm tracking-wide"
+        onClick={() =>
+          router.push("/categories")
+        }
+        className="
+          block mt-8
+          text-[#FFD166]
+          hover:underline
+          text-sm tracking-wide
+        "
       >
         ← Back to Categories
       </button>
@@ -273,10 +487,19 @@ function SaveContent() {
   );
 }
 
-/* WRAPPER */
+/* -----------------------------------------
+   PAGE
+------------------------------------------ */
+
 export default function SavePage() {
   return (
-    <Suspense fallback={<p className="text-gray-400 p-10">Loading...</p>}>
+    <Suspense
+      fallback={
+        <p className="text-gray-400 p-10">
+          Loading...
+        </p>
+      }
+    >
       <SaveContent />
     </Suspense>
   );

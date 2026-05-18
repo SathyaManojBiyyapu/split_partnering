@@ -5,16 +5,11 @@ import { db } from "@/firebase/config";
 
 import {
   collection,
-  onSnapshot,
+  getDocs,
   doc,
   updateDoc,
   deleteDoc,
-  getDoc,
-  where,
-  query,
-  getDocs,
 } from "firebase/firestore";
-
 const ADMIN_USERNAME = "admin";
 const ADMIN_PASSWORD = "Hari@2307";
 
@@ -75,162 +70,124 @@ export default function AdminPage() {
   }, []);
 
   /* ----------------------------
-     FETCH GROUPS
+     FETCH GROUPS FAST
   ---------------------------- */
 
   useEffect(() => {
     if (!authorized) return;
 
-    setLoading(true);
+    const fetchDashboard = async () => {
+      try {
+        setLoading(true);
 
-    const ref = collection(db, "groups");
+        const groupsSnap = await getDocs(
+          collection(db, "groups")
+        );
 
-    const unsubscribe = onSnapshot(
-      ref,
-      async (snap) => {
-        const docs = snap.docs;
+        const paymentsSnap = await getDocs(
+          collection(db, "payments")
+        );
+
+        const paidMap: any = {};
 
         let revenue = 0;
         let paidCount = 0;
+        paymentsSnap.forEach((p) => {
+          const pdata = p.data();
+
+          if (pdata.status === "paid") {
+            if (!paidMap[pdata.groupId]) {
+              paidMap[pdata.groupId] = [];
+            }
+
+            paidMap[pdata.groupId].push(
+              pdata.uid
+            );
+
+            revenue += pdata.amount || 0;
+
+            paidCount++;
+          }
+        });
+
         let userCount = 0;
 
-        const builtGroups =
-          await Promise.all(
-            docs.map(async (gDoc) => {
-              const data =
-                gDoc.data() as any;
+        const builtGroups = await Promise.all(
+          groupsSnap.docs.map(async (gDoc) => {
+            const data = gDoc.data() as any;
 
-              /* REMOVE EMPTY */
+            if (
+              !Array.isArray(data.members) ||
+              data.members.length === 0
+            ) {
+              await deleteDoc(gDoc.ref);
 
-              if (
-                !Array.isArray(data.members) ||
-                data.members.length === 0
-              ) {
-                await deleteDoc(gDoc.ref);
+              return null;
+            }
 
-                return null;
+            const cleanedMembers = (
+              data.members || []
+            ).map((m: any) => {
+              if (typeof m === "string") {
+                return {
+                  phone: m.trim(),
+                  name: "Unknown User",
+                  joinedAt: data.createdAt,
+                  paid: false,
+                };
               }
 
-              const cleanedMembers =
-                (data.members || []).map(
-                  (m: any) =>
-                    typeof m === "string"
-                      ? {
-                          phone: m.trim(),
-                          joinedAt:
-                            data.createdAt,
-                        }
-                      : m
-                );
+              return {
+                phone: m.phone || "N/A",
+                name:
+                  m.name || "Unknown User",
+                joinedAt:
+                  m.joinedAt ||
+                  data.createdAt,
+                paid: m.paid || false,
+              };
+            });
 
-              userCount +=
-                cleanedMembers.length;
+            userCount +=
+              cleanedMembers.length;
 
-              /* USERS */
+            const paidUsers =
+              paidMap[gDoc.id] || [];
 
-              const userDocs =
-                await Promise.all(
-                  cleanedMembers.map((m: any) =>                    getDoc(
-                      doc(
-                        db,
-                        "users",
-                        m.phone
-                      )
-                    )
-                  )
-                );
-
-              /* PAYMENTS */
-
-              const paymentsRef =
-                collection(
-                  db,
-                  "payments"
-                );
-
-              const qPayments = query(
-                paymentsRef,
-                where(
-                  "groupId",
-                  "==",
-                  gDoc.id
-                )
+            const membersDetailed =
+              cleanedMembers.map(
+                (
+                  m: any,
+                  idx: number
+                ) => ({
+                  phone: m.phone,
+                  name: m.name,
+                  joinedAt: m.joinedAt,
+                  paid:
+                    paidUsers.length >
+                      idx || m.paid,
+                })
               );
 
-              const paymentSnap =
-                await getDocs(
-                  qPayments
-                );
+            return {
+              id: gDoc.id,
 
-              const paidUsers: string[] =
-                [];
+              ...data,
 
-              paymentSnap.forEach((p) => {
-                const pdata =
-                  p.data();
+              membersDetailed,
 
-                if (
-                  pdata.status ===
-                  "paid"
-                ) {
-                  paidUsers.push(
-                    pdata.uid
-                  );
+              membersCount:
+                typeof data.membersCount ===
+                "number"
+                  ? data.membersCount
+                  : cleanedMembers.length,
 
-                  revenue +=
-                    pdata.amount || 0;
-
-                  paidCount++;
-                }
-              });
-
-              /* MEMBERS */
-
-              const membersDetailed =
-                userDocs.map(
-                  (uSnap, idx) => ({
-                    phone:
-                      cleanedMembers[idx]
-                        .phone,
-
-                    joinedAt:
-                      cleanedMembers[idx]
-                        .joinedAt,
-
-                    name: uSnap.exists()
-                      ? ((uSnap.data() as any)
-                          ?.name ??
-                          "Unknown User")
-                      : "Unknown User",
-
-                    paid:
-                      paidUsers.length >
-                      idx,
-                  })
-                );
-
-              return {
-                id: gDoc.id,
-
-                ...data,
-
-                members:
-                  cleanedMembers,
-
-                membersDetailed,
-
-                membersCount:
-                  typeof data.membersCount ===
-                  "number"
-                    ? data.membersCount
-                    : cleanedMembers.length,
-
-                lastActivityAt:
-                  data.lastActivityAt ??
-                  data.createdAt,
-              };
-            })
-          );
+              lastActivityAt:
+                data.lastActivityAt ??
+                data.createdAt,
+            };
+          })
+        );
 
         const list = builtGroups.filter(
           (g): g is any => g !== null
@@ -257,12 +214,14 @@ export default function AdminPage() {
         setTotalPaidUsers(paidCount);
 
         setTotalUsers(userCount);
-
-        setLoading(false);
+      } catch (err) {
+        console.error(err);
       }
-    );
 
-    return () => unsubscribe();
+      setLoading(false);
+    };
+
+    fetchDashboard();
   }, [authorized]);
 
   /* ----------------------------
@@ -320,10 +279,11 @@ export default function AdminPage() {
       doc(db, "groups", id),
       {
         status: "completed",
-
         lastActivityAt: new Date(),
       }
     );
+
+    alert("Group marked completed ✅");
   };
 
   /* ----------------------------
@@ -340,6 +300,10 @@ export default function AdminPage() {
 
     await deleteDoc(
       doc(db, "groups", id)
+    );
+
+    setGroups((prev) =>
+      prev.filter((g) => g.id !== id)
     );
   };
 
@@ -394,7 +358,7 @@ export default function AdminPage() {
   ---------------------------- */
 
   return (
-    <div className="pt-28 px-6 bg-black text-[#F5F5F5]">
+    <div className="pt-28 px-6 bg-black text-[#F5F5F5] min-h-screen">
       {/* HEADER */}
 
       <div className="flex justify-between items-center mb-6">
@@ -447,9 +411,11 @@ export default function AdminPage() {
       {/* GROUPS */}
 
       {loading ? (
-        <p className="text-gray-400">
-          Loading...
-        </p>
+        <div className="space-y-4 animate-pulse">
+          <div className="h-32 bg-[#111] rounded-xl" />
+          <div className="h-32 bg-[#111] rounded-xl" />
+          <div className="h-32 bg-[#111] rounded-xl" />
+        </div>
       ) : (
         <div className="space-y-4">
           {groups.map((g) => (
@@ -461,8 +427,7 @@ export default function AdminPage() {
 
               <div className="flex justify-between items-center">
                 <p className="text-xl font-bold text-[#FFD166]">
-                  {g.category} →{" "}
-                  {g.option}
+                  {g.category} → {g.option}
                 </p>
 
                 <span
@@ -487,10 +452,7 @@ export default function AdminPage() {
               </p>
 
               <p className="text-xs text-gray-400 mt-1">
-                📅{" "}
-                {formatDateTime(
-                  g.createdAt
-                )}
+                📅 {formatDateTime(g.createdAt)}
               </p>
 
               {/* MEMBERS */}
@@ -546,35 +508,6 @@ export default function AdminPage() {
                               : "Not Paid"}
                           </p>
                         </div>
-
-                        {/* EXTRA */}
-
-                        <div className="mt-2 flex gap-2 flex-wrap">
-                          <span className="text-[10px] px-2 py-1 rounded-full bg-[#FFD166]/10 text-[#FFD166]">
-                            Members:{" "}
-                            {
-                              g.membersCount
-                            }
-                            /
-                            {
-                              g.requiredSize
-                            }
-                          </span>
-
-                          <span
-                            className={`text-[10px] px-2 py-1 rounded-full ${
-                              g.status ===
-                              "ready"
-                                ? "bg-green-500/20 text-green-400"
-                                : "bg-yellow-500/20 text-yellow-400"
-                            }`}
-                          >
-                            {g.status ===
-                            "ready"
-                              ? "Ready To Chat"
-                              : "Waiting"}
-                          </span>
-                        </div>
                       </div>
 
                       {/* WHATSAPP */}
@@ -602,9 +535,7 @@ export default function AdminPage() {
                 <button
                   className="bg-blue-600 px-3 py-1 rounded"
                   onClick={() =>
-                    markCompleted(
-                      g.id
-                    )
+                    markCompleted(g.id)
                   }
                 >
                   Mark Completed

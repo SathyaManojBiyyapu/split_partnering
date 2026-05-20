@@ -3,7 +3,10 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { db } from "@/firebase/config";
+import {
+  db,
+  auth,
+} from "@/firebase/config";
 
 import {
   collection,
@@ -122,14 +125,20 @@ export default function DashboardPage() {
       "groups"
     );
 
-    const qGroups = query(
-      groupsRef,
-      where(
-        "members",
-        "array-contains",
-        phone
-      )
-    );
+    const currentUID =
+    auth.currentUser?.uid;
+  
+  if (!currentUID) return;
+  
+  const qGroups = query(
+    groupsRef,
+  
+    where(
+      "memberUIDs",
+      "array-contains",
+      currentUID
+    )
+  );
 
     const unsub = onSnapshot(
       qGroups,
@@ -211,10 +220,22 @@ export default function DashboardPage() {
       );
 
       await updateDoc(gRef, {
-        members: arrayRemove(phone),
-        membersCount: newCount,
+        members: arrayRemove(
+          data.members.find(
+            (m: any) =>
+              m.phone === phone
+          )
+        ),
+      
+        memberUIDs:
+          arrayRemove(
+            auth.currentUser?.uid
+          ),
+      
+        membersCount:
+          newCount,
       });
-
+      
       if (newCount === 0) {
         await deleteDoc(gRef);
       }

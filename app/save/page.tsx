@@ -36,7 +36,10 @@ import { partneringInfo } from "@/app/data/partneringInfo";
    GROUP SIZE
 ------------------------------------------ */
 
-const GROUP_SIZE: Record<string, number> = {
+const GROUP_SIZE: Record<
+  string,
+  number
+> = {
   split: 2,
   pass: 2,
   supplements: 3,
@@ -86,7 +89,8 @@ async function createOrJoinGroup(
   option: string,
   rawPhone: string
 ) {
-  const cleanPhone = rawPhone.trim();
+  const cleanPhone =
+    rawPhone.trim();
 
   const currentUser =
     auth.currentUser;
@@ -97,18 +101,28 @@ async function createOrJoinGroup(
     );
   }
 
-  const groupsRef = collection(
-    db,
-    "groups"
-  );
+  const groupsRef =
+    collection(
+      db,
+      "groups"
+    );
 
   const q = query(
     groupsRef,
-    where("category", "==", category),
-    where("option", "==", option)
+    where(
+      "category",
+      "==",
+      category
+    ),
+    where(
+      "option",
+      "==",
+      option
+    )
   );
 
-  const snap = await getDocs(q);
+  const snap =
+    await getDocs(q);
 
   /* MEMBER OBJECT */
 
@@ -129,35 +143,51 @@ async function createOrJoinGroup(
   /* -------- JOIN EXISTING -------- */
 
   for (const gdoc of snap.docs) {
-    const g = gdoc.data();
+    const g =
+      gdoc.data();
 
     const members =
-      Array.isArray(g.members)
+      Array.isArray(
+        g.members
+      )
         ? g.members
         : [];
 
     const required =
       g.requiredSize ||
-      getRequiredSize(option);
+      getRequiredSize(
+        option
+      );
 
     /* SUPPORT OLD + NEW STRUCTURE */
 
     const alreadyExists =
-      members.some((m: any) => {
-        if (typeof m === "string") {
-          return m === cleanPhone;
-        }
+      members.some(
+        (m: any) => {
+          if (
+            typeof m ===
+            "string"
+          ) {
+            return (
+              m ===
+              cleanPhone
+            );
+          }
 
-        return (
-          m?.phone === cleanPhone
-        );
-      });
+          return (
+            m?.phone ===
+            cleanPhone
+          );
+        }
+      );
 
     /* ALREADY EXISTS */
 
     if (alreadyExists) {
       return {
-        status: "already",
+        status:
+          "already",
+
         membersCount:
           members.length,
       };
@@ -165,39 +195,49 @@ async function createOrJoinGroup(
 
     /* JOIN */
 
-    if (members.length < required) {
+    if (
+      members.length <
+      required
+    ) {
       const gRef = doc(
         db,
         "groups",
         gdoc.id
       );
 
-      await updateDoc(gRef, {
-        members:
-          arrayUnion(
-            memberObject
-          ),
+      await updateDoc(
+        gRef,
+        {
+          members:
+            arrayUnion(
+              memberObject
+            ),
 
-        memberUIDs:
-          arrayUnion(
-            currentUser.uid
-          ),
+          memberUIDs:
+            arrayUnion(
+              currentUser.uid
+            ),
 
-        membersCount:
-          members.length + 1,
+          membersCount:
+            members.length +
+            1,
 
-        lastActivityAt:
-          serverTimestamp(),
-      });
+          lastActivityAt:
+            serverTimestamp(),
+        }
+      );
 
       const updatedSnap =
-        await getDoc(gRef);
+        await getDoc(
+          gRef
+        );
 
       const updated =
         updatedSnap.data() as any;
 
       const updatedMembers =
-        updated.members || [];
+        updated.members ||
+        [];
 
       /* READY */
 
@@ -205,16 +245,71 @@ async function createOrJoinGroup(
         updatedMembers.length >=
         required
       ) {
-        await updateDoc(gRef, {
-          status: "ready",
+        await updateDoc(
+          gRef,
+          {
+            status:
+              "ready",
 
-          readyAt:
-            serverTimestamp(),
-        });
+            readyAt:
+              serverTimestamp(),
+          }
+        );
+
+        /* CHECK CHAT EXISTS */
+
+        const chatsRef =
+          collection(
+            db,
+            "chats"
+          );
+
+        const qChat =
+          query(
+            chatsRef,
+            where(
+              "groupId",
+              "==",
+              gdoc.id
+            )
+          );
+
+        const chatSnap =
+          await getDocs(
+            qChat
+          );
+
+        /* CREATE CHAT */
+
+        if (
+          chatSnap.empty
+        ) {
+          await addDoc(
+            collection(
+              db,
+              "chats"
+            ),
+            {
+              groupId:
+                gdoc.id,
+
+              createdAt:
+                serverTimestamp(),
+
+              members:
+                updatedMembers,
+
+              memberUIDs:
+                updated.memberUIDs ||
+                [],
+            }
+          );
+        }
       }
 
       return {
-        status: "joined",
+        status:
+          "joined",
 
         membersCount:
           updatedMembers.length,
@@ -228,41 +323,49 @@ async function createOrJoinGroup(
     doc(groupsRef);
 
   const required =
-    getRequiredSize(option);
+    getRequiredSize(
+      option
+    );
 
-  await setDoc(newGroupRef, {
-    category,
+  await setDoc(
+    newGroupRef,
+    {
+      category,
 
-    option,
+      option,
 
-    members: [memberObject],
+      members: [
+        memberObject,
+      ],
 
-    memberUIDs: [
-      currentUser.uid,
-    ],
+      memberUIDs: [
+        currentUser.uid,
+      ],
 
-    membersCount: 1,
+      membersCount: 1,
 
-    requiredSize: required,
+      requiredSize:
+        required,
 
-    status: "waiting",
+      status:
+        "waiting",
 
-    createdAt:
-      serverTimestamp(),
+      createdAt:
+        serverTimestamp(),
 
-    lastActivityAt:
-      serverTimestamp(),
-  });
+      lastActivityAt:
+        serverTimestamp(),
+    }
+  );
 
   return {
-    status: "created",
+    status:
+      "created",
 
     membersCount: 1,
   };
 }
-  /* -------- CREATE NEW -------- */
 
- 
 /* -----------------------------------------
    SAVE CONTENT
 ------------------------------------------ */
@@ -271,31 +374,44 @@ function SaveContent() {
   const searchParams =
     useSearchParams();
 
-  const router = useRouter();
+  const router =
+    useRouter();
 
   const category =
-    searchParams.get("category") || "";
+    searchParams.get(
+      "category"
+    ) || "";
 
   const option =
-    searchParams.get("option") || "";
+    searchParams.get(
+      "option"
+    ) || "";
 
   const [mounted, setMounted] =
     useState(false);
 
   const [phone, setPhone] =
-    useState<string | null>(null);
+    useState<string | null>(
+      null
+    );
 
   const [isGuest, setIsGuest] =
     useState(false);
 
-  const [userName, setUserName] =
-    useState<string | null>(null);
+  const [
+    userName,
+    setUserName,
+  ] = useState<
+    string | null
+  >(null);
 
   const [loading, setLoading] =
     useState(false);
 
   const info =
-    partneringInfo[category];
+    partneringInfo[
+      category
+    ];
 
   /* -------- MOUNT -------- */
 
@@ -303,13 +419,17 @@ function SaveContent() {
     setMounted(true);
 
     const savedPhone =
-      localStorage.getItem("phone");
+      localStorage.getItem(
+        "phone"
+      );
 
     const guest =
-      localStorage.getItem("guest") ===
-      "true";
+      localStorage.getItem(
+        "guest"
+      ) === "true";
 
     setPhone(savedPhone);
+
     setIsGuest(guest);
   }, []);
 
@@ -318,7 +438,10 @@ function SaveContent() {
   useEffect(() => {
     if (!mounted) return;
 
-    if (isGuest || !phone) {
+    if (
+      isGuest ||
+      !phone
+    ) {
       alert(
         "Please login to continue."
       );
@@ -337,100 +460,132 @@ function SaveContent() {
   useEffect(() => {
     if (!phone) return;
 
-    const fetchUser = async () => {
-      try {
-        const userRef = doc(
-          db,
-          "users",
-          phone
-        );
+    const fetchUser =
+      async () => {
+        try {
+          const userRef =
+            doc(
+              db,
+              "users",
+              phone
+            );
 
-        const snap = await getDoc(
-          userRef
-        );
+          const snap =
+            await getDoc(
+              userRef
+            );
 
-        if (snap.exists()) {
-          setUserName(
-            (snap.data() as any).name ||
-              null
+          if (
+            snap.exists()
+          ) {
+            setUserName(
+              (
+                snap.data() as any
+              ).name ||
+                null
+            );
+          }
+        } catch (error) {
+          console.error(
+            "User fetch error:",
+            error
           );
         }
-      } catch (error) {
-        console.error(
-          "User fetch error:",
-          error
-        );
-      }
-    };
+      };
 
     fetchUser();
   }, [phone]);
 
   /* -------- SAVE PARTNER -------- */
 
-  const savePartner = async () => {
-    if (!mounted) return;
+  const savePartner =
+    async () => {
+      if (!mounted)
+        return;
 
-    if (!phone) {
-      alert("Phone missing");
-      return;
-    }
-
-    if (!auth.currentUser) {
-      alert("User not logged in");
-      return;
-    }
-
-    try {
-      setLoading(true);
-
-      /* CREATE/JOIN */
-
-      const result =
-        await createOrJoinGroup(
-          category,
-          option,
-          phone
+      if (!phone) {
+        alert(
+          "Phone missing"
         );
 
-      /* SAVE SELECTION */
+        return;
+      }
 
-      await addDoc(
-        collection(db, "selections"),
-        {
-          uid: auth.currentUser.uid,
-          phone,
-          userName:
-            userName || "Anonymous",
-          category,
-          option,
-          createdAt:
-            serverTimestamp(),
-        }
-      );
+      if (
+        !auth.currentUser
+      ) {
+        alert(
+          "User not logged in"
+        );
 
-      alert(
-        `Partner saved!\n\nStatus: ${result.status}\nMembers: ${result.membersCount}/${getRequiredSize(
-          option
-        )}`
-      );
+        return;
+      }
 
-      router.push("/categories");
-    } catch (error: any) {
-      console.error(
-        "SAVE ERROR:",
-        error
-      );
+      try {
+        setLoading(true);
 
-      alert(
-        error?.message ||
-          error?.code ||
-          "Saving failed."
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
+        /* CREATE/JOIN */
+
+        const result =
+          await createOrJoinGroup(
+            category,
+            option,
+            phone
+          );
+
+        /* SAVE SELECTION */
+
+        await addDoc(
+          collection(
+            db,
+            "selections"
+          ),
+          {
+            uid:
+              auth.currentUser
+                .uid,
+
+            phone,
+
+            userName:
+              userName ||
+              "Anonymous",
+
+            category,
+
+            option,
+
+            createdAt:
+              serverTimestamp(),
+          }
+        );
+
+        alert(
+          `Partner saved!\n\nStatus: ${result.status}\nMembers: ${result.membersCount}/${getRequiredSize(
+            option
+          )}`
+        );
+
+        router.push(
+          "/categories"
+        );
+      } catch (
+        error: any
+      ) {
+        console.error(
+          "SAVE ERROR:",
+          error
+        );
+
+        alert(
+          error?.message ||
+            error?.code ||
+            "Saving failed."
+        );
+      } finally {
+        setLoading(false);
+      }
+    };
 
   /* -------- LOADING -------- */
 
@@ -454,7 +609,7 @@ function SaveContent() {
 
       <p className="text-gray-400 mb-8">
         You selected{" "}
-         <span className="text-[#FFD166] font-medium">
+        <span className="text-[#FFD166] font-medium">
           {option}
         </span>{" "}
         under{" "}
@@ -515,9 +670,8 @@ function SaveContent() {
           </ul>
 
           <p className="text-[11px] text-gray-500 mt-5 italic">
-            SplitPartnering is a
-            partnering service. We do
-            not buy or sell products.
+            SplitPartnering is a partnering service.
+            We do not buy or sell products.
           </p>
         </div>
       )}
@@ -525,8 +679,12 @@ function SaveContent() {
       {/* BUTTON */}
 
       <button
-        onClick={savePartner}
-        disabled={loading}
+        onClick={
+          savePartner
+        }
+        disabled={
+          loading
+        }
         className="
           px-8 py-3 rounded-xl
           font-semibold
@@ -550,7 +708,9 @@ function SaveContent() {
 
       <button
         onClick={() =>
-          router.push("/categories")
+          router.push(
+            "/categories"
+          )
         }
         className="
           block mt-8

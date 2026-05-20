@@ -1,8 +1,20 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { auth, db } from "@/firebase/config";
+import {
+  Suspense,
+  useEffect,
+  useState,
+} from "react";
+
+import {
+  useRouter,
+  useSearchParams,
+} from "next/navigation";
+
+import {
+  auth,
+  db,
+} from "@/firebase/config";
 
 import {
   doc,
@@ -13,58 +25,94 @@ import {
   getDocs,
   query,
   where,
+  updateDoc,
 } from "firebase/firestore";
 
-import { onAuthStateChanged } from "firebase/auth";
+import {
+  onAuthStateChanged,
+} from "firebase/auth";
 
 function PaymentContent() {
   const router = useRouter();
-  const searchParams = useSearchParams();
 
-  const groupId = searchParams.get("groupId");
+  const searchParams =
+    useSearchParams();
 
-  const [firebaseUser, setFirebaseUser] =
-    useState<any>(null);
+  const groupId =
+    searchParams.get("groupId");
 
-  const [groupData, setGroupData] =
-    useState<any>(null);
+  const [
+    firebaseUser,
+    setFirebaseUser,
+  ] = useState<any>(null);
+
+  const [
+    groupData,
+    setGroupData,
+  ] = useState<any>(null);
 
   const [loading, setLoading] =
     useState(true);
 
-  const [processing, setProcessing] =
-    useState(false);
-
-  /* ✅ EXISTING PAYMENT */
+  const [
+    processing,
+    setProcessing,
+  ] = useState(false);
 
   const [
     existingPayment,
     setExistingPayment,
   ] = useState(false);
 
-  const PRICE = 29;
+  /* FIXED PRICE */
+
+  const PRICE =29 
+  ;
+
+  /* -----------------------------
+     LOAD RAZORPAY SDK
+  ----------------------------- */
+
+  useEffect(() => {
+    const script =
+      document.createElement(
+        "script"
+      );
+
+    script.src =
+      "https://checkout.razorpay.com/v1/checkout.js";
+
+    script.async = true;
+
+    document.body.appendChild(
+      script
+    );
+  }, []);
 
   /* -----------------------------
      AUTH LISTENER
   ----------------------------- */
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(
-      auth,
-      (user) => {
-        if (!user) {
-          router.push("/login");
-        } else {
-          setFirebaseUser(user);
+    const unsub =
+      onAuthStateChanged(
+        auth,
+        (user) => {
+          if (!user) {
+            router.push("/login");
+          } else {
+            setFirebaseUser(user);
 
-          if (!user.phoneNumber) {
-            router.push(
-              "/verify-phone"
-            );
+            if (
+              !user.phoneNumber
+            ) {
+              router.push(
+                "/verify-phone"
+              );
+            }
           }
         }
-      }
-    );
+      );
 
     return () => unsub();
   }, [router]);
@@ -76,25 +124,37 @@ function PaymentContent() {
   useEffect(() => {
     if (!groupId) return;
 
-    const fetchGroup = async () => {
-      try {
-        const snap = await getDoc(
-          doc(db, "groups", groupId)
-        );
+    const fetchGroup =
+      async () => {
+        try {
+          const snap =
+            await getDoc(
+              doc(
+                db,
+                "groups",
+                groupId
+              )
+            );
 
-        if (snap.exists()) {
-          setGroupData(snap.data());
-        } else {
-          alert("Group not found");
+          if (snap.exists()) {
+            setGroupData(
+              snap.data()
+            );
+          } else {
+            alert(
+              "Group not found"
+            );
 
-          router.push("/dashboard");
+            router.push(
+              "/dashboard"
+            );
+          }
+        } catch (err) {
+          console.error(err);
         }
-      } catch (err) {
-        console.error(err);
-      }
 
-      setLoading(false);
-    };
+        setLoading(false);
+      };
 
     fetchGroup();
   }, [groupId, router]);
@@ -104,7 +164,10 @@ function PaymentContent() {
   ----------------------------- */
 
   useEffect(() => {
-    if (!firebaseUser || !groupId)
+    if (
+      !firebaseUser ||
+      !groupId
+    )
       return;
 
     const checkExistingPayment =
@@ -118,11 +181,13 @@ function PaymentContent() {
 
           const qPay = query(
             paymentsRef,
+
             where(
               "uid",
               "==",
               firebaseUser.uid
             ),
+
             where(
               "groupId",
               "==",
@@ -130,12 +195,13 @@ function PaymentContent() {
             )
           );
 
-          const snap = await getDocs(
-            qPay
-          );
+          const snap =
+            await getDocs(qPay);
 
           if (!snap.empty) {
-            setExistingPayment(true);
+            setExistingPayment(
+              true
+            );
           }
         } catch (err) {
           console.error(
@@ -147,6 +213,77 @@ function PaymentContent() {
 
     checkExistingPayment();
   }, [firebaseUser, groupId]);
+
+  /* -----------------------------
+     MARK MEMBER PAID
+  ----------------------------- */
+
+  const markMemberPaid =
+    async () => {
+      if (
+        !firebaseUser ||
+        !groupId
+      )
+        return;
+
+      try {
+        const groupRef = doc(
+          db,
+          "groups",
+          groupId
+        );
+
+        const groupSnap =
+          await getDoc(
+            groupRef
+          );
+
+        if (
+          !groupSnap.exists()
+        )
+          return;
+
+        const group =
+          groupSnap.data();
+
+        const updatedMembers =
+          (
+            group.members || []
+          ).map((m: any) => {
+            if (
+              typeof m ===
+              "string"
+            ) {
+              return m;
+            }
+
+            if (
+              m.uid ===
+              firebaseUser.uid
+            ) {
+              return {
+                ...m,
+                paid: true,
+              };
+            }
+
+            return m;
+          });
+
+        await updateDoc(
+          groupRef,
+          {
+            members:
+              updatedMembers,
+          }
+        );
+      } catch (err) {
+        console.error(
+          "Paid update error:",
+          err
+        );
+      }
+    };
 
   /* -----------------------------
      STRIPE PAYMENT
@@ -164,43 +301,61 @@ function PaymentContent() {
       try {
         setProcessing(true);
 
-        /* SAVE PAYMENT */
-
         await addDoc(
-          collection(db, "payments"),
+          collection(
+            db,
+            "payments"
+          ),
           {
-            uid: firebaseUser.uid,
+            uid:
+              firebaseUser.uid,
+
             groupId,
+
             category:
               groupData.category,
-            option: groupData.option,
+
+            option:
+              groupData.option,
+
             amount: PRICE,
+
             status: "pending",
-            paymentMethod: "stripe",
+
+            paymentMethod:
+              "stripe",
+
             createdAt:
               serverTimestamp(),
           }
         );
 
-        /* STRIPE API */
+        await markMemberPaid();
 
-        const response = await fetch(
-          "/api/create-checkout-session",
-          {
-            method: "POST",
+        const response =
+          await fetch(
+            "/api/create-checkout-session",
+            {
+              method: "POST",
 
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
+              headers: {
+                "Content-Type":
+                  "application/json",
+              },
 
-            body: JSON.stringify({
-              amount: PRICE,
-              groupId,
-              uid: firebaseUser.uid,
-            }),
-          }
-        );
+              body: JSON.stringify(
+                {
+                  amount:
+                    PRICE,
+
+                  groupId,
+
+                  uid:
+                    firebaseUser.uid,
+                }
+              ),
+            }
+          );
 
         const data =
           await response.json();
@@ -221,7 +376,9 @@ function PaymentContent() {
           error
         );
 
-        alert("Payment failed ❌");
+        alert(
+          "Payment failed ❌"
+        );
 
         setProcessing(false);
       }
@@ -246,26 +403,165 @@ function PaymentContent() {
         /* SAVE PAYMENT */
 
         await addDoc(
-          collection(db, "payments"),
+          collection(
+            db,
+            "payments"
+          ),
           {
-            uid: firebaseUser.uid,
+            uid:
+              firebaseUser.uid,
+
             groupId,
+
             category:
               groupData.category,
-            option: groupData.option,
+
+            option:
+              groupData.option,
+
             amount: PRICE,
+
             status: "pending",
+
             paymentMethod:
               "razorpay",
+
             createdAt:
               serverTimestamp(),
           }
         );
 
-        /* REDIRECT TO RAZORPAY */
+        /* UPDATE MEMBER */
 
-        window.location.href =
-  "https://razorpay.me/@partnering";
+        await markMemberPaid();
+
+        /* RAZORPAY POPUP */
+const orderRes =
+  await fetch(
+    "/api/create-razorpay-order",
+    {
+      method: "POST",
+
+      headers: {
+        "Content-Type":
+          "application/json",
+      },
+
+      body: JSON.stringify({
+        amount: PRICE,
+      }),
+    }
+  );
+
+const order =
+  await orderRes.json();
+
+        const options = {
+          key:
+  process.env
+    .NEXT_PUBLIC_RAZORPAY_KEY_ID,
+
+      order_id:
+  order.id,
+
+          currency: "INR",
+
+          name:
+            "Partnering",
+
+          description:
+            "Partner Sync Payment",
+
+          handler:
+            async function (
+              response: any
+            ) {
+              try {
+                const paymentsRef =
+                  collection(
+                    db,
+                    "payments"
+                  );
+
+                const qPay =
+                  query(
+                    paymentsRef,
+
+                    where(
+                      "uid",
+                      "==",
+                      firebaseUser.uid
+                    ),
+
+                    where(
+                      "groupId",
+                      "==",
+                      groupId
+                    )
+                  );
+
+                const paySnap =
+                  await getDocs(
+                    qPay
+                  );
+
+                for (const d of paySnap.docs) {
+                  await updateDoc(
+                    doc(
+                      db,
+                      "payments",
+                      d.id
+                    ),
+                    {
+                      status:
+                        "paid",
+
+                      razorpayPaymentId:
+                        response.razorpay_payment_id,
+                    }
+                  );
+                }
+
+                alert(
+                  "Payment successful ✅"
+                );
+
+                router.push(
+                  `/chat/${groupId}`
+                );
+              } catch (err) {
+                console.error(
+                  err
+                );
+
+                alert(
+                  "Payment verification failed"
+                );
+              }
+            },
+
+          prefill: {
+            email:
+              firebaseUser.email,
+
+            contact:
+              firebaseUser.phoneNumber,
+          },
+
+          theme: {
+            color:
+              "#E6C972",
+          },
+        };
+
+        const razor =
+          new (
+            window as any
+          ).Razorpay(
+            options
+          );
+
+        razor.open();
       } catch (error) {
         console.error(
           "Razorpay error:",
@@ -287,8 +583,7 @@ function PaymentContent() {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center text-white">
-        Loading Partner Sync
-        details...
+        Loading Partner Sync details...
       </div>
     );
   }
@@ -315,9 +610,7 @@ function PaymentContent() {
         </h2>
 
         <p className="text-gray-400 text-sm mb-6">
-          Unlock secure coordination
-          and verified group
-          benefits.
+          Unlock secure coordination and verified group benefits.
         </p>
 
         {/* GROUP INFO */}
@@ -350,7 +643,8 @@ function PaymentContent() {
             </p>
 
             <p className="text-gray-400 text-sm mt-2">
-              Members Synced:{" "}
+              Members Synced:
+              {" "}
               {
                 groupData.membersCount
               }
@@ -362,29 +656,23 @@ function PaymentContent() {
           </div>
         )}
 
-        {/* EXISTING PAYMENT */}
-
-        {existingPayment && (
-          <p className="text-green-400 text-sm mb-4 text-center">
-            ✅ Payment already
-            initiated for this group.
-          </p>
-        )}
-
         {/* PRICE */}
 
         <div className="mb-4 text-gray-300 text-sm">
-          One-time Activation Fee
+          Fixed Activation Fee
         </div>
 
-        <div className="text-2xl font-bold text-green-400 mb-6">
-          ₹{PRICE}
+        <div className="text-3xl font-bold text-green-400 mb-6">
+          ₹29
+          
         </div>
 
-        {/* STRIPE BUTTON */}
+        {/* STRIPE */}
 
         <button
-          onClick={handlePayment}
+          onClick={
+            handlePayment
+          }
           disabled={
             processing ||
             existingPayment
@@ -400,15 +688,15 @@ function PaymentContent() {
         >
           {processing
             ? "Processing..."
-            : existingPayment
-            ? "Already Initiated"
             : "Pay with Stripe"}
         </button>
 
-        {/* RAZORPAY BUTTON */}
+        {/* RAZORPAY */}
 
         <button
-          onClick={handleRazorpay}
+          onClick={
+            handleRazorpay
+          }
           disabled={
             processing ||
             existingPayment
@@ -425,16 +713,16 @@ function PaymentContent() {
         >
           {processing
             ? "Processing..."
-            : existingPayment
-            ? "Already Initiated"
-            : "Pay with Razorpay / UPI"}
+            : "Pay ₹29 with Razorpay"}
         </button>
 
         {/* BACK */}
 
         <button
           onClick={() =>
-            router.push("/dashboard")
+            router.push(
+              "/dashboard"
+            )
           }
           className="
             w-full mt-5
@@ -445,11 +733,6 @@ function PaymentContent() {
         >
           ← Back to Dashboard
         </button>
-
-        <p className="text-xs text-gray-500 mt-6 text-center">
-          Secure payment powered by
-          Stripe & Razorpay.
-        </p>
       </div>
     </div>
   );
@@ -460,8 +743,7 @@ export default function PaymentPage() {
     <Suspense
       fallback={
         <div className="min-h-screen flex items-center justify-center text-white">
-          Loading Partner Sync
-          details...
+          Loading Partner Sync details...
         </div>
       }
     >

@@ -10,6 +10,7 @@ import {
   updateDoc,
   deleteDoc,
 } from "firebase/firestore";
+
 const ADMIN_USERNAME = "admin";
 const ADMIN_PASSWORD = "Hari@2307";
 
@@ -18,11 +19,15 @@ const ADMIN_PASSWORD = "Hari@2307";
 ---------------------------- */
 
 const formatDateTime = (ts: any) => {
-  if (!ts?.seconds) return "N/A";
+  try {
+    if (!ts?.seconds) return "N/A";
 
-  const d = new Date(ts.seconds * 1000);
+    const d = new Date(ts.seconds * 1000);
 
-  return `${d.toLocaleDateString()} · ${d.toLocaleTimeString()}`;
+    return `${d.toLocaleDateString()} · ${d.toLocaleTimeString()}`;
+  } catch {
+    return "N/A";
+  }
 };
 
 export default function AdminPage() {
@@ -42,6 +47,9 @@ export default function AdminPage() {
   const [loading, setLoading] =
     useState(true);
 
+  const [refreshing, setRefreshing] =
+    useState(false);
+
   /* STATS */
 
   const [totalRevenue, setTotalRevenue] =
@@ -51,6 +59,9 @@ export default function AdminPage() {
     useState(0);
 
   const [totalUsers, setTotalUsers] =
+    useState(0);
+
+  const [completedGroups, setCompletedGroups] =
     useState(0);
 
   /* ----------------------------
@@ -70,156 +81,202 @@ export default function AdminPage() {
   }, []);
 
   /* ----------------------------
-     FETCH GROUPS FAST
+     FETCH DASHBOARD
+  ---------------------------- */
+
+  const fetchDashboard = async () => {
+    try {
+      setLoading(true);
+
+      /* FETCH ALL DATA ONCE */
+
+      const groupsSnap = await getDocs(
+        collection(db, "groups")
+      );
+
+      const paymentsSnap = await getDocs(
+        collection(db, "payments")
+      );
+
+      /* PAYMENT MAP */
+
+      const paidMap: any = {};
+
+      let revenue = 0;
+      let paidCount = 0;
+
+      paymentsSnap.forEach((p) => {
+        const pdata = p.data();
+
+        if (pdata.status === "paid") {
+          if (!paidMap[pdata.groupId]) {
+            paidMap[pdata.groupId] = [];
+          }
+
+          paidMap[pdata.groupId].push(
+            pdata.uid
+          );
+
+          revenue += pdata.amount || 0;
+
+          paidCount++;
+        }
+      });
+
+      let userCount = 0;
+      let completedCount = 0;
+
+      const builtGroups =
+        groupsSnap.docs.map((gDoc) => {
+          const data = gDoc.data() as any;
+
+          /* SAFE MEMBERS */
+
+          const cleanedMembers =
+            Array.isArray(data.members)
+              ? data.members.map(
+                  (m: any) => {
+                    if (
+                      typeof m === "string"
+                    ) {
+                      return {
+                        phone: m.trim(),
+                        name:
+                          "Unknown User",
+                        joinedAt:
+                          data.createdAt,
+                        paid: false,
+                      };
+                    }
+
+                    return {
+                      phone:
+                        m?.phone ||
+                        "N/A",
+
+                      name:
+                        m?.name ||
+                        "Unknown User",
+
+                      joinedAt:
+                        m?.joinedAt ||
+                        data.createdAt,
+
+                      paid:
+                        m?.paid ||
+                        false,
+                    };
+                  }
+                )
+              : [];
+
+          userCount +=
+            cleanedMembers.length;
+
+          /* PAID USERS */
+
+          const paidUsers =
+            paidMap[gDoc.id] || [];
+
+          /* MEMBERS */
+
+          const membersDetailed =
+            cleanedMembers.map(
+              (
+                m: any,
+                idx: number
+              ) => ({
+                phone: m.phone,
+
+                name: m.name,
+
+                joinedAt:
+                  m.joinedAt,
+
+                paid:
+                  paidUsers.length >
+                    idx ||
+                  m.paid,
+              })
+            );
+
+          if (
+            data.status ===
+            "completed"
+          ) {
+            completedCount++;
+          }
+
+          return {
+            id: gDoc.id,
+
+            ...data,
+
+            membersDetailed,
+
+            membersCount:
+              typeof data.membersCount ===
+              "number"
+                ? data.membersCount
+                : cleanedMembers.length,
+
+            lastActivityAt:
+              data.lastActivityAt ??
+              data.createdAt,
+          };
+        });
+
+      /* REMOVE NULLS */
+
+      const list = builtGroups.filter(
+        Boolean
+      );
+
+      /* SORT */
+
+      list.sort((a, b) => {
+        const ta =
+          a.lastActivityAt?.seconds ||
+          a.createdAt?.seconds ||
+          0;
+
+        const tb =
+          b.lastActivityAt?.seconds ||
+          b.createdAt?.seconds ||
+          0;
+
+        return tb - ta;
+      });
+
+      setGroups(list);
+
+      setTotalRevenue(revenue);
+
+      setTotalPaidUsers(paidCount);
+
+      setTotalUsers(userCount);
+
+      setCompletedGroups(
+        completedCount
+      );
+    } catch (err) {
+      console.error(
+        "Dashboard error:",
+        err
+      );
+    }
+
+    setLoading(false);
+
+    setRefreshing(false);
+  };
+
+  /* ----------------------------
+     INITIAL FETCH
   ---------------------------- */
 
   useEffect(() => {
     if (!authorized) return;
-
-    const fetchDashboard = async () => {
-      try {
-        setLoading(true);
-
-        const groupsSnap = await getDocs(
-          collection(db, "groups")
-        );
-
-        const paymentsSnap = await getDocs(
-          collection(db, "payments")
-        );
-
-        const paidMap: any = {};
-
-        let revenue = 0;
-        let paidCount = 0;
-        paymentsSnap.forEach((p) => {
-          const pdata = p.data();
-
-          if (pdata.status === "paid") {
-            if (!paidMap[pdata.groupId]) {
-              paidMap[pdata.groupId] = [];
-            }
-
-            paidMap[pdata.groupId].push(
-              pdata.uid
-            );
-
-            revenue += pdata.amount || 0;
-
-            paidCount++;
-          }
-        });
-
-        let userCount = 0;
-
-        const builtGroups = await Promise.all(
-          groupsSnap.docs.map(async (gDoc) => {
-            const data = gDoc.data() as any;
-
-            if (
-              !Array.isArray(data.members) ||
-              data.members.length === 0
-            ) {
-              await deleteDoc(gDoc.ref);
-
-              return null;
-            }
-
-            const cleanedMembers = (
-              data.members || []
-            ).map((m: any) => {
-              if (typeof m === "string") {
-                return {
-                  phone: m.trim(),
-                  name: "Unknown User",
-                  joinedAt: data.createdAt,
-                  paid: false,
-                };
-              }
-
-              return {
-                phone: m.phone || "N/A",
-                name:
-                  m.name || "Unknown User",
-                joinedAt:
-                  m.joinedAt ||
-                  data.createdAt,
-                paid: m.paid || false,
-              };
-            });
-
-            userCount +=
-              cleanedMembers.length;
-
-            const paidUsers =
-              paidMap[gDoc.id] || [];
-
-            const membersDetailed =
-              cleanedMembers.map(
-                (
-                  m: any,
-                  idx: number
-                ) => ({
-                  phone: m.phone,
-                  name: m.name,
-                  joinedAt: m.joinedAt,
-                  paid:
-                    paidUsers.length >
-                      idx || m.paid,
-                })
-              );
-
-            return {
-              id: gDoc.id,
-
-              ...data,
-
-              membersDetailed,
-
-              membersCount:
-                typeof data.membersCount ===
-                "number"
-                  ? data.membersCount
-                  : cleanedMembers.length,
-
-              lastActivityAt:
-                data.lastActivityAt ??
-                data.createdAt,
-            };
-          })
-        );
-
-        const list = builtGroups.filter(
-          (g): g is any => g !== null
-        );
-
-        list.sort((a, b) => {
-          const ta =
-            a.lastActivityAt?.seconds ||
-            a.createdAt?.seconds ||
-            0;
-
-          const tb =
-            b.lastActivityAt?.seconds ||
-            b.createdAt?.seconds ||
-            0;
-
-          return tb - ta;
-        });
-
-        setGroups(list);
-
-        setTotalRevenue(revenue);
-
-        setTotalPaidUsers(paidCount);
-
-        setTotalUsers(userCount);
-      } catch (err) {
-        console.error(err);
-      }
-
-      setLoading(false);
-    };
 
     fetchDashboard();
   }, [authorized]);
@@ -269,21 +326,51 @@ export default function AdminPage() {
   };
 
   /* ----------------------------
+     REFRESH
+  ---------------------------- */
+
+  const refreshDashboard = async () => {
+    setRefreshing(true);
+
+    await fetchDashboard();
+  };
+
+  /* ----------------------------
      MARK COMPLETED
   ---------------------------- */
 
   const markCompleted = async (
     id: string
   ) => {
-    await updateDoc(
-      doc(db, "groups", id),
-      {
-        status: "completed",
-        lastActivityAt: new Date(),
-      }
-    );
+    try {
+      await updateDoc(
+        doc(db, "groups", id),
+        {
+          status: "completed",
 
-    alert("Group marked completed ✅");
+          lastActivityAt:
+            new Date(),
+        }
+      );
+
+      setGroups((prev) =>
+        prev.map((g) =>
+          g.id === id
+            ? {
+                ...g,
+                status:
+                  "completed",
+              }
+            : g
+        )
+      );
+
+      alert(
+        "Group marked completed ✅"
+      );
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   /* ----------------------------
@@ -294,17 +381,25 @@ export default function AdminPage() {
     id: string
   ) => {
     if (
-      !confirm("Delete this group?")
+      !confirm(
+        "Delete this group?"
+      )
     )
       return;
 
-    await deleteDoc(
-      doc(db, "groups", id)
-    );
+    try {
+      await deleteDoc(
+        doc(db, "groups", id)
+      );
 
-    setGroups((prev) =>
-      prev.filter((g) => g.id !== id)
-    );
+      setGroups((prev) =>
+        prev.filter(
+          (g) => g.id !== id
+        )
+      );
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   /* ----------------------------
@@ -361,22 +456,35 @@ export default function AdminPage() {
     <div className="pt-28 px-6 bg-black text-[#F5F5F5] min-h-screen">
       {/* HEADER */}
 
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex justify-between items-center mb-6 flex-wrap gap-3">
         <h1 className="text-3xl font-bold text-[#FFD166]">
           Admin — Partner Groups
         </h1>
 
-        <button
-          onClick={adminLogout}
-          className="px-3 py-1 bg-red-600 rounded text-xs"
-        >
-          Logout
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={
+              refreshDashboard
+            }
+            className="px-3 py-1 bg-blue-600 rounded text-xs"
+          >
+            {refreshing
+              ? "Refreshing..."
+              : "Refresh"}
+          </button>
+
+          <button
+            onClick={adminLogout}
+            className="px-3 py-1 bg-red-600 rounded text-xs"
+          >
+            Logout
+          </button>
+        </div>
       </div>
 
       {/* STATS */}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
         <div className="bg-[#0c0c0c] border border-[#FFD166]/20 rounded-xl p-4">
           <p className="text-gray-400 text-sm">
             Revenue
@@ -406,6 +514,16 @@ export default function AdminPage() {
             {totalUsers}
           </h2>
         </div>
+
+        <div className="bg-[#0c0c0c] border border-[#FFD166]/20 rounded-xl p-4">
+          <p className="text-gray-400 text-sm">
+            Completed
+          </p>
+
+          <h2 className="text-2xl font-bold text-purple-400 mt-1">
+            {completedGroups}
+          </h2>
+        </div>
       </div>
 
       {/* GROUPS */}
@@ -416,6 +534,10 @@ export default function AdminPage() {
           <div className="h-32 bg-[#111] rounded-xl" />
           <div className="h-32 bg-[#111] rounded-xl" />
         </div>
+      ) : groups.length === 0 ? (
+        <div className="text-center text-gray-400 mt-20">
+          No groups found
+        </div>
       ) : (
         <div className="space-y-4">
           {groups.map((g) => (
@@ -425,9 +547,13 @@ export default function AdminPage() {
             >
               {/* TOP */}
 
-              <div className="flex justify-between items-center">
+              <div className="flex justify-between items-center flex-wrap gap-2">
                 <p className="text-xl font-bold text-[#FFD166]">
-                  {g.category} → {g.option}
+                  {g.category ||
+                    "Unknown"}{" "}
+                  →{" "}
+                  {g.option ||
+                    "Unknown"}
                 </p>
 
                 <span
@@ -448,94 +574,109 @@ export default function AdminPage() {
 
               <p className="text-[#FFD166] font-bold mt-1">
                 {g.membersCount}/
-                {g.requiredSize}
+                {g.requiredSize ||
+                  "N/A"}
               </p>
 
               <p className="text-xs text-gray-400 mt-1">
-                📅 {formatDateTime(g.createdAt)}
+                📅{" "}
+                {formatDateTime(
+                  g.createdAt
+                )}
               </p>
 
               {/* MEMBERS */}
 
               <div className="mt-4 space-y-2">
-                {g.membersDetailed?.map(
-                  (
-                    m: any,
-                    i: number
-                  ) => (
-                    <div
-                      key={i}
-                      className="flex justify-between items-center bg-black/40 p-3 rounded"
-                    >
-                      {/* LEFT */}
-
-                      <div>
-                        <p className="text-sm font-bold">
-                          👤 {m.name}
-                        </p>
-
-                        <p className="text-xs text-gray-400">
-                          📞 {m.phone}
-                        </p>
-
-                        <p className="text-xs text-gray-500">
-                          📅{" "}
-                          {formatDateTime(
-                            m.joinedAt
-                          )}
-                        </p>
-
-                        {/* PAID STATUS */}
-
-                        <div className="mt-2 flex items-center gap-2">
-                          <div
-                            className={`w-2 h-2 rounded-full ${
-                              m.paid
-                                ? "bg-green-400"
-                                : "bg-red-500"
-                            }`}
-                          />
-
-                          <p
-                            className={`text-xs font-bold ${
-                              m.paid
-                                ? "text-green-400"
-                                : "text-red-500"
-                            }`}
-                          >
-                            {m.paid
-                              ? "Paid"
-                              : "Not Paid"}
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* WHATSAPP */}
-
-                      <button
-                        onClick={() =>
-                          window.open(
-                            `https://wa.me/91${m.phone}?text=${encodeURIComponent(
-                              "Hello! Your partner group is ready."
-                            )}`
-                          )
-                        }
-                        className="text-green-400 text-2xl"
+                {g.membersDetailed?.length >
+                0 ? (
+                  g.membersDetailed.map(
+                    (
+                      m: any,
+                      i: number
+                    ) => (
+                      <div
+                        key={i}
+                        className="flex justify-between items-center bg-black/40 p-3 rounded"
                       >
-                        🟢
-                      </button>
-                    </div>
+                        {/* LEFT */}
+
+                        <div>
+                          <p className="text-sm font-bold">
+                            👤{" "}
+                            {m.name}
+                          </p>
+
+                          <p className="text-xs text-gray-400">
+                            📞{" "}
+                            {m.phone}
+                          </p>
+
+                          <p className="text-xs text-gray-500">
+                            📅{" "}
+                            {formatDateTime(
+                              m.joinedAt
+                            )}
+                          </p>
+
+                          {/* PAID STATUS */}
+
+                          <div className="mt-2 flex items-center gap-2">
+                            <div
+                              className={`w-2 h-2 rounded-full ${
+                                m.paid
+                                  ? "bg-green-400"
+                                  : "bg-red-500"
+                              }`}
+                            />
+
+                            <p
+                              className={`text-xs font-bold ${
+                                m.paid
+                                  ? "text-green-400"
+                                  : "text-red-500"
+                              }`}
+                            >
+                              {m.paid
+                                ? "Paid"
+                                : "Not Paid"}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* WHATSAPP */}
+
+                        <button
+                          onClick={() =>
+                            window.open(
+                              `https://wa.me/91${m.phone}?text=${encodeURIComponent(
+                                "Hello! Your partner group is ready."
+                              )}`
+                            )
+                          }
+                          className="text-green-400 text-2xl"
+                        >
+                          🟢
+                        </button>
+                      </div>
+                    )
                   )
+                ) : (
+                  <div className="text-gray-500 text-sm">
+                    No members
+                  </div>
                 )}
               </div>
 
               {/* ACTIONS */}
 
-              <div className="flex gap-2 mt-4">
+              <div className="flex gap-2 mt-4 flex-wrap">
                 <button
                   className="bg-blue-600 px-3 py-1 rounded"
                   onClick={() =>
-                    markCompleted(g.id)
+                    markCompleted(
+                      g.id
+                    )
                   }
                 >
                   Mark Completed
@@ -544,7 +685,9 @@ export default function AdminPage() {
                 <button
                   className="bg-red-600 px-3 py-1 rounded"
                   onClick={() =>
-                    deleteGroup(g.id)
+                    deleteGroup(
+                      g.id
+                    )
                   }
                 >
                   Delete Group

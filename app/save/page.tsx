@@ -88,7 +88,19 @@ async function createOrJoinGroup(
 ) {
   const cleanPhone = rawPhone.trim();
 
-  const groupsRef = collection(db, "groups");
+  const currentUser =
+    auth.currentUser;
+
+  if (!currentUser) {
+    throw new Error(
+      "User not authenticated"
+    );
+  }
+
+  const groupsRef = collection(
+    db,
+    "groups"
+  );
 
   const q = query(
     groupsRef,
@@ -98,24 +110,56 @@ async function createOrJoinGroup(
 
   const snap = await getDocs(q);
 
+  /* MEMBER OBJECT */
+
+  const memberObject = {
+    uid: currentUser.uid,
+
+    phone: cleanPhone,
+
+    name:
+      currentUser.displayName ||
+      "User",
+
+    joinedAt: new Date(),
+
+    paid: false,
+  };
+
   /* -------- JOIN EXISTING -------- */
 
   for (const gdoc of snap.docs) {
     const g = gdoc.data();
 
-    const members: string[] =
-      g.members || [];
+    const members =
+      Array.isArray(g.members)
+        ? g.members
+        : [];
 
     const required =
       g.requiredSize ||
       getRequiredSize(option);
 
+    /* SUPPORT OLD + NEW STRUCTURE */
+
+    const alreadyExists =
+      members.some((m: any) => {
+        if (typeof m === "string") {
+          return m === cleanPhone;
+        }
+
+        return (
+          m?.phone === cleanPhone
+        );
+      });
+
     /* ALREADY EXISTS */
 
-    if (members.includes(cleanPhone)) {
+    if (alreadyExists) {
       return {
         status: "already",
-        membersCount: members.length,
+        membersCount:
+          members.length,
       };
     }
 
@@ -129,9 +173,21 @@ async function createOrJoinGroup(
       );
 
       await updateDoc(gRef, {
-        members: arrayUnion(cleanPhone),
+        members:
+          arrayUnion(
+            memberObject
+          ),
+
+        memberUIDs:
+          arrayUnion(
+            currentUser.uid
+          ),
+
         membersCount:
           members.length + 1,
+
+        lastActivityAt:
+          serverTimestamp(),
       });
 
       const updatedSnap =
@@ -146,16 +202,20 @@ async function createOrJoinGroup(
       /* READY */
 
       if (
-        updatedMembers.length >= required
+        updatedMembers.length >=
+        required
       ) {
         await updateDoc(gRef, {
           status: "ready",
-          readyAt: serverTimestamp(),
+
+          readyAt:
+            serverTimestamp(),
         });
       }
 
       return {
         status: "joined",
+
         membersCount:
           updatedMembers.length,
       };
@@ -164,27 +224,45 @@ async function createOrJoinGroup(
 
   /* -------- CREATE NEW -------- */
 
-  const newGroupRef = doc(groupsRef);
+  const newGroupRef =
+    doc(groupsRef);
 
   const required =
     getRequiredSize(option);
 
   await setDoc(newGroupRef, {
     category,
+
     option,
-    members: [cleanPhone],
+
+    members: [memberObject],
+
+    memberUIDs: [
+      currentUser.uid,
+    ],
+
     membersCount: 1,
+
     requiredSize: required,
+
     status: "waiting",
-    createdAt: serverTimestamp(),
+
+    createdAt:
+      serverTimestamp(),
+
+    lastActivityAt:
+      serverTimestamp(),
   });
 
   return {
     status: "created",
+
     membersCount: 1,
   };
 }
+  /* -------- CREATE NEW -------- */
 
+ 
 /* -----------------------------------------
    SAVE CONTENT
 ------------------------------------------ */

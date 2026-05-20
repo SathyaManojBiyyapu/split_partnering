@@ -310,9 +310,12 @@ async function createOrJoinGroup(
       return {
         status:
           "joined",
-
+      
         membersCount:
           updatedMembers.length,
+      
+        groupId:
+          gdoc.id,
       };
     }
   }
@@ -361,8 +364,11 @@ async function createOrJoinGroup(
   return {
     status:
       "created",
-
+  
     membersCount: 1,
+  
+    groupId:
+      newGroupRef.id,
   };
 }
 
@@ -544,17 +550,20 @@ function SaveContent() {
             uid:
               auth.currentUser
                 .uid,
-
+        
+            groupId:
+              result.groupId,
+        
             phone,
-
+        
             userName:
               userName ||
               "Anonymous",
-
+        
             category,
-
+        
             option,
-
+        
             createdAt:
               serverTimestamp(),
           }

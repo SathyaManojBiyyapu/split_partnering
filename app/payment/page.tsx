@@ -33,13 +33,17 @@ import {
 } from "firebase/auth";
 
 function PaymentContent() {
-  const router = useRouter();
+
+  const router =
+    useRouter();
 
   const searchParams =
     useSearchParams();
 
   const groupId =
-    searchParams.get("groupId");
+    searchParams.get(
+      "groupId"
+    );
 
   const [
     firebaseUser,
@@ -51,8 +55,10 @@ function PaymentContent() {
     setGroupData,
   ] = useState<any>(null);
 
-  const [loading, setLoading] =
-    useState(true);
+  const [
+    loading,
+    setLoading,
+  ] = useState(true);
 
   const [
     processing,
@@ -64,16 +70,21 @@ function PaymentContent() {
     setExistingPayment,
   ] = useState(false);
 
+  const [
+    paymentCompleted,
+    setPaymentCompleted,
+  ] = useState(false);
+
   /* FIXED PRICE */
 
-  const PRICE =29 
-  ;
+  const PRICE = 29;
 
   /* -----------------------------
      LOAD RAZORPAY SDK
   ----------------------------- */
 
   useEffect(() => {
+
     const script =
       document.createElement(
         "script"
@@ -87,6 +98,7 @@ function PaymentContent() {
     document.body.appendChild(
       script
     );
+
   }, []);
 
   /* -----------------------------
@@ -94,18 +106,28 @@ function PaymentContent() {
   ----------------------------- */
 
   useEffect(() => {
+
     const unsub =
       onAuthStateChanged(
         auth,
         (user) => {
+
           if (!user) {
-            router.push("/login");
+
+            router.push(
+              "/login"
+            );
+
           } else {
-            setFirebaseUser(user);
+
+            setFirebaseUser(
+              user
+            );
 
             if (
               !user.phoneNumber
             ) {
+
               router.push(
                 "/verify-phone"
               );
@@ -114,19 +136,25 @@ function PaymentContent() {
         }
       );
 
-    return () => unsub();
+    return () =>
+      unsub();
+
   }, [router]);
 
   /* -----------------------------
-     FETCH GROUP DATA
+     FETCH GROUP
   ----------------------------- */
 
   useEffect(() => {
-    if (!groupId) return;
+
+    if (!groupId)
+      return;
 
     const fetchGroup =
       async () => {
+
         try {
+
           const snap =
             await getDoc(
               doc(
@@ -136,11 +164,16 @@ function PaymentContent() {
               )
             );
 
-          if (snap.exists()) {
+          if (
+            snap.exists()
+          ) {
+
             setGroupData(
               snap.data()
             );
+
           } else {
+
             alert(
               "Group not found"
             );
@@ -149,61 +182,95 @@ function PaymentContent() {
               "/dashboard"
             );
           }
+
         } catch (err) {
-          console.error(err);
+
+          console.error(
+            err
+          );
         }
 
         setLoading(false);
       };
 
     fetchGroup();
+
   }, [groupId, router]);
 
   /* -----------------------------
-     CHECK EXISTING PAYMENT
+     CHECK PAYMENT STATUS
   ----------------------------- */
 
   useEffect(() => {
+
     if (
       !firebaseUser ||
       !groupId
     )
       return;
 
-    const checkExistingPayment =
+    const checkPayment =
       async () => {
+
         try {
+
           const paymentsRef =
             collection(
               db,
               "payments"
             );
 
-          const qPay = query(
-            paymentsRef,
+          const qPay =
+            query(
+              paymentsRef,
 
-            where(
-              "uid",
-              "==",
-              firebaseUser.uid
-            ),
+              where(
+                "uid",
+                "==",
+                firebaseUser.uid
+              ),
 
-            where(
-              "groupId",
-              "==",
-              groupId
-            )
-          );
+              where(
+                "groupId",
+                "==",
+                groupId
+              )
+            );
 
           const snap =
-            await getDocs(qPay);
+            await getDocs(
+              qPay
+            );
 
-          if (!snap.empty) {
+          if (
+            !snap.empty
+          ) {
+
             setExistingPayment(
               true
             );
+
+            snap.forEach(
+              (d) => {
+
+                const data =
+                  d.data();
+
+                if (
+                  data.status ===
+                  "paid"
+                ) {
+
+                  setPaymentCompleted(
+                    true
+                  );
+                }
+              }
+            );
           }
+
         } catch (err) {
+
           console.error(
             "Payment check error:",
             err
@@ -211,8 +278,12 @@ function PaymentContent() {
         }
       };
 
-    checkExistingPayment();
-  }, [firebaseUser, groupId]);
+    checkPayment();
+
+  }, [
+    firebaseUser,
+    groupId,
+  ]);
 
   /* -----------------------------
      MARK MEMBER PAID
@@ -220,6 +291,7 @@ function PaymentContent() {
 
   const markMemberPaid =
     async () => {
+
       if (
         !firebaseUser ||
         !groupId
@@ -227,11 +299,13 @@ function PaymentContent() {
         return;
 
       try {
-        const groupRef = doc(
-          db,
-          "groups",
-          groupId
-        );
+
+        const groupRef =
+          doc(
+            db,
+            "groups",
+            groupId
+          );
 
         const groupSnap =
           await getDoc(
@@ -248,27 +322,35 @@ function PaymentContent() {
 
         const updatedMembers =
           (
-            group.members || []
-          ).map((m: any) => {
-            if (
-              typeof m ===
-              "string"
-            ) {
+            group.members ||
+            []
+          ).map(
+            (
+              m: any
+            ) => {
+
+              if (
+                typeof m ===
+                "string"
+              ) {
+
+                return m;
+              }
+
+              if (
+                m.uid ===
+                firebaseUser.uid
+              ) {
+
+                return {
+                  ...m,
+                  paid: true,
+                };
+              }
+
               return m;
             }
-
-            if (
-              m.uid ===
-              firebaseUser.uid
-            ) {
-              return {
-                ...m,
-                paid: true,
-              };
-            }
-
-            return m;
-          });
+          );
 
         await updateDoc(
           groupRef,
@@ -277,7 +359,9 @@ function PaymentContent() {
               updatedMembers,
           }
         );
+
       } catch (err) {
+
         console.error(
           "Paid update error:",
           err
@@ -291,6 +375,7 @@ function PaymentContent() {
 
   const handlePayment =
     async () => {
+
       if (
         !firebaseUser ||
         !groupData ||
@@ -299,7 +384,10 @@ function PaymentContent() {
         return;
 
       try {
-        setProcessing(true);
+
+        setProcessing(
+          true
+        );
 
         await addDoc(
           collection(
@@ -320,7 +408,8 @@ function PaymentContent() {
 
             amount: PRICE,
 
-            status: "pending",
+            status:
+              "pending",
 
             paymentMethod:
               "stripe",
@@ -329,8 +418,6 @@ function PaymentContent() {
               serverTimestamp(),
           }
         );
-
-        await markMemberPaid();
 
         const response =
           await fetch(
@@ -360,17 +447,26 @@ function PaymentContent() {
         const data =
           await response.json();
 
-        if (data.url) {
+        if (
+          data.url
+        ) {
+
           window.location.href =
             data.url;
+
         } else {
+
           alert(
             "Stripe session creation failed ❌"
           );
 
-          setProcessing(false);
+          setProcessing(
+            false
+          );
         }
+
       } catch (error) {
+
         console.error(
           "Stripe payment error:",
           error
@@ -380,7 +476,9 @@ function PaymentContent() {
           "Payment failed ❌"
         );
 
-        setProcessing(false);
+        setProcessing(
+          false
+        );
       }
     };
 
@@ -390,6 +488,7 @@ function PaymentContent() {
 
   const handleRazorpay =
     async () => {
+
       if (
         !firebaseUser ||
         !groupData ||
@@ -398,9 +497,12 @@ function PaymentContent() {
         return;
 
       try {
-        setProcessing(true);
 
-        /* SAVE PAYMENT */
+        setProcessing(
+          true
+        );
+
+        /* CREATE PAYMENT */
 
         await addDoc(
           collection(
@@ -419,9 +521,14 @@ function PaymentContent() {
             option:
               groupData.option,
 
-            amount: PRICE,
+            amount:
+              PRICE,
 
-            status: "pending",
+            status:
+              "pending",
+
+            verified:
+              false,
 
             paymentMethod:
               "razorpay",
@@ -431,40 +538,46 @@ function PaymentContent() {
           }
         );
 
-        /* UPDATE MEMBER */
+        /* CREATE ORDER */
 
-        await markMemberPaid();
+        const orderRes =
+          await fetch(
+            "/api/create-razorpay-order",
+            {
+              method:
+                "POST",
 
-        /* RAZORPAY POPUP */
-const orderRes =
-  await fetch(
-    "/api/create-razorpay-order",
-    {
-      method: "POST",
+              headers: {
+                "Content-Type":
+                  "application/json",
+              },
 
-      headers: {
-        "Content-Type":
-          "application/json",
-      },
+              body:
+                JSON.stringify(
+                  {
+                    amount:
+                      PRICE,
+                  }
+                ),
+            }
+          );
 
-      body: JSON.stringify({
-        amount: PRICE,
-      }),
-    }
-  );
+        const order =
+          await orderRes.json();
 
-const order =
-  await orderRes.json();
+        /* RAZORPAY OPTIONS */
 
         const options = {
+
           key:
-  process.env
-    .NEXT_PUBLIC_RAZORPAY_KEY_ID,
+            process.env
+              .NEXT_PUBLIC_RAZORPAY_KEY_ID,
 
-      order_id:
-  order.id,
+          amount:
+            PRICE * 100,
 
-          currency: "INR",
+          currency:
+            "INR",
 
           name:
             "Partnering",
@@ -472,55 +585,71 @@ const order =
           description:
             "Partner Sync Payment",
 
+          order_id:
+            order.id,
+
           handler:
             async function (
               response: any
             ) {
+
               try {
-                const paymentsRef =
-                  collection(
-                    db,
-                    "payments"
-                  );
 
-                const qPay =
-                  query(
-                    paymentsRef,
+                /* VERIFY PAYMENT */
 
-                    where(
-                      "uid",
-                      "==",
-                      firebaseUser.uid
-                    ),
-
-                    where(
-                      "groupId",
-                      "==",
-                      groupId
-                    )
-                  );
-
-                const paySnap =
-                  await getDocs(
-                    qPay
-                  );
-
-                for (const d of paySnap.docs) {
-                  await updateDoc(
-                    doc(
-                      db,
-                      "payments",
-                      d.id
-                    ),
+                const verifyRes =
+                  await fetch(
+                    "/api/verify-razorpay-payment",
                     {
-                      status:
-                        "paid",
+                      method:
+                        "POST",
 
-                      razorpayPaymentId:
-                        response.razorpay_payment_id,
+                      headers:
+                        {
+                          "Content-Type":
+                            "application/json",
+                        },
+
+                      body:
+                        JSON.stringify(
+                          {
+                            razorpay_order_id:
+                              response.razorpay_order_id,
+
+                            razorpay_payment_id:
+                              response.razorpay_payment_id,
+
+                            razorpay_signature:
+                              response.razorpay_signature,
+
+                            uid:
+                              firebaseUser.uid,
+
+                            groupId,
+                          }
+                        ),
                     }
                   );
+
+                const verifyData =
+                  await verifyRes.json();
+
+                if (
+                  !verifyData.success
+                ) {
+
+                  alert(
+                    "Payment verification failed ❌"
+                  );
+
+                  return;
                 }
+
+                await markMemberPaid();
+
+                setPaymentCompleted(
+                  true
+                );
 
                 alert(
                   "Payment successful ✅"
@@ -529,13 +658,15 @@ const order =
                 router.push(
                   `/chat/${groupId}`
                 );
+
               } catch (err) {
+
                 console.error(
                   err
                 );
 
                 alert(
-                  "Payment verification failed"
+                  "Payment verification failed ❌"
                 );
               }
             },
@@ -562,7 +693,9 @@ const order =
           );
 
         razor.open();
+
       } catch (error) {
+
         console.error(
           "Razorpay error:",
           error
@@ -572,7 +705,9 @@ const order =
           "Razorpay payment failed ❌"
         );
 
-        setProcessing(false);
+        setProcessing(
+          false
+        );
       }
     };
 
@@ -581,6 +716,7 @@ const order =
   ----------------------------- */
 
   if (loading) {
+
     return (
       <div className="min-h-screen flex items-center justify-center text-white">
         Loading Partner Sync details...
@@ -594,6 +730,7 @@ const order =
 
   return (
     <div className="min-h-screen flex items-center justify-center text-white px-4">
+
       <div
         className="
           bg-black/40
@@ -605,6 +742,7 @@ const order =
           border border-[#E6C972]/30
         "
       >
+
         <h2 className="text-3xl font-bold text-[#E6C972] mb-4">
           Activate Partner Sync
         </h2>
@@ -616,6 +754,7 @@ const order =
         {/* GROUP INFO */}
 
         {groupData && (
+
           <div
             className="
               mb-6
@@ -625,26 +764,40 @@ const order =
               bg-black/30
             "
           >
+
             <p className="text-gray-300 mb-1">
+
               Category:
+
               <span className="text-[#E6C972] ml-2">
+
                 {groupData.category.replace(
                   "-",
                   " "
                 )}
+
               </span>
+
             </p>
 
             <p className="text-gray-300 mb-1">
+
               Option:
+
               <span className="text-[#E6C972] ml-2">
+
                 {groupData.option}
+
               </span>
+
             </p>
 
             <p className="text-gray-400 text-sm mt-2">
+
               Members Synced:
+
               {" "}
+
               {
                 groupData.membersCount
               }
@@ -652,7 +805,9 @@ const order =
               {
                 groupData.requiredSize
               }
+
             </p>
+
           </div>
         )}
 
@@ -664,57 +819,78 @@ const order =
 
         <div className="text-3xl font-bold text-green-400 mb-6">
           ₹29
-          
         </div>
 
-        {/* STRIPE */}
+        {/* ALREADY PAID */}
 
-        <button
-          onClick={
-            handlePayment
-          }
-          disabled={
-            processing ||
-            existingPayment
-          }
-          className="
-            w-full py-3 rounded-xl
-            bg-[#635BFF]
-            text-white font-bold
-            hover:opacity-90
-            transition
-            disabled:opacity-50
-          "
-        >
-          {processing
-            ? "Processing..."
-            : "Pay with Stripe"}
-        </button>
+        {paymentCompleted ? (
 
-        {/* RAZORPAY */}
+          <button
+            onClick={() =>
+              router.push(
+                `/chat/${groupId}`
+              )
+            }
+            className="
+              w-full py-3 rounded-xl
+              bg-green-600
+              text-white font-bold
+            "
+          >
+            Open Chat
+          </button>
 
-        <button
-          onClick={
-            handleRazorpay
-          }
-          disabled={
-            processing ||
-            existingPayment
-          }
-          className="
-            w-full py-3 rounded-xl
-            bg-[#E6C972]
-            text-black font-bold
-            hover:bg-[#f5e29c]
-            transition
-            disabled:opacity-50
-            mt-4
-          "
-        >
-          {processing
-            ? "Processing..."
-            : "Pay ₹29 with Razorpay"}
-        </button>
+        ) : (
+
+          <>
+            {/* STRIPE */}
+
+            <button
+              onClick={
+                handlePayment
+              }
+              disabled={
+                processing
+              }
+              className="
+                w-full py-3 rounded-xl
+                bg-[#635BFF]
+                text-white font-bold
+                hover:opacity-90
+                transition
+                disabled:opacity-50
+              "
+            >
+              {processing
+                ? "Processing..."
+                : "Pay with Stripe"}
+            </button>
+
+            {/* RAZORPAY */}
+
+            <button
+              onClick={
+                handleRazorpay
+              }
+              disabled={
+                processing
+              }
+              className="
+                w-full py-3 rounded-xl
+                bg-[#E6C972]
+                text-black font-bold
+                hover:bg-[#f5e29c]
+                transition
+                disabled:opacity-50
+                mt-4
+              "
+            >
+              {processing
+                ? "Processing..."
+                : "Pay ₹29 with Razorpay"}
+            </button>
+          </>
+        )}
 
         {/* BACK */}
 
@@ -733,12 +909,14 @@ const order =
         >
           ← Back to Dashboard
         </button>
+
       </div>
     </div>
   );
 }
 
 export default function PaymentPage() {
+
   return (
     <Suspense
       fallback={

@@ -36,9 +36,12 @@ import {
 } from "firebase/auth";
 
 export default function ChatPage() {
-  const router = useRouter();
 
-  const params = useParams();
+  const router =
+    useRouter();
+
+  const params =
+    useParams();
 
   const groupId =
     params.groupId as string;
@@ -48,32 +51,48 @@ export default function ChatPage() {
     setFirebaseUser,
   ] = useState<any>(null);
 
-  const [chatId, setChatId] =
-    useState<string | null>(null);
+  const [
+    chatId,
+    setChatId,
+  ] = useState<string | null>(
+    null
+  );
 
-  const [messages, setMessages] =
-    useState<any[]>([]);
+  const [
+    messages,
+    setMessages,
+  ] = useState<any[]>(
+    []
+  );
 
   const [
     newMessage,
     setNewMessage,
   ] = useState("");
 
-  const [loading, setLoading] =
-    useState(true);
+  const [
+    loading,
+    setLoading,
+  ] = useState(true);
 
   const [
     typingUsers,
     setTypingUsers,
-  ] = useState<string[]>([]);
+  ] = useState<string[]>(
+    []
+  );
 
   const [
     onlineUsers,
     setOnlineUsers,
-  ] = useState<string[]>([]);
+  ] = useState<string[]>(
+    []
+  );
 
-  const [mounted, setMounted] =
-    useState(false);
+  const [
+    mounted,
+    setMounted,
+  ] = useState(false);
 
   const [
     authorized,
@@ -91,14 +110,17 @@ export default function ChatPage() {
     setMounted(true);
   }, []);
 
-  /* ---------------- AUTH CHECK ---------------- */
+  /* ---------------- AUTH ---------------- */
 
   useEffect(() => {
+
     const unsub =
       onAuthStateChanged(
         auth,
         async (user) => {
+
           if (!user) {
+
             router.push(
               "/login"
             );
@@ -106,7 +128,11 @@ export default function ChatPage() {
             return;
           }
 
-          setFirebaseUser(user);
+          setFirebaseUser(
+            user
+          );
+
+          /* ONLINE STATUS */
 
           await setDoc(
             doc(
@@ -127,12 +153,15 @@ export default function ChatPage() {
         }
       );
 
-    return () => unsub();
+    return () =>
+      unsub();
+
   }, [router]);
 
   /* ---------------- VERIFY ACCESS ---------------- */
 
   useEffect(() => {
+
     if (
       !firebaseUser ||
       !groupId
@@ -141,8 +170,10 @@ export default function ChatPage() {
 
     const verifyAccess =
       async () => {
+
         try {
-          /* CHECK PAYMENT */
+
+          /* PAYMENT CHECK */
 
           const paymentsRef =
             collection(
@@ -150,26 +181,38 @@ export default function ChatPage() {
               "payments"
             );
 
-          const qPay = query(
-            paymentsRef,
+          const qPay =
+            query(
+              paymentsRef,
 
-            where(
-              "uid",
-              "==",
-              firebaseUser.uid
-            ),
+              where(
+                "uid",
+                "==",
+                firebaseUser.uid
+              ),
 
-            where(
-              "groupId",
-              "==",
-              groupId
-            )
-          );
+              where(
+                "groupId",
+                "==",
+                groupId
+              ),
+
+              where(
+                "status",
+                "==",
+                "paid"
+              )
+            );
 
           const paySnap =
-            await getDocs(qPay);
+            await getDocs(
+              qPay
+            );
 
-          if (paySnap.empty) {
+          if (
+            paySnap.empty
+          ) {
+
             router.push(
               "/dashboard"
             );
@@ -177,13 +220,14 @@ export default function ChatPage() {
             return;
           }
 
-          /* CHECK GROUP */
+          /* GROUP CHECK */
 
-          const groupRef = doc(
-            db,
-            "groups",
-            groupId
-          );
+          const groupRef =
+            doc(
+              db,
+              "groups",
+              groupId
+            );
 
           const groupSnap =
             await getDoc(
@@ -193,6 +237,7 @@ export default function ChatPage() {
           if (
             !groupSnap.exists()
           ) {
+
             router.push(
               "/dashboard"
             );
@@ -208,7 +253,10 @@ export default function ChatPage() {
               firebaseUser.uid
             );
 
-          if (!isMember) {
+          if (
+            !isMember
+          ) {
+
             router.push(
               "/dashboard"
             );
@@ -224,20 +272,26 @@ export default function ChatPage() {
               "chats"
             );
 
-          const qChat = query(
-            chatsRef,
+          const qChat =
+            query(
+              chatsRef,
 
-            where(
-              "groupId",
-              "==",
-              groupId
-            )
-          );
+              where(
+                "groupId",
+                "==",
+                groupId
+              )
+            );
 
           const chatSnap =
-            await getDocs(qChat);
+            await getDocs(
+              qChat
+            );
 
-          if (chatSnap.empty) {
+          if (
+            chatSnap.empty
+          ) {
+
             router.push(
               "/dashboard"
             );
@@ -248,12 +302,20 @@ export default function ChatPage() {
           const chatDoc =
             chatSnap.docs[0];
 
-          setChatId(chatDoc.id);
+          setChatId(
+            chatDoc.id
+          );
 
-          setAuthorized(true);
+          setAuthorized(
+            true
+          );
 
-          setLoading(false);
+          setLoading(
+            false
+          );
+
         } catch (error) {
+
           console.error(
             "Verify access error:",
             error
@@ -266,15 +328,17 @@ export default function ChatPage() {
       };
 
     verifyAccess();
+
   }, [
     firebaseUser,
     groupId,
     router,
   ]);
 
-  /* ---------------- LOAD MESSAGES ---------------- */
+  /* ---------------- REALTIME MESSAGES ---------------- */
 
   useEffect(() => {
+
     if (
       !chatId ||
       !firebaseUser
@@ -289,36 +353,61 @@ export default function ChatPage() {
         "messages"
       );
 
-    const qMessages = query(
-      messagesRef,
+    const qMessages =
+      query(
+        messagesRef,
 
-      orderBy(
-        "createdAt",
-        "asc"
-      )
-    );
+        orderBy(
+          "createdAt",
+          "asc"
+        )
+      );
 
     const unsub =
       onSnapshot(
         qMessages,
-        async (snapshot) => {
-          const msgs: any[] = [];
+        async (
+          snapshot
+        ) => {
+
+          const msgs: any[] =
+            [];
 
           snapshot.forEach(
-            (docSnap) => {
+            (
+              docSnap
+            ) => {
+
               msgs.push({
-                id: docSnap.id,
+                id:
+                  docSnap.id,
 
                 ...docSnap.data(),
               });
             }
           );
 
-          setMessages(msgs);
+          setMessages(
+            msgs
+          );
+
+          /* AUTO SCROLL */
+
+          setTimeout(() => {
+
+            bottomRef.current?.scrollIntoView(
+              {
+                behavior:
+                  "smooth",
+              }
+            );
+
+          }, 100);
 
           /* SEEN STATUS */
 
           for (const msg of msgs) {
+
             if (
               msg.senderId !==
                 firebaseUser.uid &&
@@ -327,7 +416,9 @@ export default function ChatPage() {
                   firebaseUser.uid
                 ))
             ) {
+
               try {
+
                 const msgRef =
                   doc(
                     db,
@@ -350,7 +441,9 @@ export default function ChatPage() {
                     ],
                   }
                 );
+
               } catch (error) {
+
                 console.error(
                   "Seen update error:",
                   error
@@ -361,13 +454,74 @@ export default function ChatPage() {
         }
       );
 
-    return () => unsub();
-  }, [chatId, firebaseUser]);
+    return () =>
+      unsub();
 
-  /* ---------------- TYPING STATUS ---------------- */
+  }, [
+    chatId,
+    firebaseUser,
+  ]);
+
+  /* ---------------- ONLINE USERS ---------------- */
 
   useEffect(() => {
-    if (!chatId) return;
+
+    if (!chatId)
+      return;
+
+    const statusRef =
+      collection(
+        db,
+        "status"
+      );
+
+    const unsub =
+      onSnapshot(
+        statusRef,
+        (
+          snapshot
+        ) => {
+
+          const users:
+            string[] =
+            [];
+
+          snapshot.forEach(
+            (
+              docSnap
+            ) => {
+
+              const data =
+                docSnap.data();
+
+              if (
+                data.online
+              ) {
+
+                users.push(
+                  docSnap.id
+                );
+              }
+            }
+          );
+
+          setOnlineUsers(
+            users
+          );
+        }
+      );
+
+    return () =>
+      unsub();
+
+  }, [chatId]);
+
+  /* ---------------- TYPING ---------------- */
+
+  useEffect(() => {
+
+    if (!chatId)
+      return;
 
     const typingRef =
       collection(
@@ -380,12 +534,19 @@ export default function ChatPage() {
     const unsub =
       onSnapshot(
         typingRef,
-        (snapshot) => {
-          const users: string[] =
+        (
+          snapshot
+        ) => {
+
+          const users:
+            string[] =
             [];
 
           snapshot.forEach(
-            (docSnap) => {
+            (
+              docSnap
+            ) => {
+
               const data =
                 docSnap.data();
 
@@ -394,6 +555,7 @@ export default function ChatPage() {
                   firebaseUser?.uid &&
                 data.typing
               ) {
+
                 users.push(
                   docSnap.id
                 );
@@ -407,14 +569,24 @@ export default function ChatPage() {
         }
       );
 
-    return () => unsub();
-  }, [chatId, firebaseUser]);
+    return () =>
+      unsub();
+
+  }, [
+    chatId,
+    firebaseUser,
+  ]);
 
   /* ---------------- HANDLE TYPING ---------------- */
 
   const handleTyping =
-    async (value: string) => {
-      setNewMessage(value);
+    async (
+      value: string
+    ) => {
+
+      setNewMessage(
+        value
+      );
 
       if (
         !chatId ||
@@ -423,6 +595,7 @@ export default function ChatPage() {
         return;
 
       try {
+
         const typingDoc =
           doc(
             db,
@@ -443,7 +616,9 @@ export default function ChatPage() {
             merge: true,
           }
         );
+
       } catch (error) {
+
         console.error(
           "Typing error:",
           error
@@ -455,6 +630,7 @@ export default function ChatPage() {
 
   const sendMessage =
     async () => {
+
       if (
         !newMessage.trim() ||
         !chatId ||
@@ -463,6 +639,7 @@ export default function ChatPage() {
         return;
 
       try {
+
         const messagesRef =
           collection(
             db,
@@ -491,13 +668,37 @@ export default function ChatPage() {
               firebaseUser.uid,
             ],
 
-            deleted: false,
+            deleted:
+              false,
 
-            deletedFor: [],
+            deletedFor:
+              [],
+          }
+        );
+
+        /* UPDATE CHAT */
+
+        const chatRef =
+          doc(
+            db,
+            "chats",
+            chatId
+          );
+
+        await updateDoc(
+          chatRef,
+          {
+            lastMessage:
+              newMessage,
+
+            lastMessageAt:
+              serverTimestamp(),
           }
         );
 
         setNewMessage("");
+
+        /* STOP TYPING */
 
         const typingDoc =
           doc(
@@ -517,7 +718,9 @@ export default function ChatPage() {
             merge: true,
           }
         );
+
       } catch (error) {
+
         console.error(
           "Send message error:",
           error
@@ -525,20 +728,10 @@ export default function ChatPage() {
       }
     };
 
-  /* ---------------- AUTO SCROLL ---------------- */
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView(
-      {
-        behavior:
-          "smooth",
-      }
-    );
-  }, [messages]);
-
   /* ---------------- LOADING ---------------- */
 
   if (loading) {
+
     return (
       <div className="min-h-screen flex items-center justify-center bg-black text-white">
         Loading chat...
@@ -549,6 +742,7 @@ export default function ChatPage() {
   /* ---------------- UNAUTHORIZED ---------------- */
 
   if (!authorized) {
+
     return (
       <div className="min-h-screen flex items-center justify-center bg-black text-white">
         Unauthorized
@@ -560,26 +754,50 @@ export default function ChatPage() {
 
   return (
     <div className="min-h-screen bg-black text-white flex flex-col">
+
       {/* HEADER */}
 
-      <div className="p-4 border-b border-gray-700">
-        <h1 className="text-[#E6C972] text-xl font-bold">
-          Partner Sync Chat
-        </h1>
+      <div className="p-4 border-b border-gray-700 flex justify-between items-center">
 
-        <p className="text-sm text-green-400">
-          {onlineUsers.length >
-          1
-            ? "Members Online"
-            : "Private Group"}
-        </p>
+        <div>
+
+          <h1 className="text-[#E6C972] text-xl font-bold">
+            Partner Sync Chat
+          </h1>
+
+          <p className="text-sm text-green-400">
+
+            {onlineUsers.length >
+            1
+              ? `${onlineUsers.length} members online`
+              : "Private Group"}
+
+          </p>
+
+        </div>
+
+        <button
+          onClick={() =>
+            router.push(
+              "/dashboard"
+            )
+          }
+          className="text-sm text-gray-400 hover:text-white"
+        >
+          Back
+        </button>
+
       </div>
 
       {/* MESSAGES */}
 
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
+
         {messages.map(
-          (msg) => {
+          (
+            msg
+          ) => {
+
             const isMine =
               msg.senderId ===
               firebaseUser?.uid;
@@ -603,84 +821,12 @@ export default function ChatPage() {
                   )
                 : "";
 
-            const handleDeleteForEveryone =
-              async () => {
-                if (
-                  !chatId
-                )
-                  return;
-
-                try {
-                  const msgRef =
-                    doc(
-                      db,
-                      "chats",
-                      chatId,
-                      "messages",
-                      msg.id
-                    );
-
-                  await updateDoc(
-                    msgRef,
-                    {
-                      text:
-                        "This message was deleted",
-
-                      deleted: true,
-                    }
-                  );
-                } catch (error) {
-                  console.error(
-                    "Delete for everyone error:",
-                    error
-                  );
-                }
-              };
-
-            const handleDeleteForMe =
-              async () => {
-                if (
-                  !chatId
-                )
-                  return;
-
-                try {
-                  const msgRef =
-                    doc(
-                      db,
-                      "chats",
-                      chatId,
-                      "messages",
-                      msg.id
-                    );
-
-                  await updateDoc(
-                    msgRef,
-                    {
-                      deletedFor:
-                        [
-                          ...(
-                            msg.deletedFor ||
-                            []
-                          ),
-
-                          firebaseUser.uid,
-                        ],
-                    }
-                  );
-                } catch (error) {
-                  console.error(
-                    "Delete for me error:",
-                    error
-                  );
-                }
-              };
-
             if (
               msg.deletedFor?.includes(
                 firebaseUser.uid
               )
             ) {
+
               return null;
             }
 
@@ -695,12 +841,17 @@ export default function ChatPage() {
                     : "bg-gray-700 text-white"
                 }`}
               >
+
                 {msg.deleted ? (
+
                   <div className="italic text-gray-400">
                     🚫 This message was deleted
                   </div>
+
                 ) : (
+
                   <div>
+
                     <div className="text-xs opacity-70 mb-1">
                       {
                         msg.senderName
@@ -712,47 +863,31 @@ export default function ChatPage() {
                         msg.text
                       }
                     </div>
+
                   </div>
                 )}
 
                 <div className="text-xs mt-2 flex justify-between items-center">
+
                   <span>
                     {time}
                   </span>
 
                   {isMine && (
+
                     <span>
+
                       {msg.seenBy
                         ?.length >
                       1
                         ? "✔✔"
                         : "✔"}
+
                     </span>
                   )}
+
                 </div>
 
-                {isMine &&
-                  !msg.deleted && (
-                    <div className="absolute top-1 right-1 hidden group-hover:flex gap-2 text-xs">
-                      <button
-                        onClick={
-                          handleDeleteForMe
-                        }
-                        className="text-yellow-400"
-                      >
-                        Delete Me
-                      </button>
-
-                      <button
-                        onClick={
-                          handleDeleteForEveryone
-                        }
-                        className="text-red-400"
-                      >
-                        Delete All
-                      </button>
-                    </div>
-                  )}
               </div>
             );
           }
@@ -762,19 +897,20 @@ export default function ChatPage() {
 
         {typingUsers.length >
           0 && (
+
           <div className="text-sm italic text-gray-400">
             Someone is typing...
           </div>
         )}
 
-        <div
-          ref={bottomRef}
-        />
+        <div ref={bottomRef} />
+
       </div>
 
       {/* INPUT */}
 
       <div className="p-4 border-t border-gray-700 flex gap-2">
+
         <input
           type="text"
           value={
@@ -788,18 +924,20 @@ export default function ChatPage() {
             )
           }
           placeholder="Type message..."
-          className="flex-1 p-2 rounded-lg bg-gray-800 text-white outline-none"
+          className="flex-1 p-3 rounded-lg bg-gray-800 text-white outline-none"
         />
 
         <button
           onClick={
             sendMessage
           }
-          className="px-4 py-2 rounded-lg bg-[#E6C972] text-black font-semibold"
+          className="px-5 py-3 rounded-lg bg-[#E6C972] text-black font-semibold"
         >
           Send
         </button>
+
       </div>
+
     </div>
   );
 }

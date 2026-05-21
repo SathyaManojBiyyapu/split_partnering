@@ -173,6 +173,7 @@ export default function AdminPage() {
               pdata.status ===
               "paid"
             ) {
+
               if (
                 !paidMap[
                   pdata.groupId
@@ -205,10 +206,11 @@ export default function AdminPage() {
         const builtGroups =
           groupsSnap.docs.map(
             (gDoc) => {
+
               const data =
                 gDoc.data() as any;
 
-              /* SAFE MEMBERS */
+              /* MEMBERS */
 
               const cleanedMembers =
                 Array.isArray(
@@ -218,16 +220,27 @@ export default function AdminPage() {
                       (
                         m: any
                       ) => {
+
+                        /* OLD GROUPS */
+
                         if (
                           typeof m ===
                           "string"
                         ) {
+
                           return {
+                            uid: "",
+
                             phone:
                               m.trim(),
 
                             name:
+                              data.createdByName ||
                               "Unknown User",
+
+                            gender:
+                              data.gender ||
+                              "N/A",
 
                             joinedAt:
                               data.createdAt,
@@ -235,6 +248,8 @@ export default function AdminPage() {
                             paid: false,
                           };
                         }
+
+                        /* NEW GROUPS */
 
                         return {
                           uid:
@@ -248,6 +263,10 @@ export default function AdminPage() {
                           name:
                             m?.name ||
                             "Unknown User",
+
+                          gender:
+                            m?.gender ||
+                            "N/A",
 
                           joinedAt:
                             m?.joinedAt ||
@@ -284,6 +303,10 @@ export default function AdminPage() {
 
                     name:
                       m.name,
+
+                    gender:
+                      m.gender ||
+                      "N/A",
 
                     joinedAt:
                       m.joinedAt,
@@ -324,17 +347,16 @@ export default function AdminPage() {
             }
           );
 
-        /* REMOVE NULLS */
+        /* SORT */
 
         const list =
           builtGroups.filter(
             Boolean
           );
 
-        /* SORT */
-
         list.sort(
           (a, b) => {
+
             const ta =
               a
                 .lastActivityAt
@@ -372,7 +394,9 @@ export default function AdminPage() {
         setCompletedGroups(
           completedCount
         );
+
       } catch (err) {
+
         console.error(
           "Dashboard error:",
           err
@@ -387,10 +411,12 @@ export default function AdminPage() {
   ---------------------------- */
 
   useEffect(() => {
+
     if (!authorized)
       return;
 
     fetchDashboard();
+
   }, [authorized]);
 
   /* ----------------------------
@@ -399,6 +425,7 @@ export default function AdminPage() {
 
   const adminLogout =
     async () => {
+
       await signOut(auth);
 
       setAuthorized(
@@ -429,7 +456,9 @@ export default function AdminPage() {
     async (
       id: string
     ) => {
+
       try {
+
         await updateDoc(
           doc(
             db,
@@ -463,7 +492,9 @@ export default function AdminPage() {
         alert(
           "Group marked completed ✅"
         );
+
       } catch (err) {
+
         console.error(
           err
         );
@@ -478,6 +509,7 @@ export default function AdminPage() {
     async (
       id: string
     ) => {
+
       if (
         !confirm(
           "Delete this group?"
@@ -486,6 +518,7 @@ export default function AdminPage() {
         return;
 
       try {
+
         await deleteDoc(
           doc(
             db,
@@ -502,7 +535,9 @@ export default function AdminPage() {
                 id
             )
         );
+
       } catch (err) {
+
         console.error(
           err
         );
@@ -510,7 +545,7 @@ export default function AdminPage() {
     };
 
   /* ----------------------------
-     AUTH LOADING
+     LOADING
   ---------------------------- */
 
   if (loading) {
@@ -530,19 +565,22 @@ export default function AdminPage() {
   }
 
   /* ----------------------------
-     DASHBOARD
+     UI
   ---------------------------- */
 
   return (
     <div className="pt-28 px-6 bg-black text-[#F5F5F5] min-h-screen">
+
       {/* HEADER */}
 
       <div className="flex justify-between items-center mb-6 flex-wrap gap-3">
+
         <h1 className="text-3xl font-bold text-[#FFD166]">
           Admin — Partner Groups
         </h1>
 
         <div className="flex gap-2">
+
           <button
             onClick={
               refreshDashboard
@@ -562,22 +600,21 @@ export default function AdminPage() {
           >
             Logout
           </button>
+
         </div>
       </div>
 
       {/* STATS */}
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+
         <div className="bg-[#0c0c0c] border border-[#FFD166]/20 rounded-xl p-4">
           <p className="text-gray-400 text-sm">
             Revenue
           </p>
 
           <h2 className="text-2xl font-bold text-green-400 mt-1">
-            ₹
-            {
-              totalRevenue
-            }
+            ₹{totalRevenue}
           </h2>
         </div>
 
@@ -587,9 +624,7 @@ export default function AdminPage() {
           </p>
 
           <h2 className="text-2xl font-bold text-[#FFD166] mt-1">
-            {
-              totalPaidUsers
-            }
+            {totalPaidUsers}
           </h2>
         </div>
 
@@ -599,9 +634,7 @@ export default function AdminPage() {
           </p>
 
           <h2 className="text-2xl font-bold text-blue-400 mt-1">
-            {
-              totalUsers
-            }
+            {totalUsers}
           </h2>
         </div>
 
@@ -611,47 +644,46 @@ export default function AdminPage() {
           </p>
 
           <h2 className="text-2xl font-bold text-purple-400 mt-1">
-            {
-              completedGroups
-            }
+            {completedGroups}
           </h2>
         </div>
+
       </div>
 
       {/* GROUPS */}
 
       {refreshing ? (
+
         <div className="space-y-4 animate-pulse">
           <div className="h-32 bg-[#111] rounded-xl" />
           <div className="h-32 bg-[#111] rounded-xl" />
           <div className="h-32 bg-[#111] rounded-xl" />
         </div>
-      ) : groups.length ===
-        0 ? (
+
+      ) : groups.length === 0 ? (
+
         <div className="text-center text-gray-400 mt-20">
           No groups found
         </div>
+
       ) : (
+
         <div className="space-y-4">
+
           {groups.map(
             (g) => (
+
               <div
-                key={
-                  g.id
-                }
+                key={g.id}
                 className="p-4 bg-[#0c0c0c] border border-[#FFD166]/30 rounded-xl"
               >
+
                 {/* TOP */}
 
                 <div className="flex justify-between items-center flex-wrap gap-2">
+
                   <p className="text-xl font-bold text-[#FFD166]">
-                    {
-                      g.category
-                    }{" "}
-                    →{" "}
-                    {
-                      g.option
-                    }
+                    {g.category} → {g.option}
                   </p>
 
                   <span
@@ -667,62 +699,52 @@ export default function AdminPage() {
                   >
                     {g.status}
                   </span>
+
                 </div>
 
                 <p className="text-[#FFD166] font-bold mt-1">
-                  {
-                    g.membersCount
-                  }
-                  /
-                  {
-                    g.requiredSize
-                  }
+                  {g.membersCount}/{g.requiredSize}
                 </p>
 
                 <p className="text-xs text-gray-400 mt-1">
-                  📅{" "}
-                  {formatDateTime(
-                    g.createdAt
-                  )}
+                  📅 {formatDateTime(g.createdAt)}
                 </p>
 
                 {/* MEMBERS */}
 
                 <div className="mt-4 space-y-2">
+
                   {g.membersDetailed?.map(
                     (
                       m: any,
                       i: number
                     ) => (
+
                       <div
-                        key={
-                          i
-                        }
+                        key={i}
                         className="flex justify-between items-center bg-black/40 p-3 rounded"
                       >
+
                         <div>
+
                           <p className="text-sm font-bold">
-                            👤{" "}
-                            {
-                              m.name
-                            }
+                            👤 {m.name}
                           </p>
 
                           <p className="text-xs text-gray-400">
-                            📞{" "}
-                            {
-                              m.phone
-                            }
+                            📞 {m.phone}
+                          </p>
+
+                          <p className="text-xs text-pink-400">
+                            🚻 {m.gender}
                           </p>
 
                           <p className="text-xs text-gray-500">
-                            📅{" "}
-                            {formatDateTime(
-                              m.joinedAt
-                            )}
+                            📅 {formatDateTime(m.joinedAt)}
                           </p>
 
                           <div className="mt-2 flex items-center gap-2">
+
                             <div
                               className={`w-2 h-2 rounded-full ${
                                 m.paid
@@ -742,6 +764,7 @@ export default function AdminPage() {
                                 ? "Paid"
                                 : "Not Paid"}
                             </p>
+
                           </div>
                         </div>
 
@@ -759,14 +782,17 @@ export default function AdminPage() {
                         >
                           🟢
                         </button>
+
                       </div>
                     )
                   )}
+
                 </div>
 
                 {/* ACTIONS */}
 
                 <div className="flex gap-2 mt-4 flex-wrap">
+
                   <button
                     className="bg-blue-600 px-3 py-1 rounded"
                     onClick={() =>
@@ -788,10 +814,13 @@ export default function AdminPage() {
                   >
                     Delete Group
                   </button>
+
                 </div>
+
               </div>
             )
           )}
+
         </div>
       )}
     </div>

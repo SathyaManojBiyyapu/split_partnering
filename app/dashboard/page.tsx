@@ -84,8 +84,6 @@ export default function DashboardPage() {
 
           try {
 
-            /* PAYMENTS */
-
             const paymentsSnap =
               await getDocs(
                 collection(
@@ -179,6 +177,7 @@ export default function DashboardPage() {
                 }
 
                 groups.push({
+
                   id:
                     docSnap.id,
 
@@ -466,6 +465,7 @@ export default function DashboardPage() {
   }
 
   return (
+
     <div className="pt-32 px-6 max-w-5xl mx-auto text-white">
 
       <h1 className="text-4xl font-bold text-[#FFD166]">
@@ -512,6 +512,8 @@ export default function DashboardPage() {
                 key={group.id}
                 className="bg-[#0c0c0c] border border-[#FFD166]/20 rounded-2xl p-5"
               >
+
+                {/* TOP */}
 
                 <div className="flex justify-between items-center flex-wrap gap-3">
 
@@ -568,83 +570,120 @@ export default function DashboardPage() {
 
                 </div>
 
-                <div className="mt-5 space-y-3">
+                {/* LOCKED */}
 
-                  {group.members.map(
-                    (
-                      m: any,
-                      i: number
-                    ) => {
+                {!group.isPaid && (
 
-                      const member =
-                        typeof m ===
-                        "string"
-                          ? {
-                              name:
-                                "User",
-                              phone:
-                                m,
-                            }
-                          : m;
+                  <div
+                    className="
+                      mt-5
+                      rounded-2xl
+                      border border-yellow-500/30
+                      bg-yellow-500/10
+                      p-5
+                    "
+                  >
 
-                      return (
+                    <p className="text-yellow-400 text-lg font-bold">
+                      🔒 Partner Details Locked
+                    </p>
 
-                        <div
-                          key={i}
-                          className="bg-black/40 rounded-xl p-4 flex items-center justify-between"
-                        >
+                    <p className="text-sm text-gray-400 mt-2 leading-relaxed">
 
-                          <div className="flex items-center gap-4">
+                      Complete the ₹29 payment
+                      to unlock partner details,
+                      private chat access,
+                      and full coordination tools.
 
-                            <img
-                              src={
-                                member.photoURL ||
-                                "https://ui-avatars.com/api/?background=000000&color=FFD166&name=User"
+                    </p>
+
+                  </div>
+                )}
+
+                {/* MEMBERS AFTER PAYMENT */}
+
+                {group.isPaid && (
+
+                  <div className="mt-5 space-y-3">
+
+                    {group.members.map(
+                      (
+                        m: any,
+                        i: number
+                      ) => {
+
+                        const member =
+                          typeof m ===
+                          "string"
+                            ? {
+                                name:
+                                  "User",
+                                phone:
+                                  m,
                               }
-                              alt="user"
-                              className="w-12 h-12 rounded-full border border-[#FFD166]"
-                            />
+                            : m;
 
-                            <div>
+                        return (
 
-                              <p className="font-bold">
-                                👤 {
-                                  member.name ||
-                                  "User"
+                          <div
+                            key={i}
+                            className="bg-black/40 rounded-xl p-4 flex items-center justify-between"
+                          >
+
+                            <div className="flex items-center gap-4">
+
+                              <img
+                                src={
+                                  member.photoURL ||
+                                  "https://ui-avatars.com/api/?background=000000&color=FFD166&name=User"
                                 }
-                              </p>
+                                alt="user"
+                                className="w-12 h-12 rounded-full border border-[#FFD166]"
+                              />
 
-                              <p className="text-sm text-gray-400 mt-1">
-                                📞 {
-                                  member.phone ||
-                                  "N/A"
-                                }
-                              </p>
+                              <div>
+
+                                <p className="font-bold">
+                                  👤 {
+                                    member.name ||
+                                    "User"
+                                  }
+                                </p>
+
+                                <p className="text-sm text-gray-400 mt-1">
+                                  📞 {
+                                    member.phone ||
+                                    "N/A"
+                                  }
+                                </p>
+
+                              </div>
 
                             </div>
 
+                            <span
+                              className={`text-xs font-bold ${
+                                member.paid
+                                  ? "text-green-400"
+                                  : "text-red-400"
+                              }`}
+                            >
+                              {
+                                member.paid
+                                  ? "PAID"
+                                  : "NOT PAID"
+                              }
+                            </span>
+
                           </div>
+                        );
+                      }
+                    )}
 
-                          <span
-                            className={`text-xs font-bold ${
-                              member.paid
-                                ? "text-green-400"
-                                : "text-red-400"
-                            }`}
-                          >
-                            {
-                              member.paid
-                                ? "PAID"
-                                : "NOT PAID"
-                            }
-                          </span>
+                  </div>
+                )}
 
-                        </div>
-                      );
-                    }
-                  )}
-
-                </div>
+                {/* ACTIONS */}
 
                 <div className="flex gap-3 mt-5 flex-wrap">
 
@@ -656,9 +695,16 @@ export default function DashboardPage() {
                           `/payment?groupId=${group.id}`
                         )
                       }
-                      className="px-4 py-2 rounded-lg bg-[#FFD166] text-black font-bold"
+                      className="
+                        px-5 py-2 rounded-xl
+                        bg-[#FFD166]
+                        text-black
+                        font-bold
+                        hover:scale-105
+                        transition
+                      "
                     >
-                      Pay ₹29
+                      Unlock for ₹29
                     </button>
 
                   ) : (
@@ -669,7 +715,13 @@ export default function DashboardPage() {
                           `/chat/${group.id}`
                         )
                       }
-                      className="px-4 py-2 rounded-lg bg-green-600 font-bold"
+                      className="
+                        px-5 py-2 rounded-xl
+                        bg-green-600
+                        font-bold
+                        hover:scale-105
+                        transition
+                      "
                     >
                       Open Chat
                     </button>
@@ -682,7 +734,13 @@ export default function DashboardPage() {
                         group.id
                       )
                     }
-                    className="px-4 py-2 rounded-lg bg-red-600 font-bold"
+                    className="
+                      px-5 py-2 rounded-xl
+                      bg-red-600
+                      font-bold
+                      hover:scale-105
+                      transition
+                    "
                   >
                     Remove Match
                   </button>

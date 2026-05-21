@@ -168,8 +168,10 @@ async function createOrJoinGroup(
       userData.photoURL ||
       "",
 
+    /* FIXED */
+
     joinedAt:
-      serverTimestamp(),
+      new Date(),
 
     paid: false,
   };
@@ -247,6 +249,9 @@ async function createOrJoinGroup(
           gdoc.id
         );
 
+      const updatedCount =
+        members.length + 1;
+
       await updateDoc(
         gRef,
         {
@@ -262,8 +267,7 @@ async function createOrJoinGroup(
             ),
 
           membersCount:
-            members.length +
-            1,
+            updatedCount,
 
           updatedAt:
             serverTimestamp(),
@@ -272,7 +276,7 @@ async function createOrJoinGroup(
             serverTimestamp(),
 
           status:
-            members.length + 1 >=
+            updatedCount >=
             required
               ? "ready"
               : "waiting",
@@ -294,7 +298,7 @@ async function createOrJoinGroup(
       /* READY */
 
       if (
-        updatedMembers.length >=
+        updatedCount >=
         required
       ) {
 
@@ -368,10 +372,13 @@ async function createOrJoinGroup(
       return {
 
         status:
-          "joined",
+          updatedCount >=
+          required
+            ? "ready"
+            : "joined",
 
         membersCount:
-          updatedMembers.length,
+          updatedCount,
 
         groupId:
           gdoc.id,
@@ -614,8 +621,6 @@ function SaveContent() {
       try {
 
         setLoading(true);
-
-        /* CREATE/JOIN */
 
         const result =
           await createOrJoinGroup(

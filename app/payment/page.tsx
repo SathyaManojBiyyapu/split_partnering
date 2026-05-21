@@ -75,6 +75,16 @@ function PaymentContent() {
     setPaymentCompleted,
   ] = useState(false);
 
+  /* PHONE UID */
+
+  const phone =
+    typeof window !==
+    "undefined"
+      ? localStorage.getItem(
+          "phone"
+        )?.trim()
+      : null;
+
   /* FIXED PRICE */
 
   const PRICE = 29;
@@ -123,15 +133,6 @@ function PaymentContent() {
             setFirebaseUser(
               user
             );
-
-            if (
-              !user.phoneNumber
-            ) {
-
-              router.push(
-                "/verify-phone"
-              );
-            }
           }
         }
       );
@@ -204,7 +205,7 @@ function PaymentContent() {
   useEffect(() => {
 
     if (
-      !firebaseUser ||
+      !phone ||
       !groupId
     )
       return;
@@ -227,7 +228,7 @@ function PaymentContent() {
               where(
                 "uid",
                 "==",
-                firebaseUser.uid
+                phone
               ),
 
               where(
@@ -258,7 +259,9 @@ function PaymentContent() {
 
                 if (
                   data.status ===
-                  "paid"
+                    "paid" ||
+                  data.paid ===
+                    true
                 ) {
 
                   setPaymentCompleted(
@@ -281,7 +284,7 @@ function PaymentContent() {
     checkPayment();
 
   }, [
-    firebaseUser,
+    phone,
     groupId,
   ]);
 
@@ -293,7 +296,7 @@ function PaymentContent() {
     async () => {
 
       if (
-        !firebaseUser ||
+        !phone ||
         !groupId
       )
         return;
@@ -338,8 +341,10 @@ function PaymentContent() {
               }
 
               if (
+                m.phone ===
+                  phone ||
                 m.uid ===
-                firebaseUser.uid
+                  phone
               ) {
 
                 return {
@@ -377,7 +382,7 @@ function PaymentContent() {
     async () => {
 
       if (
-        !firebaseUser ||
+        !phone ||
         !groupData ||
         !groupId
       )
@@ -396,7 +401,9 @@ function PaymentContent() {
           ),
           {
             uid:
-              firebaseUser.uid,
+              phone,
+
+            phone,
 
             groupId,
 
@@ -406,7 +413,8 @@ function PaymentContent() {
             option:
               groupData.option,
 
-            amount: PRICE,
+            amount:
+              PRICE,
 
             status:
               "pending",
@@ -438,7 +446,7 @@ function PaymentContent() {
                   groupId,
 
                   uid:
-                    firebaseUser.uid,
+                    phone,
                 }
               ),
             }
@@ -490,7 +498,7 @@ function PaymentContent() {
     async () => {
 
       if (
-        !firebaseUser ||
+        !phone ||
         !groupData ||
         !groupId
       )
@@ -511,7 +519,9 @@ function PaymentContent() {
           ),
           {
             uid:
-              firebaseUser.uid,
+              phone,
+
+            phone,
 
             groupId,
 
@@ -623,7 +633,7 @@ function PaymentContent() {
                               response.razorpay_signature,
 
                             uid:
-                              firebaseUser.uid,
+                              phone,
 
                             groupId,
                           }
@@ -672,11 +682,12 @@ function PaymentContent() {
             },
 
           prefill: {
+
             email:
-              firebaseUser.email,
+              firebaseUser?.email,
 
             contact:
-              firebaseUser.phoneNumber,
+              phone,
           },
 
           theme: {

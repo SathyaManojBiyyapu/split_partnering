@@ -258,11 +258,11 @@ export async function POST(
          COMPLETE GROUP
       ========================= */
 
-      if (
-        paidSnap.size >=
-          members.length &&
-        members.length > 0
-      ) {
+     if (
+  paidSnap.size >=
+    (groupData.requiredSize || members.length) &&
+  members.length > 0
+) {
 
         await updateDoc(
           groupRef,

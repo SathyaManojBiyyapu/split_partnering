@@ -11,7 +11,6 @@ import {
 
 import {
   db,
-  auth,
 } from "@/firebase/config";
 
 import {
@@ -53,9 +52,7 @@ export default function DashboardPage() {
     setLatestSelection,
   ] = useState<any>(null);
 
-  /* -----------------------------------
-      USER
-  ----------------------------------- */
+  /* USER */
 
   const rawPhone =
     typeof window !==
@@ -68,14 +65,14 @@ export default function DashboardPage() {
   const phone =
     rawPhone?.trim() || null;
 
-  /* -----------------------------------
-      FETCH GROUPS
-  ----------------------------------- */
+  /* FETCH GROUPS */
 
   useEffect(() => {
 
     if (!phone) {
+
       setLoading(false);
+
       return;
     }
 
@@ -86,9 +83,6 @@ export default function DashboardPage() {
         async (snapshot) => {
 
           try {
-
-            const currentUID =
-              auth.currentUser?.uid;
 
             /* PAYMENTS */
 
@@ -111,7 +105,7 @@ export default function DashboardPage() {
 
                 if (
                   pdata.uid ===
-                    currentUID &&
+                    phone &&
                   (
                     pdata.status ===
                       "paid" ||
@@ -143,8 +137,6 @@ export default function DashboardPage() {
                     ? data.members
                     : [];
 
-                /* OLD STRING MEMBERS */
-
                 const hasPhone =
                   members.some(
                     (
@@ -170,43 +162,19 @@ export default function DashboardPage() {
                     }
                   );
 
-                /* UID MATCH */
-
                 const hasUID =
-                  currentUID &&
                   Array.isArray(
                     data.memberUIDs
                   ) &&
                   data.memberUIDs.includes(
-                    currentUID
-                  );
-
-                /* OBJECT UID MATCH */
-
-                const objectUID =
-                  members.some(
-                    (
-                      m: any
-                    ) => {
-
-                      if (
-                        typeof m ===
-                        "string"
-                      )
-                        return false;
-
-                      return (
-                        m?.uid ===
-                        currentUID
-                      );
-                    }
+                    phone
                   );
 
                 if (
                   !hasPhone &&
-                  !hasUID &&
-                  !objectUID
+                  !hasUID
                 ) {
+
                   return;
                 }
 
@@ -247,8 +215,6 @@ export default function DashboardPage() {
               }
             );
 
-            /* SORT */
-
             groups.sort(
               (a, b) =>
                 (b.createdAt
@@ -257,11 +223,6 @@ export default function DashboardPage() {
                 (a.createdAt
                   ?.seconds ||
                   0)
-            );
-
-            console.log(
-              "MY MATCHES:",
-              groups
             );
 
             setMatches(groups);
@@ -282,9 +243,7 @@ export default function DashboardPage() {
 
   }, [phone]);
 
-  /* -----------------------------------
-      FETCH LATEST SELECTION
-  ----------------------------------- */
+  /* LATEST SELECTION */
 
   useEffect(() => {
 
@@ -349,9 +308,7 @@ export default function DashboardPage() {
 
   }, [phone]);
 
-  /* -----------------------------------
-      DELETE MATCH
-  ----------------------------------- */
+  /* DELETE MATCH */
 
   const deleteMatch =
     async (
@@ -428,6 +385,7 @@ export default function DashboardPage() {
         await updateDoc(
           gRef,
           {
+
             members:
               arrayRemove(
                 removeMember
@@ -435,9 +393,7 @@ export default function DashboardPage() {
 
             memberUIDs:
               arrayRemove(
-                auth
-                  .currentUser
-                  ?.uid
+                phone
               ),
 
             membersCount:
@@ -471,9 +427,7 @@ export default function DashboardPage() {
       }
     };
 
-  /* -----------------------------------
-      NO LOGIN
-  ----------------------------------- */
+  /* NO LOGIN */
 
   if (!phone) {
 
@@ -492,9 +446,7 @@ export default function DashboardPage() {
     );
   }
 
-  /* -----------------------------------
-      LOADING
-  ----------------------------------- */
+  /* LOADING */
 
   if (loading) {
 
@@ -512,10 +464,6 @@ export default function DashboardPage() {
       </div>
     );
   }
-
-  /* -----------------------------------
-      UI
-  ----------------------------------- */
 
   return (
     <div className="pt-32 px-6 max-w-5xl mx-auto text-white">
@@ -564,8 +512,6 @@ export default function DashboardPage() {
                 key={group.id}
                 className="bg-[#0c0c0c] border border-[#FFD166]/20 rounded-2xl p-5"
               >
-
-                {/* TOP */}
 
                 <div className="flex justify-between items-center flex-wrap gap-3">
 
@@ -622,8 +568,6 @@ export default function DashboardPage() {
 
                 </div>
 
-                {/* MEMBERS */}
-
                 <div className="mt-5 space-y-3">
 
                   {group.members.map(
@@ -647,40 +591,53 @@ export default function DashboardPage() {
 
                         <div
                           key={i}
-                          className="bg-black/40 rounded-xl p-4"
+                          className="bg-black/40 rounded-xl p-4 flex items-center justify-between"
                         >
 
-                          <p className="font-bold">
-                            👤 {
-                              member.name ||
-                              "User"
-                            }
-                          </p>
+                          <div className="flex items-center gap-4">
 
-                          <p className="text-sm text-gray-400 mt-1">
-                            📞 {
-                              member.phone ||
-                              "N/A"
-                            }
-                          </p>
-
-                          <div className="mt-2">
-
-                            <span
-                              className={`text-xs font-bold ${
-                                member.paid
-                                  ? "text-green-400"
-                                  : "text-red-400"
-                              }`}
-                            >
-                              {
-                                member.paid
-                                  ? "PAID"
-                                  : "NOT PAID"
+                            <img
+                              src={
+                                member.photoURL ||
+                                "https://ui-avatars.com/api/?background=000000&color=FFD166&name=User"
                               }
-                            </span>
+                              alt="user"
+                              className="w-12 h-12 rounded-full border border-[#FFD166]"
+                            />
+
+                            <div>
+
+                              <p className="font-bold">
+                                👤 {
+                                  member.name ||
+                                  "User"
+                                }
+                              </p>
+
+                              <p className="text-sm text-gray-400 mt-1">
+                                📞 {
+                                  member.phone ||
+                                  "N/A"
+                                }
+                              </p>
+
+                            </div>
 
                           </div>
+
+                          <span
+                            className={`text-xs font-bold ${
+                              member.paid
+                                ? "text-green-400"
+                                : "text-red-400"
+                            }`}
+                          >
+                            {
+                              member.paid
+                                ? "PAID"
+                                : "NOT PAID"
+                            }
+                          </span>
 
                         </div>
                       );
@@ -688,8 +645,6 @@ export default function DashboardPage() {
                   )}
 
                 </div>
-
-                {/* ACTIONS */}
 
                 <div className="flex gap-3 mt-5 flex-wrap">
 
@@ -703,7 +658,7 @@ export default function DashboardPage() {
                       }
                       className="px-4 py-2 rounded-lg bg-[#FFD166] text-black font-bold"
                     >
-                      Pay Now
+                      Pay ₹29
                     </button>
 
                   ) : (

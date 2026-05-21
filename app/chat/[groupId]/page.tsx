@@ -104,10 +104,22 @@ export default function ChatPage() {
       null
     );
 
+  /* PHONE UID */
+
+  const phone =
+    typeof window !==
+    "undefined"
+      ? localStorage.getItem(
+          "phone"
+        )?.trim()
+      : null;
+
   /* ---------------- MOUNT FIX ---------------- */
 
   useEffect(() => {
+
     setMounted(true);
+
   }, []);
 
   /* ---------------- AUTH ---------------- */
@@ -134,29 +146,32 @@ export default function ChatPage() {
 
           /* ONLINE STATUS */
 
-          await setDoc(
-            doc(
-              db,
-              "status",
-              user.uid
-            ),
-            {
-              online: true,
+          if (phone) {
 
-              lastSeen:
-                serverTimestamp(),
-            },
-            {
-              merge: true,
-            }
-          );
+            await setDoc(
+              doc(
+                db,
+                "status",
+                phone
+              ),
+              {
+                online: true,
+
+                lastSeen:
+                  serverTimestamp(),
+              },
+              {
+                merge: true,
+              }
+            );
+          }
         }
       );
 
     return () =>
       unsub();
 
-  }, [router]);
+  }, [router, phone]);
 
   /* ---------------- VERIFY ACCESS ---------------- */
 
@@ -164,7 +179,8 @@ export default function ChatPage() {
 
     if (
       !firebaseUser ||
-      !groupId
+      !groupId ||
+      !phone
     )
       return;
 
@@ -188,7 +204,7 @@ export default function ChatPage() {
               where(
                 "uid",
                 "==",
-                firebaseUser.uid
+                phone
               ),
 
               where(
@@ -248,9 +264,37 @@ export default function ChatPage() {
           const groupData =
             groupSnap.data();
 
+          const members =
+            groupData.members ||
+            [];
+
           const isMember =
+            members.some(
+              (
+                m: any
+              ) => {
+
+                if (
+                  typeof m ===
+                  "string"
+                ) {
+
+                  return (
+                    m.trim() ===
+                    phone
+                  );
+                }
+
+                return (
+                  m?.phone
+                    ?.trim() ===
+                  phone
+                );
+              }
+            ) ||
+
             groupData.memberUIDs?.includes(
-              firebaseUser.uid
+              phone
             );
 
           if (
@@ -333,6 +377,7 @@ export default function ChatPage() {
     firebaseUser,
     groupId,
     router,
+    phone,
   ]);
 
   /* ---------------- REALTIME MESSAGES ---------------- */
@@ -341,7 +386,7 @@ export default function ChatPage() {
 
     if (
       !chatId ||
-      !firebaseUser
+      !phone
     )
       return;
 
@@ -410,10 +455,10 @@ export default function ChatPage() {
 
             if (
               msg.senderId !==
-                firebaseUser.uid &&
+                phone &&
               (!msg.seenBy ||
                 !msg.seenBy.includes(
-                  firebaseUser.uid
+                  phone
                 ))
             ) {
 
@@ -437,7 +482,7 @@ export default function ChatPage() {
                         []
                       ),
 
-                      firebaseUser.uid,
+                      phone,
                     ],
                   }
                 );
@@ -459,7 +504,7 @@ export default function ChatPage() {
 
   }, [
     chatId,
-    firebaseUser,
+    phone,
   ]);
 
   /* ---------------- ONLINE USERS ---------------- */
@@ -520,7 +565,10 @@ export default function ChatPage() {
 
   useEffect(() => {
 
-    if (!chatId)
+    if (
+      !chatId ||
+      !phone
+    )
       return;
 
     const typingRef =
@@ -552,7 +600,7 @@ export default function ChatPage() {
 
               if (
                 docSnap.id !==
-                  firebaseUser?.uid &&
+                  phone &&
                 data.typing
               ) {
 
@@ -574,7 +622,7 @@ export default function ChatPage() {
 
   }, [
     chatId,
-    firebaseUser,
+    phone,
   ]);
 
   /* ---------------- HANDLE TYPING ---------------- */
@@ -590,7 +638,7 @@ export default function ChatPage() {
 
       if (
         !chatId ||
-        !firebaseUser
+        !phone
       )
         return;
 
@@ -602,7 +650,7 @@ export default function ChatPage() {
             "chats",
             chatId,
             "typing",
-            firebaseUser.uid
+            phone
           );
 
         await setDoc(
@@ -634,7 +682,7 @@ export default function ChatPage() {
       if (
         !newMessage.trim() ||
         !chatId ||
-        !firebaseUser
+        !phone
       )
         return;
 
@@ -655,17 +703,18 @@ export default function ChatPage() {
               newMessage,
 
             senderId:
-              firebaseUser.uid,
+              phone,
 
             senderName:
-              firebaseUser.displayName ||
+              firebaseUser?.displayName ||
+              phone ||
               "User",
 
             createdAt:
               serverTimestamp(),
 
             seenBy: [
-              firebaseUser.uid,
+              phone,
             ],
 
             deleted:
@@ -706,7 +755,7 @@ export default function ChatPage() {
             "chats",
             chatId,
             "typing",
-            firebaseUser.uid
+            phone
           );
 
         await setDoc(
@@ -800,7 +849,7 @@ export default function ChatPage() {
 
             const isMine =
               msg.senderId ===
-              firebaseUser?.uid;
+              phone;
 
             const time =
               mounted &&
@@ -823,7 +872,7 @@ export default function ChatPage() {
 
             if (
               msg.deletedFor?.includes(
-                firebaseUser.uid
+                phone
               )
             ) {
 

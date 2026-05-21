@@ -1,6 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import {
+  useEffect,
+  useState,
+} from "react";
 
 import {
   db,
@@ -12,7 +15,9 @@ import {
   signOut,
 } from "firebase/auth";
 
-import { useRouter } from "next/navigation";
+import {
+  useRouter,
+} from "next/navigation";
 
 import {
   collection,
@@ -20,360 +25,572 @@ import {
   doc,
   updateDoc,
   deleteDoc,
+  onSnapshot,
 } from "firebase/firestore";
 
-/* -----------------------------
+/* ---------------------------------------
    FORMAT DATE
------------------------------ */
+---------------------------------------- */
 
-const formatDateTime = (ts: any) => {
+const formatDateTime = (
+  ts: any
+) => {
+
   try {
-    if (!ts) return "N/A";
 
-    let date;
+    if (
+      !ts?.seconds
+    ) {
 
-    if (ts?.seconds) {
-      date = new Date(ts.seconds * 1000);
-    } else {
-      date = new Date(ts);
+      return "N/A";
     }
 
-    return `${date.toLocaleDateString()} · ${date.toLocaleTimeString()}`;
+    const d =
+      new Date(
+        ts.seconds *
+          1000
+      );
+
+    return `${d.toLocaleDateString()} · ${d.toLocaleTimeString()}`;
+
   } catch {
+
     return "N/A";
   }
 };
 
 export default function AdminPage() {
-  const router = useRouter();
 
-  const [authorized, setAuthorized] =
-    useState(false);
+  const router =
+    useRouter();
+
+  const [
+    authorized,
+    setAuthorized,
+  ] = useState(
+    false
+  );
+
+  const [groups, setGroups] =
+    useState<any[]>(
+      []
+    );
 
   const [loading, setLoading] =
     useState(true);
 
-  const [refreshing, setRefreshing] =
-    useState(false);
-
-  const [groups, setGroups] = useState<any[]>([]);
+  const [
+    refreshing,
+    setRefreshing,
+  ] = useState(false);
 
   /* STATS */
 
-  const [totalRevenue, setTotalRevenue] =
-    useState(0);
+  const [
+    totalRevenue,
+    setTotalRevenue,
+  ] = useState(0);
 
-  const [totalPaidUsers, setTotalPaidUsers] =
-    useState(0);
+  const [
+    totalPaidUsers,
+    setTotalPaidUsers,
+  ] = useState(0);
 
-  const [totalUsers, setTotalUsers] =
-    useState(0);
+  const [
+    totalUsers,
+    setTotalUsers,
+  ] = useState(0);
 
-  const [completedGroups, setCompletedGroups] =
-    useState(0);
+  const [
+    completedGroups,
+    setCompletedGroups,
+  ] = useState(0);
 
-  /* -----------------------------
+  /* ---------------------------------------
      ADMIN AUTH
-  ----------------------------- */
+  ---------------------------------------- */
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(
-      auth,
-      (user) => {
-        if (
-          user?.email ===
-          "sathyamanojbiyyapu@gmail.com"
-        ) {
-          setAuthorized(true);
-        } else {
-          setAuthorized(false);
-          router.push("/");
+
+    const unsub =
+      onAuthStateChanged(
+        auth,
+        (
+          user
+        ) => {
+
+          if (
+            user?.email ===
+            "sathyamanojbiyyapu@gmail.com"
+          ) {
+
+            setAuthorized(
+              true
+            );
+
+          } else {
+
+            setAuthorized(
+              false
+            );
+
+            router.push(
+              "/"
+            );
+          }
+
+          setLoading(
+            false
+          );
         }
+      );
 
-        setLoading(false);
-      }
-    );
+    return () =>
+      unsub();
 
-    return () => unsub();
   }, [router]);
 
-  /* -----------------------------
+  /* ---------------------------------------
      FETCH DASHBOARD
-  ----------------------------- */
-
-  const fetchDashboard = async () => {
-    try {
-      setRefreshing(true);
-
-      /* GROUPS */
-
-      const groupsSnap = await getDocs(
-        collection(db, "groups")
-      );
-
-      /* PAYMENTS */
-
-      const paymentsSnap = await getDocs(
-        collection(db, "payments")
-      );
-
-      /* PAYMENT MAP */
-
-      const paidMap: any = {};
-
-      let revenue = 0;
-
-      let paidUsersCount = 0;
-
-      paymentsSnap.forEach((p) => {
-        const pdata = p.data();
-
-        if (
-          pdata.status === "paid" ||
-          pdata.paid === true
-        ) {
-          if (!paidMap[pdata.groupId]) {
-            paidMap[pdata.groupId] = [];
-          }
-
-          paidMap[pdata.groupId].push(
-            pdata.uid
-          );
-
-          revenue += pdata.amount || 99;
-
-          paidUsersCount++;
-        }
-      });
-
-      let userCount = 0;
-
-      let completedCount = 0;
-
-      const builtGroups = groupsSnap.docs.map(
-        (gDoc) => {
-          const data = gDoc.data() as any;
-
-          /* MEMBERS */
-
-          let cleanedMembers: any[] = [];
-
-          if (Array.isArray(data.members)) {
-            cleanedMembers = data.members.map(
-              (m: any) => {
-                /* OLD STRING FORMAT */
-
-                if (typeof m === "string") {
-                  return {
-                    uid: "",
-                    phone: m,
-                    name:
-                      data.createdByName ||
-                      "User",
-                    gender:
-                      data.gender || "N/A",
-                    joinedAt:
-                      data.createdAt || null,
-                    paid: false,
-                  };
-                }
-
-                /* NEW FORMAT */
-
-                return {
-                  uid: m?.uid || "",
-                  phone:
-                    m?.phone ||
-                    m?.number ||
-                    "N/A",
-                  name:
-                    m?.name || "User",
-                  gender:
-                    m?.gender || "N/A",
-                  joinedAt:
-                    m?.joinedAt ||
-                    data.createdAt ||
-                    null,
-                  paid: m?.paid || false,
-                };
-              }
-            );
-          }
-
-          /* FALLBACK */
-
-          if (
-            cleanedMembers.length === 0 &&
-            data.memberUIDs?.length
-          ) {
-            cleanedMembers =
-              data.memberUIDs.map(
-                (uid: string) => ({
-                  uid,
-                  phone: "N/A",
-                  name: "User",
-                  gender: "N/A",
-                  joinedAt:
-                    data.createdAt ||
-                    null,
-                  paid: false,
-                })
-              );
-          }
-
-          userCount +=
-            cleanedMembers.length;
-
-          const paidUsers =
-            paidMap[gDoc.id] || [];
-
-          const membersDetailed =
-            cleanedMembers.map(
-              (m: any) => ({
-                ...m,
-
-                paid:
-                  paidUsers.includes(
-                    m.uid
-                  ) ||
-                  m.paid ||
-                  false,
-              })
-            );
-
-          if (
-            data.status === "completed"
-          ) {
-            completedCount++;
-          }
-
-          return {
-            id: gDoc.id,
-
-            ...data,
-
-            membersDetailed,
-
-            membersCount:
-              data.membersCount ||
-              cleanedMembers.length,
-
-            lastActivityAt:
-              data.lastActivityAt ||
-              data.createdAt,
-          };
-        }
-      );
-
-      /* SORT */
-
-      builtGroups.sort((a, b) => {
-        const ta =
-          a.lastActivityAt?.seconds || 0;
-
-        const tb =
-          b.lastActivityAt?.seconds || 0;
-
-        return tb - ta;
-      });
-
-      console.log(
-        "FINAL GROUPS:",
-        builtGroups
-      );
-
-      setGroups(builtGroups);
-
-      setTotalRevenue(revenue);
-
-      setTotalPaidUsers(paidUsersCount);
-
-      setTotalUsers(userCount);
-
-      setCompletedGroups(completedCount);
-    } catch (err) {
-      console.error(
-        "Dashboard fetch error:",
-        err
-      );
-    }
-
-    setRefreshing(false);
-  };
-
-  /* -----------------------------
-     INITIAL FETCH
-  ----------------------------- */
+  ---------------------------------------- */
 
   useEffect(() => {
-    if (!authorized) return;
 
-    fetchDashboard();
-  }, [authorized]);
+    if (
+      !authorized
+    )
+      return;
 
-  /* -----------------------------
-     LOGOUT
-  ----------------------------- */
+    setRefreshing(
+      true
+    );
 
-  const adminLogout = async () => {
-    await signOut(auth);
+    const unsub =
+      onSnapshot(
+        collection(
+          db,
+          "groups"
+        ),
 
-    router.push("/");
-  };
+        async (
+          snapshot
+        ) => {
 
-  /* -----------------------------
-     COMPLETE
-  ----------------------------- */
+          try {
 
-  const markCompleted = async (
-    id: string
-  ) => {
-    try {
-      await updateDoc(
-        doc(db, "groups", id),
-        {
-          status: "completed",
-          lastActivityAt: new Date(),
+            const paymentsSnap =
+              await getDocs(
+                collection(
+                  db,
+                  "payments"
+                )
+              );
+
+            /* PAYMENT MAP */
+
+            const paidMap: any =
+              {};
+
+            let revenue = 0;
+
+            let paidCount = 0;
+
+            paymentsSnap.forEach(
+              (
+                p
+              ) => {
+
+                const pdata =
+                  p.data();
+
+                if (
+                  pdata.status ===
+                    "paid" ||
+                  pdata.paid ===
+                    true
+                ) {
+
+                  if (
+                    !paidMap[
+                      pdata.groupId
+                    ]
+                  ) {
+
+                    paidMap[
+                      pdata.groupId
+                    ] =
+                      [];
+                  }
+
+                  paidMap[
+                    pdata.groupId
+                  ].push(
+                    pdata.uid
+                  );
+
+                  revenue +=
+                    pdata.amount ||
+                    29;
+
+                  paidCount++;
+                }
+              }
+            );
+
+            let userCount = 0;
+
+            let completedCount = 0;
+
+            const builtGroups =
+              snapshot.docs.map(
+                (
+                  gDoc
+                ) => {
+
+                  const data =
+                    gDoc.data() as any;
+
+                  /* MEMBERS */
+
+                  const cleanedMembers =
+                    Array.isArray(
+                      data.members
+                    )
+                      ? data.members.map(
+                          (
+                            m: any
+                          ) => {
+
+                            /* OLD GROUPS */
+
+                            if (
+                              typeof m ===
+                              "string"
+                            ) {
+
+                              return {
+
+                                uid:
+                                  m.trim(),
+
+                                phone:
+                                  m.trim(),
+
+                                name:
+                                  data.createdByName ||
+                                  "Unknown User",
+
+                                gender:
+                                  data.gender ||
+                                  "N/A",
+
+                                photoURL:
+                                  "",
+
+                                joinedAt:
+                                  data.createdAt,
+
+                                paid:
+                                  false,
+                              };
+                            }
+
+                            /* NEW GROUPS */
+
+                            return {
+
+                              uid:
+                                m?.uid ||
+                                m?.phone ||
+                                "",
+
+                              phone:
+                                m?.phone ||
+                                "N/A",
+
+                              name:
+                                m?.name ||
+                                "Unknown User",
+
+                              gender:
+                                m?.gender ||
+                                "N/A",
+
+                              photoURL:
+                                m?.photoURL ||
+                                "",
+
+                              joinedAt:
+                                m?.joinedAt ||
+                                data.createdAt,
+
+                              paid:
+                                m?.paid ||
+                                false,
+                            };
+                          }
+                        )
+                      : [];
+
+                  userCount +=
+                    cleanedMembers.length;
+
+                  const paidUsers =
+                    paidMap[
+                      gDoc.id
+                    ] || [];
+
+                  const membersDetailed =
+                    cleanedMembers.map(
+                      (
+                        m: any
+                      ) => ({
+
+                        uid:
+                          m.uid,
+
+                        phone:
+                          m.phone,
+
+                        name:
+                          m.name,
+
+                        gender:
+                          m.gender ||
+                          "N/A",
+
+                        photoURL:
+                          m.photoURL ||
+                          "",
+
+                        joinedAt:
+                          m.joinedAt,
+
+                        paid:
+                          paidUsers.includes(
+                            m.uid
+                          ) ||
+                          paidUsers.includes(
+                            m.phone
+                          ) ||
+                          m.paid ||
+                          false,
+                      })
+                    );
+
+                  if (
+                    data.status ===
+                    "completed"
+                  ) {
+
+                    completedCount++;
+                  }
+
+                  return {
+
+                    id:
+                      gDoc.id,
+
+                    ...data,
+
+                    membersDetailed,
+
+                    membersCount:
+                      typeof data.membersCount ===
+                      "number"
+                        ? data.membersCount
+                        : cleanedMembers.length,
+
+                    lastActivityAt:
+                      data.lastActivityAt ??
+                      data.createdAt,
+                  };
+                }
+              );
+
+            builtGroups.sort(
+              (
+                a,
+                b
+              ) => {
+
+                const ta =
+                  a
+                    .lastActivityAt
+                    ?.seconds ||
+                  a
+                    .createdAt
+                    ?.seconds ||
+                  0;
+
+                const tb =
+                  b
+                    .lastActivityAt
+                    ?.seconds ||
+                  b
+                    .createdAt
+                    ?.seconds ||
+                  0;
+
+                return (
+                  tb -
+                  ta
+                );
+              }
+            );
+
+            setGroups(
+              builtGroups
+            );
+
+            setTotalRevenue(
+              revenue
+            );
+
+            setTotalPaidUsers(
+              paidCount
+            );
+
+            setTotalUsers(
+              userCount
+            );
+
+            setCompletedGroups(
+              completedCount
+            );
+
+          } catch (
+            err
+          ) {
+
+            console.error(
+              "Dashboard error:",
+              err
+            );
+          }
+
+          setRefreshing(
+            false
+          );
         }
       );
 
-      fetchDashboard();
+    return () =>
+      unsub();
 
-      alert("Completed ✅");
-    } catch (err) {
-      console.error(err);
-    }
-  };
+  }, [authorized]);
 
-  /* -----------------------------
-     DELETE
-  ----------------------------- */
+  /* ---------------------------------------
+     LOGOUT
+  ---------------------------------------- */
 
-  const deleteGroup = async (
-    id: string
-  ) => {
-    const ok = confirm(
-      "Delete group?"
-    );
+  const adminLogout =
+    async () => {
 
-    if (!ok) return;
-
-    try {
-      await deleteDoc(
-        doc(db, "groups", id)
+      await signOut(
+        auth
       );
 
-      fetchDashboard();
-    } catch (err) {
-      console.error(err);
-    }
-  };
+      setAuthorized(
+        false
+      );
 
-  /* -----------------------------
+      router.push(
+        "/"
+      );
+
+      alert(
+        "Logged out successfully"
+      );
+    };
+
+  /* ---------------------------------------
+     MARK COMPLETE
+  ---------------------------------------- */
+
+  const markCompleted =
+    async (
+      id: string
+    ) => {
+
+      try {
+
+        await updateDoc(
+          doc(
+            db,
+            "groups",
+            id
+          ),
+          {
+
+            status:
+              "completed",
+
+            lastActivityAt:
+              new Date(),
+          }
+        );
+
+        alert(
+          "Group marked completed ✅"
+        );
+
+      } catch (
+        err
+      ) {
+
+        console.error(
+          err
+        );
+      }
+    };
+
+  /* ---------------------------------------
+     DELETE GROUP
+  ---------------------------------------- */
+
+  const deleteGroup =
+    async (
+      id: string
+    ) => {
+
+      if (
+        !confirm(
+          "Delete this group?"
+        )
+      ) {
+
+        return;
+      }
+
+      try {
+
+        await deleteDoc(
+          doc(
+            db,
+            "groups",
+            id
+          )
+        );
+
+      } catch (
+        err
+      ) {
+
+        console.error(
+          err
+        );
+      }
+    };
+
+  /* ---------------------------------------
      LOADING
-  ----------------------------- */
+  ---------------------------------------- */
 
-  if (loading) {
+  if (
+    loading
+  ) {
+
     return (
       <div className="min-h-screen bg-black text-white flex items-center justify-center">
         Checking admin access...
@@ -381,28 +598,40 @@ export default function AdminPage() {
     );
   }
 
-  if (!authorized) return null;
+  /* ---------------------------------------
+     UNAUTHORIZED
+  ---------------------------------------- */
 
-  /* -----------------------------
+  if (
+    !authorized
+  ) {
+
+    return null;
+  }
+
+  /* ---------------------------------------
      UI
-  ----------------------------- */
+  ---------------------------------------- */
 
   return (
-    <div className="min-h-screen bg-black text-white pt-28 px-6">
+
+    <div className="pt-28 px-6 bg-black text-[#F5F5F5] min-h-screen">
 
       {/* HEADER */}
 
-      <div className="flex justify-between items-center flex-wrap gap-3 mb-8">
+      <div className="flex justify-between items-center mb-6 flex-wrap gap-3">
 
-        <h1 className="text-4xl font-bold text-[#FFD166]">
+        <h1 className="text-3xl font-bold text-[#FFD166]">
           Admin — Partner Groups
         </h1>
 
         <div className="flex gap-2">
 
           <button
-            onClick={fetchDashboard}
-            className="bg-blue-600 px-4 py-2 rounded-lg"
+            onClick={() =>
+              window.location.reload()
+            }
+            className="px-3 py-1 bg-blue-600 rounded text-xs"
           >
             {refreshing
               ? "Refreshing..."
@@ -410,8 +639,10 @@ export default function AdminPage() {
           </button>
 
           <button
-            onClick={adminLogout}
-            className="bg-red-600 px-4 py-2 rounded-lg"
+            onClick={
+              adminLogout
+            }
+            className="px-3 py-1 bg-red-600 rounded text-xs"
           >
             Logout
           </button>
@@ -423,44 +654,52 @@ export default function AdminPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
 
-        <div className="bg-[#0c0c0c] border border-[#FFD166]/20 rounded-xl p-5">
-          <p className="text-gray-400">
+        <div className="bg-[#0c0c0c] border border-[#FFD166]/20 rounded-xl p-4">
+
+          <p className="text-gray-400 text-sm">
             Revenue
           </p>
 
-          <h2 className="text-3xl text-green-400 font-bold mt-2">
+          <h2 className="text-2xl font-bold text-green-400 mt-1">
             ₹{totalRevenue}
           </h2>
+
         </div>
 
-        <div className="bg-[#0c0c0c] border border-[#FFD166]/20 rounded-xl p-5">
-          <p className="text-gray-400">
+        <div className="bg-[#0c0c0c] border border-[#FFD166]/20 rounded-xl p-4">
+
+          <p className="text-gray-400 text-sm">
             Paid Users
           </p>
 
-          <h2 className="text-3xl text-[#FFD166] font-bold mt-2">
+          <h2 className="text-2xl font-bold text-[#FFD166] mt-1">
             {totalPaidUsers}
           </h2>
+
         </div>
 
-        <div className="bg-[#0c0c0c] border border-[#FFD166]/20 rounded-xl p-5">
-          <p className="text-gray-400">
+        <div className="bg-[#0c0c0c] border border-[#FFD166]/20 rounded-xl p-4">
+
+          <p className="text-gray-400 text-sm">
             Total Members
           </p>
 
-          <h2 className="text-3xl text-blue-400 font-bold mt-2">
+          <h2 className="text-2xl font-bold text-blue-400 mt-1">
             {totalUsers}
           </h2>
+
         </div>
 
-        <div className="bg-[#0c0c0c] border border-[#FFD166]/20 rounded-xl p-5">
-          <p className="text-gray-400">
+        <div className="bg-[#0c0c0c] border border-[#FFD166]/20 rounded-xl p-4">
+
+          <p className="text-gray-400 text-sm">
             Completed
           </p>
 
-          <h2 className="text-3xl text-purple-400 font-bold mt-2">
+          <h2 className="text-2xl font-bold text-purple-400 mt-1">
             {completedGroups}
           </h2>
+
         </div>
 
       </div>
@@ -469,170 +708,180 @@ export default function AdminPage() {
 
       {groups.length === 0 ? (
 
-        <div className="text-center text-gray-400 mt-20 text-xl">
+        <div className="text-center text-gray-400 mt-20">
           No groups found
         </div>
 
       ) : (
 
-        <div className="space-y-5">
+        <div className="space-y-4">
 
-          {groups.map((g) => (
+          {groups.map(
+            (
+              g
+            ) => (
 
-            <div
-              key={g.id}
-              className="bg-[#0c0c0c] border border-[#FFD166]/20 rounded-2xl p-5"
-            >
+              <div
+                key={g.id}
+                className="p-4 bg-[#0c0c0c] border border-[#FFD166]/30 rounded-xl"
+              >
 
-              {/* TOP */}
+                {/* TOP */}
 
-              <div className="flex justify-between items-center flex-wrap gap-3">
+                <div className="flex justify-between items-center flex-wrap gap-2">
 
-                <div>
-
-                  <h2 className="text-2xl font-bold text-[#FFD166]">
+                  <p className="text-xl font-bold text-[#FFD166]">
                     {g.category} → {g.option}
-                  </h2>
-
-                  <p className="text-sm text-gray-400 mt-1">
-                    {g.membersCount}/
-                    {g.requiredSize} members
                   </p>
 
-                  <p className="text-xs text-gray-500 mt-1">
-                    Created:
-                    {" "}
-                    {formatDateTime(
-                      g.createdAt
-                    )}
-                  </p>
+                  <span
+                    className={`px-3 py-1 text-xs font-bold rounded-full ${
+                      g.status ===
+                      "completed"
+                        ? "bg-green-600"
+                        : g.status ===
+                          "ready"
+                        ? "bg-blue-600"
+                        : "bg-yellow-500 text-black"
+                    }`}
+                  >
+                    {g.status}
+                  </span>
 
                 </div>
 
-                <span
-                  className={`px-4 py-2 rounded-full text-xs font-bold ${
-                    g.status ===
-                    "completed"
-                      ? "bg-green-600"
-                      : g.status ===
-                        "ready"
-                      ? "bg-blue-600"
-                      : "bg-yellow-500 text-black"
-                  }`}
-                >
-                  {g.status}
-                </span>
+                <p className="text-[#FFD166] font-bold mt-1">
+                  {g.membersCount}/{g.requiredSize}
+                </p>
 
-              </div>
+                <p className="text-xs text-gray-400 mt-1">
+                  📅 {formatDateTime(g.createdAt)}
+                </p>
 
-              {/* MEMBERS */}
+                {/* MEMBERS */}
 
-              <div className="mt-5 space-y-3">
+                <div className="mt-4 space-y-2">
 
-                {g.membersDetailed?.map(
-                  (
-                    m: any,
-                    i: number
-                  ) => (
+                  {g.membersDetailed?.map(
+                    (
+                      m: any,
+                      i: number
+                    ) => (
 
-                    <div
-                      key={i}
-                      className="bg-black/50 rounded-xl p-4 flex justify-between items-center flex-wrap gap-3"
-                    >
+                      <div
+                        key={i}
+                        className="flex justify-between items-center bg-black/40 p-3 rounded"
+                      >
 
-                      <div>
+                        <div className="flex items-center gap-4">
 
-                        <p className="font-bold">
-                          👤 {m.name}
-                        </p>
-
-                        <p className="text-sm text-gray-400">
-                          📞 {m.phone}
-                        </p>
-
-                        <p className="text-sm text-pink-400">
-                          🚻 {m.gender}
-                        </p>
-
-                        <p className="text-xs text-gray-500">
-                          📅 {formatDateTime(
-                            m.joinedAt
-                          )}
-                        </p>
-
-                        <div className="mt-2 flex items-center gap-2">
-
-                          <div
-                            className={`w-2 h-2 rounded-full ${
-                              m.paid
-                                ? "bg-green-400"
-                                : "bg-red-500"
-                            }`}
+                          <img
+                            src={
+                              m.photoURL ||
+                              "https://ui-avatars.com/api/?background=000000&color=FFD166&name=User"
+                            }
+                            alt="user"
+                            className="w-12 h-12 rounded-full border border-[#FFD166]"
                           />
 
-                          <p
-                            className={`text-xs font-bold ${
-                              m.paid
-                                ? "text-green-400"
-                                : "text-red-500"
-                            }`}
-                          >
-                            {m.paid
-                              ? "PAID"
-                              : "NOT PAID"}
-                          </p>
+                          <div>
+
+                            <p className="text-sm font-bold">
+                              👤 {m.name}
+                            </p>
+
+                            <p className="text-xs text-gray-400">
+                              📞 {m.phone}
+                            </p>
+
+                            <p className="text-xs text-pink-400">
+                              🚻 {m.gender}
+                            </p>
+
+                            <p className="text-xs text-gray-500">
+                              📅 {formatDateTime(m.joinedAt)}
+                            </p>
+
+                            <div className="mt-2 flex items-center gap-2">
+
+                              <div
+                                className={`w-2 h-2 rounded-full ${
+                                  m.paid
+                                    ? "bg-green-400"
+                                    : "bg-red-500"
+                                }`}
+                              />
+
+                              <p
+                                className={`text-xs font-bold ${
+                                  m.paid
+                                    ? "text-green-400"
+                                    : "text-red-500"
+                                }`}
+                              >
+                                {m.paid
+                                  ? "Paid"
+                                  : "Not Paid"}
+                              </p>
+
+                            </div>
+
+                          </div>
 
                         </div>
 
+                        {/* WHATSAPP */}
+
+                        <button
+                          onClick={() =>
+                            window.open(
+                              `https://wa.me/91${m.phone}?text=${encodeURIComponent(
+                                "Hello! Your partner group is ready."
+                              )}`
+                            )
+                          }
+                          className="text-green-400 text-2xl"
+                        >
+                          🟢
+                        </button>
+
                       </div>
+                    )
+                  )}
 
-                      {/* WHATSAPP */}
+                </div>
 
-                      <button
-                        onClick={() =>
-                          window.open(
-                            `https://wa.me/91${m.phone}?text=${encodeURIComponent(
-                              "Hello! Your partner group is ready 🎉"
-                            )}`
-                          )
-                        }
-                        className="text-3xl"
-                      >
-                        🟢
-                      </button>
+                {/* ACTIONS */}
 
-                    </div>
-                  )
-                )}
+                <div className="flex gap-2 mt-4 flex-wrap">
 
-              </div>
+                  <button
+                    className="bg-blue-600 px-3 py-1 rounded"
+                    onClick={() =>
+                      markCompleted(
+                        g.id
+                      )
+                    }
+                  >
+                    Mark Completed
+                  </button>
 
-              {/* ACTIONS */}
+                  <button
+                    className="bg-red-600 px-3 py-1 rounded"
+                    onClick={() =>
+                      deleteGroup(
+                        g.id
+                      )
+                    }
+                  >
+                    Delete Group
+                  </button>
 
-              <div className="flex gap-3 mt-5 flex-wrap">
-
-                <button
-                  onClick={() =>
-                    markCompleted(g.id)
-                  }
-                  className="bg-blue-600 px-4 py-2 rounded-lg"
-                >
-                  Mark Completed
-                </button>
-
-                <button
-                  onClick={() =>
-                    deleteGroup(g.id)
-                  }
-                  className="bg-red-600 px-4 py-2 rounded-lg"
-                >
-                  Delete
-                </button>
+                </div>
 
               </div>
-
-            </div>
-          ))}
+            )
+          )}
 
         </div>
       )}

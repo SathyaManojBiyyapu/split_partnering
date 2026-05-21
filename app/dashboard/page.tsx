@@ -16,8 +16,6 @@ import {
 
 import {
   collection,
-  query,
-  where,
   onSnapshot,
   getDocs,
   getDoc,
@@ -25,26 +23,17 @@ import {
   updateDoc,
   deleteDoc,
   arrayRemove,
-  DocumentData,
 } from "firebase/firestore";
 
 type Group = {
   id: string;
-
   category: string;
-
   option: string;
-
   members: any[];
-
   membersCount: number;
-
   requiredSize: number;
-
   status: string;
-
   createdAt?: any;
-
   isPaid?: boolean;
 };
 
@@ -52,6 +41,21 @@ export default function DashboardPage() {
 
   const router =
     useRouter();
+
+  const [matches, setMatches] =
+    useState<Group[]>([]);
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [
+    latestSelection,
+    setLatestSelection,
+  ] = useState<any>(null);
+
+  /* -----------------------------------
+      USER
+  ----------------------------------- */
 
   const rawPhone =
     typeof window !==
@@ -62,296 +66,214 @@ export default function DashboardPage() {
       : null;
 
   const phone =
-    rawPhone
-      ? rawPhone.trim()
-      : null;
+    rawPhone?.trim() || null;
 
-  const [
-    latestSelection,
-    setLatestSelection,
-  ] = useState<{
-    category: string;
-    option: string;
-  } | null>(null);
-
-  const [
-    matches,
-    setMatches,
-  ] = useState<Group[]>(
-    []
-  );
-
-  const [
-    loading,
-    setLoading,
-  ] = useState(true);
-
-  /* ------------------------------------------------
-        FETCH LATEST SELECTION
-  ------------------------------------------------ */
+  /* -----------------------------------
+      FETCH GROUPS
+  ----------------------------------- */
 
   useEffect(() => {
 
     if (!phone) {
-
       setLoading(false);
-
       return;
-    }
-
-    const loadLatest =
-      async () => {
-
-        try {
-
-          const selRef =
-            collection(
-              db,
-              "selections"
-            );
-
-          const qSel =
-            query(
-              selRef,
-
-              where(
-                "phone",
-                "==",
-                phone
-              )
-            );
-
-          const snap =
-            await getDocs(
-              qSel
-            );
-
-          if (!snap.empty) {
-
-            const sorted =
-              snap.docs.sort(
-                (a, b) =>
-                  (b.data()
-                    .createdAt
-                    ?.seconds ||
-                    0) -
-                  (a.data()
-                    .createdAt
-                    ?.seconds ||
-                    0)
-              );
-
-            const last =
-              sorted[0]
-                .data() as DocumentData;
-
-            setLatestSelection({
-              category:
-                last.category,
-
-              option:
-                last.option,
-            });
-          }
-
-        } catch (err) {
-
-          console.error(
-            "Latest selection error:",
-            err
-          );
-        }
-
-        setLoading(false);
-      };
-
-    loadLatest();
-
-  }, [phone]);
-
-  /* ------------------------------------------------
-        FETCH GROUPS
-  ------------------------------------------------ */
-
-  useEffect(() => {
-
-    if (!phone)
-      return;
-
-    const groupsRef =
-      collection(
-        db,
-        "groups"
-      );
-
-    const currentUID =
-      auth.currentUser
-        ?.uid;
-
-    /* NEW GROUPS */
-
-    let qGroups;
-
-    if (currentUID) {
-
-      qGroups =
-        query(
-          groupsRef,
-
-          where(
-            "memberUIDs",
-            "array-contains",
-            currentUID
-          )
-        );
-
-    } else {
-
-      qGroups =
-        query(
-          groupsRef
-        );
     }
 
     const unsub =
       onSnapshot(
-        qGroups,
-        async (
-          snapshot
-        ) => {
+        collection(db, "groups"),
 
-          const paymentsSnap =
-            await getDocs(
-              collection(
-                db,
-                "payments"
-              )
+        async (snapshot) => {
+
+          try {
+
+            const currentUID =
+              auth.currentUser?.uid;
+
+            /* PAYMENTS */
+
+            const paymentsSnap =
+              await getDocs(
+                collection(
+                  db,
+                  "payments"
+                )
+              );
+
+            const paidGroups =
+              new Set<string>();
+
+            paymentsSnap.forEach(
+              (p) => {
+
+                const pdata =
+                  p.data();
+
+                if (
+                  pdata.uid ===
+                    currentUID &&
+                  (
+                    pdata.status ===
+                      "paid" ||
+                    pdata.paid ===
+                      true
+                  )
+                ) {
+
+                  paidGroups.add(
+                    pdata.groupId
+                  );
+                }
+              }
             );
 
-          const paidGroups =
-            new Set();
+            const groups: Group[] =
+              [];
 
-          paymentsSnap.forEach(
-            (p) => {
+            snapshot.forEach(
+              (docSnap) => {
 
-              const pdata =
-                p.data();
+                const data =
+                  docSnap.data() as any;
 
-              if (
-                pdata.uid ===
-                  currentUID &&
-                pdata.status ===
-                  "paid"
-              ) {
+                const members =
+                  Array.isArray(
+                    data.members
+                  )
+                    ? data.members
+                    : [];
 
-                paidGroups.add(
-                  pdata.groupId
-                );
-              }
-            }
-          );
+                /* OLD STRING MEMBERS */
 
-          const list: Group[] =
-            [];
+                const hasPhone =
+                  members.some(
+                    (
+                      m: any
+                    ) => {
 
-          snapshot.forEach(
-            (
-              docSnap
-            ) => {
+                      if (
+                        typeof m ===
+                        "string"
+                      ) {
 
-              const data =
-                docSnap.data() as any;
-
-              const members =
-                data.members ||
-                [];
-
-              /* SUPPORT OLD GROUPS */
-
-              const hasPhone =
-                members.some(
-                  (
-                    m: any
-                  ) => {
-
-                    if (
-                      typeof m ===
-                      "string"
-                    ) {
+                        return (
+                          m.trim() ===
+                          phone
+                        );
+                      }
 
                       return (
-                        m.trim() ===
+                        m?.phone
+                          ?.trim() ===
                         phone
                       );
                     }
+                  );
 
-                    return (
-                      m?.phone
-                        ?.trim() ===
-                      phone
-                    );
-                  }
-                );
+                /* UID MATCH */
 
-              const hasUID =
-                currentUID &&
-                data.memberUIDs
-                  ?.includes(
+                const hasUID =
+                  currentUID &&
+                  Array.isArray(
+                    data.memberUIDs
+                  ) &&
+                  data.memberUIDs.includes(
                     currentUID
                   );
 
-              if (
-                !hasPhone &&
-                !hasUID
-              )
-                return;
+                /* OBJECT UID MATCH */
 
-              list.push({
-                id:
-                  docSnap.id,
+                const objectUID =
+                  members.some(
+                    (
+                      m: any
+                    ) => {
 
-                category:
-                  data.category,
+                      if (
+                        typeof m ===
+                        "string"
+                      )
+                        return false;
 
-                option:
-                  data.option,
+                      return (
+                        m?.uid ===
+                        currentUID
+                      );
+                    }
+                  );
 
-                members,
+                if (
+                  !hasPhone &&
+                  !hasUID &&
+                  !objectUID
+                ) {
+                  return;
+                }
 
-                membersCount:
-                  data.membersCount ??
-                  members.length,
+                groups.push({
+                  id:
+                    docSnap.id,
 
-                requiredSize:
-                  data.requiredSize,
+                  category:
+                    data.category ||
+                    "Unknown",
 
-                status:
-                  data.status,
+                  option:
+                    data.option ||
+                    "Unknown",
 
-                createdAt:
-                  data.createdAt,
+                  members,
 
-                isPaid:
-                  paidGroups.has(
-                    docSnap.id
-                  ),
-              });
-            }
-          );
+                  membersCount:
+                    data.membersCount ||
+                    members.length,
 
-          list.sort(
-            (a, b) =>
-              (b.createdAt
-                ?.seconds ||
-                0) -
-              (a.createdAt
-                ?.seconds ||
-                0)
-          );
+                  requiredSize:
+                    data.requiredSize ||
+                    0,
 
-          setMatches(
-            list
-          );
+                  status:
+                    data.status ||
+                    "waiting",
+
+                  createdAt:
+                    data.createdAt,
+
+                  isPaid:
+                    paidGroups.has(
+                      docSnap.id
+                    ),
+                });
+              }
+            );
+
+            /* SORT */
+
+            groups.sort(
+              (a, b) =>
+                (b.createdAt
+                  ?.seconds ||
+                  0) -
+                (a.createdAt
+                  ?.seconds ||
+                  0)
+            );
+
+            console.log(
+              "MY MATCHES:",
+              groups
+            );
+
+            setMatches(groups);
+
+          } catch (err) {
+
+            console.error(
+              err
+            );
+          }
+
+          setLoading(false);
         }
       );
 
@@ -360,23 +282,88 @@ export default function DashboardPage() {
 
   }, [phone]);
 
-  /* ------------------------------------------------
-        DELETE MATCH
-  ------------------------------------------------ */
+  /* -----------------------------------
+      FETCH LATEST SELECTION
+  ----------------------------------- */
+
+  useEffect(() => {
+
+    if (!phone)
+      return;
+
+    const loadSelection =
+      async () => {
+
+        try {
+
+          const snap =
+            await getDocs(
+              collection(
+                db,
+                "selections"
+              )
+            );
+
+          const list =
+            snap.docs.map(
+              (d) =>
+                d.data()
+            );
+
+          const mine =
+            list.filter(
+              (s: any) =>
+                s.phone ===
+                phone
+            );
+
+          mine.sort(
+            (a: any, b: any) =>
+              (b.createdAt
+                ?.seconds ||
+                0) -
+              (a.createdAt
+                ?.seconds ||
+                0)
+          );
+
+          if (
+            mine.length >
+            0
+          ) {
+
+            setLatestSelection(
+              mine[0]
+            );
+          }
+
+        } catch (err) {
+
+          console.error(
+            err
+          );
+        }
+      };
+
+    loadSelection();
+
+  }, [phone]);
+
+  /* -----------------------------------
+      DELETE MATCH
+  ----------------------------------- */
 
   const deleteMatch =
     async (
       groupId: string
     ) => {
 
-      if (
-        !confirm(
+      const ok =
+        confirm(
           "Remove this match?"
-        )
-      )
-        return;
+        );
 
-      if (!phone)
+      if (!ok)
         return;
 
       try {
@@ -401,26 +388,12 @@ export default function DashboardPage() {
         const data =
           snap.data() as any;
 
-        const currentCount =
-          data.membersCount ??
-          (
-            data.members
-              ? data.members
-                  .length
-              : 0
-          );
+        const members =
+          data.members ||
+          [];
 
-        const newCount =
-          Math.max(
-            0,
-            currentCount - 1
-          );
-
-        const memberToRemove =
-          (
-            data.members ||
-            []
-          ).find(
+        const removeMember =
+          members.find(
             (
               m: any
             ) => {
@@ -443,12 +416,21 @@ export default function DashboardPage() {
             }
           );
 
+        const newCount =
+          Math.max(
+            0,
+            (
+              data.membersCount ||
+              members.length
+            ) - 1
+          );
+
         await updateDoc(
           gRef,
           {
             members:
               arrayRemove(
-                memberToRemove
+                removeMember
               ),
 
             memberUIDs:
@@ -474,58 +456,56 @@ export default function DashboardPage() {
         }
 
         alert(
-          "Match removed successfully"
+          "Removed successfully"
         );
 
       } catch (err) {
 
         console.error(
-          "Delete error:",
           err
         );
 
         alert(
-          "Failed to remove match"
+          "Failed to remove"
         );
       }
     };
 
-  /* ------------------------------------------------
-        AUTH REQUIRED
-  ------------------------------------------------ */
+  /* -----------------------------------
+      NO LOGIN
+  ----------------------------------- */
 
   if (!phone) {
 
     return (
-      <div className="pt-32 px-6 max-w-5xl mx-auto">
+      <div className="pt-32 px-6 max-w-5xl mx-auto text-white">
 
-        <h1 className="font-heading text-3xl text-gold-primary">
+        <h1 className="text-4xl font-bold text-[#FFD166]">
           My Partners
         </h1>
 
-        <p className="mt-4 text-text-muted">
-          Please login with OTP
-          to view your matches.
+        <p className="mt-5 text-gray-400">
+          Please login first.
         </p>
 
       </div>
     );
   }
 
-  /* ------------------------------------------------
-        LOADING
-  ------------------------------------------------ */
+  /* -----------------------------------
+      LOADING
+  ----------------------------------- */
 
   if (loading) {
 
     return (
-      <div className="pt-32 px-6 max-w-5xl mx-auto">
+      <div className="pt-32 px-6 max-w-5xl mx-auto text-white">
 
-        <h1 className="font-heading text-3xl text-gold-primary">
+        <h1 className="text-4xl font-bold text-[#FFD166]">
           My Partners
         </h1>
 
-        <p className="mt-4 text-text-muted">
+        <p className="mt-5 text-gray-400">
           Loading...
         </p>
 
@@ -533,31 +513,30 @@ export default function DashboardPage() {
     );
   }
 
-  /* ------------------------------------------------
-        UI
-  ------------------------------------------------ */
+  /* -----------------------------------
+      UI
+  ----------------------------------- */
 
   return (
-    <div className="pt-32 px-6 max-w-5xl mx-auto">
+    <div className="pt-32 px-6 max-w-5xl mx-auto text-white">
 
-      <h1 className="font-heading text-3xl text-gold-primary">
+      <h1 className="text-4xl font-bold text-[#FFD166]">
         My Partners
       </h1>
 
       {latestSelection && (
 
-        <p className="text-text-muted mt-4">
+        <p className="mt-4 text-gray-400">
 
-          Latest selection:{" "}
+          Latest selection:
 
-          <span className="text-gold-primary font-semibold">
+          <span className="text-[#FFD166] font-bold ml-2">
 
-            {latestSelection.category.replace(
-              "-",
-              " "
-            )}{" "}
+            {
+              latestSelection.category
+            }
 
-            →{" "}
+            {" → "}
 
             {
               latestSelection.option
@@ -568,10 +547,9 @@ export default function DashboardPage() {
         </p>
       )}
 
-      {matches.length ===
-      0 ? (
+      {matches.length === 0 ? (
 
-        <p className="text-text-muted mt-6">
+        <p className="mt-8 text-gray-400">
           No partners saved yet.
         </p>
 
@@ -580,103 +558,140 @@ export default function DashboardPage() {
         <div className="mt-10 space-y-5">
 
           {matches.map(
-            (
-              group
-            ) => (
+            (group) => (
 
               <div
-                key={
-                  group.id
-                }
-                className="
-                  rounded-2xl p-5
-                  bg-black/40
-                  border border-dark-card
-                  hover:border-gold-primary
-                  hover:shadow-[0_0_25px_rgba(212,175,55,0.35)]
-                  transition
-                "
+                key={group.id}
+                className="bg-[#0c0c0c] border border-[#FFD166]/20 rounded-2xl p-5"
               >
 
-                <p className="font-heading text-lg text-gold-primary capitalize">
+                {/* TOP */}
 
-                  {group.category.replace(
-                    "-",
-                    " "
-                  )}{" "}
+                <div className="flex justify-between items-center flex-wrap gap-3">
 
-                  →{" "}
+                  <div>
 
-                  {
-                    group.option
-                  }
+                    <h2 className="text-2xl font-bold text-[#FFD166]">
 
-                </p>
+                      {
+                        group.category
+                      }
 
-                <p className="mt-2 text-sm text-text-body">
+                      {" → "}
 
-                  Status:{" "}
+                      {
+                        group.option
+                      }
 
-                  <span
-                    className={
+                    </h2>
+
+                    <p className="mt-2 text-sm text-gray-400">
+
+                      Progress:
+                      {" "}
+
+                      {
+                        group.membersCount
+                      }
+
+                      /
+
+                      {
+                        group.requiredSize
+                      }
+
+                    </p>
+
+                  </div>
+
+                  <div
+                    className={`px-4 py-2 rounded-full text-xs font-bold ${
                       group.status ===
-                      "ready"
-                        ? "text-green-400"
+                      "completed"
+                        ? "bg-blue-600"
                         : group.status ===
-                          "completed"
-                        ? "text-blue-400"
-                        : "text-yellow-400"
-                    }
+                          "ready"
+                        ? "bg-green-600"
+                        : "bg-yellow-500 text-black"
+                    }`}
                   >
-
                     {
                       group.status
                     }
+                  </div>
 
-                  </span>
+                </div>
 
-                </p>
+                {/* MEMBERS */}
 
-                <p className="mt-1 text-sm text-text-muted">
+                <div className="mt-5 space-y-3">
 
-                  Progress:{" "}
+                  {group.members.map(
+                    (
+                      m: any,
+                      i: number
+                    ) => {
 
-                  {
-                    group.membersCount
-                  }
-                  /
-                  {
-                    group.requiredSize
-                  }
+                      const member =
+                        typeof m ===
+                        "string"
+                          ? {
+                              name:
+                                "User",
+                              phone:
+                                m,
+                            }
+                          : m;
 
-                </p>
+                      return (
 
-                {/* BUTTONS */}
+                        <div
+                          key={i}
+                          className="bg-black/40 rounded-xl p-4"
+                        >
 
-                <div className="flex gap-3 mt-4 flex-wrap">
+                          <p className="font-bold">
+                            👤 {
+                              member.name ||
+                              "User"
+                            }
+                          </p>
 
-                  {/* REMOVE */}
+                          <p className="text-sm text-gray-400 mt-1">
+                            📞 {
+                              member.phone ||
+                              "N/A"
+                            }
+                          </p>
 
-                  <button
-                    onClick={() =>
-                      deleteMatch(
-                        group.id
-                      )
+                          <div className="mt-2">
+
+                            <span
+                              className={`text-xs font-bold ${
+                                member.paid
+                                  ? "text-green-400"
+                                  : "text-red-400"
+                              }`}
+                            >
+                              {
+                                member.paid
+                                  ? "PAID"
+                                  : "NOT PAID"
+                              }
+                            </span>
+
+                          </div>
+
+                        </div>
+                      );
                     }
-                    className="
-                      px-4 py-2 text-xs font-medium
-                      rounded-full
-                      border border-red-500/40
-                      text-red-400
-                      hover:bg-red-600/20
-                      hover:border-red-500
-                      transition
-                    "
-                  >
-                    Remove Match
-                  </button>
+                  )}
 
-                  {/* PAYMENT */}
+                </div>
+
+                {/* ACTIONS */}
+
+                <div className="flex gap-3 mt-5 flex-wrap">
 
                   {!group.isPaid ? (
 
@@ -686,15 +701,7 @@ export default function DashboardPage() {
                           `/payment?groupId=${group.id}`
                         )
                       }
-                      className="
-                        px-4 py-2 text-xs font-medium
-                        rounded-full
-                        border border-[#FFD166]/40
-                        text-[#FFD166]
-                        hover:bg-[#FFD166]/20
-                        hover:border-[#FFD166]
-                        transition
-                      "
+                      className="px-4 py-2 rounded-lg bg-[#FFD166] text-black font-bold"
                     >
                       Pay Now
                     </button>
@@ -707,20 +714,23 @@ export default function DashboardPage() {
                           `/chat/${group.id}`
                         )
                       }
-                      className="
-                        px-4 py-2 text-xs font-medium
-                        rounded-full
-                        border border-green-500/40
-                        text-green-400
-                        hover:bg-green-600/20
-                        hover:border-green-500
-                        transition
-                      "
+                      className="px-4 py-2 rounded-lg bg-green-600 font-bold"
                     >
                       Open Chat
                     </button>
 
                   )}
+
+                  <button
+                    onClick={() =>
+                      deleteMatch(
+                        group.id
+                      )
+                    }
+                    className="px-4 py-2 rounded-lg bg-red-600 font-bold"
+                  >
+                    Remove Match
+                  </button>
 
                 </div>
 
@@ -730,6 +740,7 @@ export default function DashboardPage() {
 
         </div>
       )}
+
     </div>
   );
 }

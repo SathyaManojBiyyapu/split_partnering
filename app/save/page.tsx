@@ -150,7 +150,7 @@ async function createOrJoinGroup(
   const memberObject = {
 
     uid:
-      currentUser.uid,
+      cleanPhone,
 
     phone:
       cleanPhone,
@@ -169,7 +169,7 @@ async function createOrJoinGroup(
       "",
 
     joinedAt:
-      new Date(),
+      serverTimestamp(),
 
     paid: false,
   };
@@ -258,15 +258,24 @@ async function createOrJoinGroup(
 
           memberUIDs:
             arrayUnion(
-              currentUser.uid
+              cleanPhone
             ),
 
           membersCount:
             members.length +
             1,
 
+          updatedAt:
+            serverTimestamp(),
+
           lastActivityAt:
             serverTimestamp(),
+
+          status:
+            members.length + 1 >=
+            required
+              ? "ready"
+              : "waiting",
         }
       );
 
@@ -292,9 +301,6 @@ async function createOrJoinGroup(
         await updateDoc(
           gRef,
           {
-
-            status:
-              "ready",
 
             readyAt:
               serverTimestamp(),
@@ -351,6 +357,9 @@ async function createOrJoinGroup(
 
               lastMessageAt:
                 serverTimestamp(),
+
+              isActive:
+                true,
             }
           );
         }
@@ -393,7 +402,7 @@ async function createOrJoinGroup(
       ],
 
       memberUIDs: [
-        currentUser.uid,
+        cleanPhone,
       ],
 
       membersCount: 1,
@@ -625,8 +634,7 @@ function SaveContent() {
           {
 
             uid:
-              auth.currentUser
-                .uid,
+              phone,
 
             groupId:
               result.groupId,
@@ -722,8 +730,6 @@ function SaveContent() {
 
       </p>
 
-      {/* INFO */}
-
       {info && (
 
         <div
@@ -787,8 +793,6 @@ function SaveContent() {
         </div>
       )}
 
-      {/* BUTTON */}
-
       <button
         onClick={
           savePartner
@@ -816,8 +820,6 @@ function SaveContent() {
           : "Make Partner"}
 
       </button>
-
-      {/* BACK */}
 
       <button
         onClick={() =>

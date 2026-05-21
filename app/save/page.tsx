@@ -89,6 +89,7 @@ async function createOrJoinGroup(
   option: string,
   rawPhone: string
 ) {
+
   const cleanPhone =
     rawPhone.trim();
 
@@ -96,10 +97,28 @@ async function createOrJoinGroup(
     auth.currentUser;
 
   if (!currentUser) {
+
     throw new Error(
       "User not authenticated"
     );
   }
+
+  const userRef =
+    doc(
+      db,
+      "users",
+      cleanPhone
+    );
+
+  const userSnap =
+    await getDoc(
+      userRef
+    );
+
+  const userData =
+    userSnap.exists()
+      ? userSnap.data()
+      : {};
 
   const groupsRef =
     collection(
@@ -109,11 +128,13 @@ async function createOrJoinGroup(
 
   const q = query(
     groupsRef,
+
     where(
       "category",
       "==",
       category
     ),
+
     where(
       "option",
       "==",
@@ -127,15 +148,28 @@ async function createOrJoinGroup(
   /* MEMBER OBJECT */
 
   const memberObject = {
-    uid: currentUser.uid,
 
-    phone: cleanPhone,
+    uid:
+      currentUser.uid,
+
+    phone:
+      cleanPhone,
 
     name:
+      userData.name ||
       currentUser.displayName ||
       "User",
 
-    joinedAt: new Date(),
+    gender:
+      userData.gender ||
+      "",
+
+    photoURL:
+      userData.photoURL ||
+      "",
+
+    joinedAt:
+      new Date(),
 
     paid: false,
   };
@@ -143,6 +177,7 @@ async function createOrJoinGroup(
   /* -------- JOIN EXISTING -------- */
 
   for (const gdoc of snap.docs) {
+
     const g =
       gdoc.data();
 
@@ -159,15 +194,15 @@ async function createOrJoinGroup(
         option
       );
 
-    /* SUPPORT OLD + NEW STRUCTURE */
-
     const alreadyExists =
       members.some(
         (m: any) => {
+
           if (
             typeof m ===
             "string"
           ) {
+
             return (
               m ===
               cleanPhone
@@ -184,12 +219,17 @@ async function createOrJoinGroup(
     /* ALREADY EXISTS */
 
     if (alreadyExists) {
+
       return {
+
         status:
           "already",
 
         membersCount:
           members.length,
+
+        groupId:
+          gdoc.id,
       };
     }
 
@@ -199,15 +239,18 @@ async function createOrJoinGroup(
       members.length <
       required
     ) {
-      const gRef = doc(
-        db,
-        "groups",
-        gdoc.id
-      );
+
+      const gRef =
+        doc(
+          db,
+          "groups",
+          gdoc.id
+        );
 
       await updateDoc(
         gRef,
         {
+
           members:
             arrayUnion(
               memberObject
@@ -245,9 +288,11 @@ async function createOrJoinGroup(
         updatedMembers.length >=
         required
       ) {
+
         await updateDoc(
           gRef,
           {
+
             status:
               "ready",
 
@@ -256,7 +301,7 @@ async function createOrJoinGroup(
           }
         );
 
-        /* CHECK CHAT EXISTS */
+        /* CHAT */
 
         const chatsRef =
           collection(
@@ -267,6 +312,7 @@ async function createOrJoinGroup(
         const qChat =
           query(
             chatsRef,
+
             where(
               "groupId",
               "==",
@@ -279,17 +325,14 @@ async function createOrJoinGroup(
             qChat
           );
 
-        /* CREATE CHAT */
-
         if (
           chatSnap.empty
         ) {
+
           await addDoc(
-            collection(
-              db,
-              "chats"
-            ),
+            chatsRef,
             {
+
               groupId:
                 gdoc.id,
 
@@ -302,18 +345,25 @@ async function createOrJoinGroup(
               memberUIDs:
                 updated.memberUIDs ||
                 [],
+
+              lastMessage:
+                "",
+
+              lastMessageAt:
+                serverTimestamp(),
             }
           );
         }
       }
 
       return {
+
         status:
           "joined",
-      
+
         membersCount:
           updatedMembers.length,
-      
+
         groupId:
           gdoc.id,
       };
@@ -333,6 +383,7 @@ async function createOrJoinGroup(
   await setDoc(
     newGroupRef,
     {
+
       category,
 
       option,
@@ -356,17 +407,21 @@ async function createOrJoinGroup(
       createdAt:
         serverTimestamp(),
 
+      updatedAt:
+        serverTimestamp(),
+
       lastActivityAt:
         serverTimestamp(),
     }
   );
 
   return {
+
     status:
       "created",
-  
+
     membersCount: 1,
-  
+
     groupId:
       newGroupRef.id,
   };
@@ -377,6 +432,7 @@ async function createOrJoinGroup(
 ------------------------------------------ */
 
 function SaveContent() {
+
   const searchParams =
     useSearchParams();
 
@@ -422,6 +478,7 @@ function SaveContent() {
   /* -------- MOUNT -------- */
 
   useEffect(() => {
+
     setMounted(true);
 
     const savedPhone =
@@ -437,23 +494,30 @@ function SaveContent() {
     setPhone(savedPhone);
 
     setIsGuest(guest);
+
   }, []);
 
   /* -------- REQUIRE LOGIN -------- */
 
   useEffect(() => {
-    if (!mounted) return;
+
+    if (!mounted)
+      return;
 
     if (
       isGuest ||
       !phone
     ) {
+
       alert(
         "Please login to continue."
       );
 
-      router.push("/login");
+      router.push(
+        "/login"
+      );
     }
+
   }, [
     mounted,
     isGuest,
@@ -464,11 +528,15 @@ function SaveContent() {
   /* -------- LOAD USER -------- */
 
   useEffect(() => {
-    if (!phone) return;
+
+    if (!phone)
+      return;
 
     const fetchUser =
       async () => {
+
         try {
+
           const userRef =
             doc(
               db,
@@ -484,6 +552,7 @@ function SaveContent() {
           if (
             snap.exists()
           ) {
+
             setUserName(
               (
                 snap.data() as any
@@ -491,7 +560,9 @@ function SaveContent() {
                 null
             );
           }
+
         } catch (error) {
+
           console.error(
             "User fetch error:",
             error
@@ -500,16 +571,19 @@ function SaveContent() {
       };
 
     fetchUser();
+
   }, [phone]);
 
   /* -------- SAVE PARTNER -------- */
 
   const savePartner =
     async () => {
+
       if (!mounted)
         return;
 
       if (!phone) {
+
         alert(
           "Phone missing"
         );
@@ -520,6 +594,7 @@ function SaveContent() {
       if (
         !auth.currentUser
       ) {
+
         alert(
           "User not logged in"
         );
@@ -528,6 +603,7 @@ function SaveContent() {
       }
 
       try {
+
         setLoading(true);
 
         /* CREATE/JOIN */
@@ -547,23 +623,30 @@ function SaveContent() {
             "selections"
           ),
           {
+
             uid:
               auth.currentUser
                 .uid,
-        
+
             groupId:
               result.groupId,
-        
+
             phone,
-        
+
             userName:
               userName ||
               "Anonymous",
-        
+
             category,
-        
+
             option,
-        
+
+            paid:
+              false,
+
+            status:
+              result.status,
+
             createdAt:
               serverTimestamp(),
           }
@@ -576,11 +659,13 @@ function SaveContent() {
         );
 
         router.push(
-          "/categories"
+          "/dashboard"
         );
+
       } catch (
         error: any
       ) {
+
         console.error(
           "SAVE ERROR:",
           error
@@ -591,7 +676,9 @@ function SaveContent() {
             error?.code ||
             "Saving failed."
         );
+
       } finally {
+
         setLoading(false);
       }
     };
@@ -599,6 +686,7 @@ function SaveContent() {
   /* -------- LOADING -------- */
 
   if (!mounted) {
+
     return (
       <div className="min-h-screen bg-black text-white flex items-center justify-center">
         Loading...
@@ -610,29 +698,34 @@ function SaveContent() {
 
   return (
     <div className="min-h-screen pt-32 px-6 bg-black text-[#F5F5F5]">
-      {/* HEADER */}
 
       <h1 className="text-3xl font-semibold text-[#FFD166] tracking-wide mb-4">
         Make Your Match
       </h1>
 
       <p className="text-gray-400 mb-8">
+
         You selected{" "}
+
         <span className="text-[#FFD166] font-medium">
           {option}
         </span>{" "}
+
         under{" "}
+
         <span className="text-[#FFD166] font-medium">
           {category.replace(
             "-",
             " "
           )}
         </span>
+
       </p>
 
       {/* INFO */}
 
       {info && (
+
         <div
           className="
             mb-8 max-w-3xl
@@ -643,23 +736,28 @@ function SaveContent() {
             to-black
           "
         >
+
           <h2 className="text-lg font-semibold text-[#FFD166] mb-2">
             {info.title}
           </h2>
 
           {info.topLine && (
+
             <p className="text-gray-400 mb-4">
               {info.topLine}
             </p>
           )}
 
           <ul className="space-y-4 text-sm">
+
             {info.sections.map(
               (
                 sec: any,
                 i: number
               ) => (
+
                 <li key={i}>
+
                   <span className="font-medium text-[#FFD166]">
                     {sec.title}
                   </span>
@@ -669,19 +767,23 @@ function SaveContent() {
                   </div>
 
                   {sec.example && (
+
                     <div className="text-gray-500 mt-1">
                       {sec.example}
                     </div>
                   )}
+
                 </li>
               )
             )}
+
           </ul>
 
           <p className="text-[11px] text-gray-500 mt-5 italic">
             SplitPartnering is a partnering service.
             We do not buy or sell products.
           </p>
+
         </div>
       )}
 
@@ -708,9 +810,11 @@ function SaveContent() {
           disabled:opacity-50
         "
       >
+
         {loading
           ? "Saving..."
           : "Make Partner"}
+
       </button>
 
       {/* BACK */}
@@ -730,15 +834,13 @@ function SaveContent() {
       >
         ← Back to Categories
       </button>
+
     </div>
   );
 }
 
-/* -----------------------------------------
-   PAGE
------------------------------------------- */
-
 export default function SavePage() {
+
   return (
     <Suspense
       fallback={

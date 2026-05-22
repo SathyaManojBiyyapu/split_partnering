@@ -40,6 +40,7 @@ const GROUP_SIZE: Record<
   string,
   number
 > = {
+
   split: 2,
   pass: 2,
   supplements: 3,
@@ -78,7 +79,30 @@ const GROUP_SIZE: Record<
 
 const getRequiredSize = (
   opt: string
-) => GROUP_SIZE[opt] || 2;
+) =>
+  GROUP_SIZE[opt] || 2;
+
+/* -----------------------------------------
+   MASK PHONE
+------------------------------------------ */
+
+const maskPhone = (
+  phone: string
+) => {
+
+  if (!phone)
+    return "Hidden";
+
+  if (
+    phone.length < 5
+  )
+    return "xxxxx";
+
+  return (
+    "xxxxx" +
+    phone.slice(-5)
+  );
+};
 
 /* -----------------------------------------
    CREATE OR JOIN GROUP
@@ -155,6 +179,11 @@ async function createOrJoinGroup(
     phone:
       cleanPhone,
 
+    maskedPhone:
+      maskPhone(
+        cleanPhone
+      ),
+
     name:
       userData.name ||
       currentUser.displayName ||
@@ -168,12 +197,14 @@ async function createOrJoinGroup(
       userData.photoURL ||
       "",
 
-    /* FIXED */
-
     joinedAt:
       new Date(),
 
-    paid: false,
+    online:
+      true,
+
+    paid:
+      false,
   };
 
   /* -------- JOIN EXISTING -------- */
@@ -196,6 +227,8 @@ async function createOrJoinGroup(
         option
       );
 
+    /* ALREADY EXISTS */
+
     const alreadyExists =
       members.some(
         (m: any) => {
@@ -206,21 +239,22 @@ async function createOrJoinGroup(
           ) {
 
             return (
-              m ===
+              m.trim() ===
               cleanPhone
             );
           }
 
           return (
-            m?.phone ===
+            m?.phone
+              ?.trim() ===
             cleanPhone
           );
         }
       );
 
-    /* ALREADY EXISTS */
-
-    if (alreadyExists) {
+    if (
+      alreadyExists
+    ) {
 
       return {
 
@@ -235,7 +269,7 @@ async function createOrJoinGroup(
       };
     }
 
-    /* JOIN */
+    /* JOIN GROUP */
 
     if (
       members.length <
@@ -295,7 +329,7 @@ async function createOrJoinGroup(
         updated.members ||
         [];
 
-      /* READY */
+      /* READY STATE */
 
       if (
         updatedCount >=
@@ -311,7 +345,19 @@ async function createOrJoinGroup(
           }
         );
 
-        /* CHAT */
+        /* READY POPUP */
+
+        if (
+          typeof window !==
+          "undefined"
+        ) {
+
+          alert(
+            "🎉 Your group is now ready!"
+          );
+        }
+
+        /* CREATE CHAT */
 
         const chatsRef =
           collection(
@@ -362,6 +408,9 @@ async function createOrJoinGroup(
               lastMessageAt:
                 serverTimestamp(),
 
+              unreadCounts:
+                {},
+
               isActive:
                 true,
             }
@@ -386,7 +435,7 @@ async function createOrJoinGroup(
     }
   }
 
-  /* -------- CREATE NEW -------- */
+  /* -------- CREATE NEW GROUP -------- */
 
   const newGroupRef =
     doc(groupsRef);
@@ -428,6 +477,15 @@ async function createOrJoinGroup(
 
       lastActivityAt:
         serverTimestamp(),
+
+      createdBy:
+        cleanPhone,
+
+      totalPaid:
+        0,
+
+      revenue:
+        0,
     }
   );
 
@@ -465,8 +523,10 @@ function SaveContent() {
       "option"
     ) || "";
 
-  const [mounted, setMounted] =
-    useState(false);
+  const [
+    mounted,
+    setMounted,
+  ] = useState(false);
 
   const [phone, setPhone] =
     useState<string | null>(
@@ -485,6 +545,13 @@ function SaveContent() {
 
   const [loading, setLoading] =
     useState(false);
+
+  const [
+    existingGroup,
+    setExistingGroup,
+  ] = useState<any>(
+    null
+  );
 
   const info =
     partneringInfo[
@@ -507,13 +574,17 @@ function SaveContent() {
         "guest"
       ) === "true";
 
-    setPhone(savedPhone);
+    setPhone(
+      savedPhone
+    );
 
-    setIsGuest(guest);
+    setIsGuest(
+      guest
+    );
 
   }, []);
 
-  /* -------- REQUIRE LOGIN -------- */
+  /* -------- LOGIN CHECK -------- */
 
   useEffect(() => {
 
@@ -577,7 +648,9 @@ function SaveContent() {
             );
           }
 
-        } catch (error) {
+        } catch (
+          error
+        ) {
 
           console.error(
             "User fetch error:",
@@ -590,7 +663,99 @@ function SaveContent() {
 
   }, [phone]);
 
-  /* -------- SAVE PARTNER -------- */
+  /* -------- CHECK EXISTING -------- */
+
+  useEffect(() => {
+
+    if (
+      !phone ||
+      !category ||
+      !option
+    )
+      return;
+
+    const checkExisting =
+      async () => {
+
+        try {
+
+          const qGroups =
+            query(
+              collection(
+                db,
+                "groups"
+              ),
+
+              where(
+                "category",
+                "==",
+                category
+              ),
+
+              where(
+                "option",
+                "==",
+                option
+              )
+            );
+
+          const snap =
+            await getDocs(
+              qGroups
+            );
+
+          for (const d of snap.docs) {
+
+            const data =
+              d.data();
+
+            const exists =
+              (
+                data.members ||
+                []
+              ).some(
+                (
+                  m: any
+                ) =>
+                  m?.phone ===
+                  phone
+              );
+
+            if (
+              exists
+            ) {
+
+              setExistingGroup(
+                {
+                  id:
+                    d.id,
+                  ...data,
+                }
+              );
+
+              break;
+            }
+          }
+
+        } catch (
+          err
+        ) {
+
+          console.error(
+            err
+          );
+        }
+      };
+
+    checkExisting();
+
+  }, [
+    phone,
+    category,
+    option,
+  ]);
+
+  /* -------- SAVE -------- */
 
   const savePartner =
     async () => {
@@ -620,7 +785,9 @@ function SaveContent() {
 
       try {
 
-        setLoading(true);
+        setLoading(
+          true
+        );
 
         const result =
           await createOrJoinGroup(
@@ -645,6 +812,11 @@ function SaveContent() {
               result.groupId,
 
             phone,
+
+            maskedPhone:
+              maskPhone(
+                phone
+              ),
 
             userName:
               userName ||
@@ -692,7 +864,9 @@ function SaveContent() {
 
       } finally {
 
-        setLoading(false);
+        setLoading(
+          false
+        );
       }
     };
 
@@ -710,6 +884,7 @@ function SaveContent() {
   /* -------- UI -------- */
 
   return (
+
     <div className="min-h-screen pt-32 px-6 bg-black text-[#F5F5F5]">
 
       <h1 className="text-3xl font-semibold text-[#FFD166] tracking-wide mb-4">
@@ -734,6 +909,17 @@ function SaveContent() {
         </span>
 
       </p>
+
+      {existingGroup && (
+
+        <div className="mb-6 border border-green-500/30 bg-green-500/10 rounded-xl p-4">
+
+          <p className="text-green-400 font-bold">
+            ✅ You already joined this match
+          </p>
+
+        </div>
+      )}
 
       {info && (
 
@@ -849,6 +1035,7 @@ function SaveContent() {
 export default function SavePage() {
 
   return (
+
     <Suspense
       fallback={
         <p className="text-gray-400 p-10">
@@ -856,7 +1043,9 @@ export default function SavePage() {
         </p>
       }
     >
+
       <SaveContent />
+
     </Suspense>
   );
 }

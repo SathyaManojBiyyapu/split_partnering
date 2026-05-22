@@ -29,6 +29,7 @@ import {
   setDoc,
   doc,
   getDoc,
+  arrayUnion,
 } from "firebase/firestore";
 
 import {
@@ -99,6 +100,13 @@ export default function ChatPage() {
     setAuthorized,
   ] = useState(false);
 
+  const [
+    groupMembers,
+    setGroupMembers,
+  ] = useState<any[]>(
+    []
+  );
+
   const bottomRef =
     useRef<HTMLDivElement | null>(
       null
@@ -114,7 +122,7 @@ export default function ChatPage() {
         )?.trim()
       : null;
 
-  /* ---------------- MOUNT FIX ---------------- */
+  /* ---------------- MOUNT ---------------- */
 
   useEffect(() => {
 
@@ -143,8 +151,6 @@ export default function ChatPage() {
           setFirebaseUser(
             user
           );
-
-          /* ONLINE STATUS */
 
           if (phone) {
 
@@ -189,7 +195,7 @@ export default function ChatPage() {
 
         try {
 
-          /* PAYMENT CHECK */
+          /* PAYMENT */
 
           const paymentsRef =
             collection(
@@ -236,7 +242,7 @@ export default function ChatPage() {
             return;
           }
 
-          /* GROUP CHECK */
+          /* GROUP */
 
           const groupRef =
             doc(
@@ -267,6 +273,10 @@ export default function ChatPage() {
           const members =
             groupData.members ||
             [];
+
+          setGroupMembers(
+            members
+          );
 
           const isMember =
             members.some(
@@ -308,7 +318,7 @@ export default function ChatPage() {
             return;
           }
 
-          /* FIND CHAT */
+          /* CHAT */
 
           const chatsRef =
             collection(
@@ -476,24 +486,14 @@ export default function ChatPage() {
                 await updateDoc(
                   msgRef,
                   {
-                    seenBy: [
-                      ...(
-                        msg.seenBy ||
-                        []
+                    seenBy:
+                      arrayUnion(
+                        phone
                       ),
-
-                      phone,
-                    ],
                   }
                 );
 
-              } catch (error) {
-
-                console.error(
-                  "Seen update error:",
-                  error
-                );
-              }
+              } catch {}
             }
           }
         }
@@ -510,9 +510,6 @@ export default function ChatPage() {
   /* ---------------- ONLINE USERS ---------------- */
 
   useEffect(() => {
-
-    if (!chatId)
-      return;
 
     const statusRef =
       collection(
@@ -559,7 +556,7 @@ export default function ChatPage() {
     return () =>
       unsub();
 
-  }, [chatId]);
+  }, []);
 
   /* ---------------- TYPING ---------------- */
 
@@ -665,13 +662,7 @@ export default function ChatPage() {
           }
         );
 
-      } catch (error) {
-
-        console.error(
-          "Typing error:",
-          error
-        );
-      }
+      } catch {}
     };
 
   /* ---------------- SEND MESSAGE ---------------- */
@@ -687,6 +678,15 @@ export default function ChatPage() {
         return;
 
       try {
+
+        const myMember =
+          groupMembers.find(
+            (
+              m: any
+            ) =>
+              m?.phone ===
+              phone
+          );
 
         const messagesRef =
           collection(
@@ -706,9 +706,13 @@ export default function ChatPage() {
               phone,
 
             senderName:
+              myMember?.name ||
               firebaseUser?.displayName ||
-              phone ||
-              "User",
+              phone,
+
+            senderPhoto:
+              myMember?.photoURL ||
+              "",
 
             createdAt:
               serverTimestamp(),
@@ -724,8 +728,6 @@ export default function ChatPage() {
               [],
           }
         );
-
-        /* UPDATE CHAT */
 
         const chatRef =
           doc(
@@ -746,8 +748,6 @@ export default function ChatPage() {
         );
 
         setNewMessage("");
-
-        /* STOP TYPING */
 
         const typingDoc =
           doc(
@@ -788,8 +788,6 @@ export default function ChatPage() {
     );
   }
 
-  /* ---------------- UNAUTHORIZED ---------------- */
-
   if (!authorized) {
 
     return (
@@ -798,8 +796,6 @@ export default function ChatPage() {
       </div>
     );
   }
-
-  /* ---------------- UI ---------------- */
 
   return (
     <div className="min-h-screen bg-black text-white flex flex-col">
@@ -884,56 +880,69 @@ export default function ChatPage() {
                 key={
                   msg.id
                 }
-                className={`relative group p-3 rounded-xl max-w-xs ${
+                className={`relative group p-3 rounded-xl max-w-xs flex gap-3 ${
                   isMine
                     ? "bg-[#E6C972] text-black ml-auto"
                     : "bg-gray-700 text-white"
                 }`}
               >
 
-                {msg.deleted ? (
+                <img
+                  src={
+                    msg.senderPhoto ||
+                    "https://ui-avatars.com/api/?background=000000&color=FFD166&name=User"
+                  }
+                  alt="user"
+                  className="w-9 h-9 rounded-full border border-[#FFD166]"
+                />
 
-                  <div className="italic text-gray-400">
-                    🚫 This message was deleted
-                  </div>
+                <div className="flex-1">
 
-                ) : (
+                  {msg.deleted ? (
 
-                  <div>
-
-                    <div className="text-xs opacity-70 mb-1">
-                      {
-                        msg.senderName
-                      }
+                    <div className="italic text-gray-400">
+                      🚫 This message was deleted
                     </div>
+
+                  ) : (
 
                     <div>
-                      {
-                        msg.text
-                      }
+
+                      <div className="text-xs opacity-70 mb-1">
+                        {
+                          msg.senderName
+                        }
+                      </div>
+
+                      <div>
+                        {
+                          msg.text
+                        }
+                      </div>
+
                     </div>
+                  )}
 
-                  </div>
-                )}
-
-                <div className="text-xs mt-2 flex justify-between items-center">
-
-                  <span>
-                    {time}
-                  </span>
-
-                  {isMine && (
+                  <div className="text-xs mt-2 flex justify-between items-center">
 
                     <span>
-
-                      {msg.seenBy
-                        ?.length >
-                      1
-                        ? "✔✔"
-                        : "✔"}
-
+                      {time}
                     </span>
-                  )}
+
+                    {isMine && (
+
+                      <span>
+
+                        {msg.seenBy
+                          ?.length >
+                        1
+                          ? "✔✔"
+                          : "✔"}
+
+                      </span>
+                    )}
+
+                  </div>
 
                 </div>
 
@@ -941,8 +950,6 @@ export default function ChatPage() {
             );
           }
         )}
-
-        {/* TYPING */}
 
         {typingUsers.length >
           0 && (
@@ -980,7 +987,7 @@ export default function ChatPage() {
           onClick={
             sendMessage
           }
-          className="px-5 py-3 rounded-lg bg-[#E6C972] text-black font-semibold"
+          className="px-5 py-3 rounded-lg bg-[#E6C972] text-black font-semibold hover:scale-105 transition"
         >
           Send
         </button>

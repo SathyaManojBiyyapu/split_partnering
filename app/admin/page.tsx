@@ -84,6 +84,11 @@ export default function AdminPage() {
     setRefreshing,
   ] = useState(false);
 
+  const [
+    search,
+    setSearch,
+  ] = useState("");
+
   /* STATS */
 
   const [
@@ -186,8 +191,6 @@ export default function AdminPage() {
                 )
               );
 
-            /* PAYMENT MAP */
-
             const paidMap: any =
               {};
 
@@ -242,171 +245,184 @@ export default function AdminPage() {
             let completedCount = 0;
 
             const builtGroups =
-              snapshot.docs.map(
-                (
-                  gDoc
-                ) => {
+              [];
 
-                  const data =
-                    gDoc.data() as any;
+            for (const gDoc of snapshot.docs) {
 
-                  /* MEMBERS */
+              const data =
+                gDoc.data() as any;
 
-                  const cleanedMembers =
-                    Array.isArray(
-                      data.members
-                    )
-                      ? data.members.map(
-                          (
-                            m: any
-                          ) => {
-
-                            /* OLD GROUPS */
-
-                            if (
-                              typeof m ===
-                              "string"
-                            ) {
-
-                              return {
-
-                                uid:
-                                  m.trim(),
-
-                                phone:
-                                  m.trim(),
-
-                                name:
-                                  data.createdByName ||
-                                  "Unknown User",
-
-                                gender:
-                                  data.gender ||
-                                  "N/A",
-
-                                photoURL:
-                                  "",
-
-                                joinedAt:
-                                  data.createdAt,
-
-                                paid:
-                                  false,
-                              };
-                            }
-
-                            /* NEW GROUPS */
-
-                            return {
-
-                              uid:
-                                m?.uid ||
-                                m?.phone ||
-                                "",
-
-                              phone:
-                                m?.phone ||
-                                "N/A",
-
-                              name:
-                                m?.name ||
-                                "Unknown User",
-
-                              gender:
-                                m?.gender ||
-                                "N/A",
-
-                              photoURL:
-                                m?.photoURL ||
-                                "",
-
-                              joinedAt:
-                                m?.joinedAt ||
-                                data.createdAt,
-
-                              paid:
-                                m?.paid ||
-                                false,
-                            };
-                          }
-                        )
-                      : [];
-
-                  userCount +=
-                    cleanedMembers.length;
-
-                  const paidUsers =
-                    paidMap[
-                      gDoc.id
-                    ] || [];
-
-                  const membersDetailed =
-                    cleanedMembers.map(
+              const cleanedMembers =
+                Array.isArray(
+                  data.members
+                )
+                  ? data.members.map(
                       (
                         m: any
-                      ) => ({
+                      ) => {
 
-                        uid:
-                          m.uid,
+                        if (
+                          typeof m ===
+                          "string"
+                        ) {
 
-                        phone:
-                          m.phone,
+                          return {
 
-                        name:
-                          m.name,
+                            uid:
+                              m.trim(),
 
-                        gender:
-                          m.gender ||
-                          "N/A",
+                            phone:
+                              m.trim(),
 
-                        photoURL:
-                          m.photoURL ||
-                          "",
+                            name:
+                              data.createdByName ||
+                              "Unknown User",
 
-                        joinedAt:
-                          m.joinedAt,
+                            gender:
+                              data.gender ||
+                              "N/A",
 
-                        paid:
-                          paidUsers.includes(
-                            m.uid
-                          ) ||
-                          paidUsers.includes(
-                            m.phone
-                          ) ||
-                          m.paid ||
-                          false,
-                      })
-                    );
+                            photoURL:
+                              "",
 
-                  if (
-                    data.status ===
-                    "completed"
-                  ) {
+                            joinedAt:
+                              data.createdAt,
 
-                    completedCount++;
-                  }
+                            paid:
+                              false,
+                          };
+                        }
 
-                  return {
+                        return {
 
-                    id:
-                      gDoc.id,
+                          uid:
+                            m?.uid ||
+                            m?.phone ||
+                            "",
 
-                    ...data,
+                          phone:
+                            m?.phone ||
+                            "N/A",
 
-                    membersDetailed,
+                          name:
+                            m?.name ||
+                            "Unknown User",
 
-                    membersCount:
-                      typeof data.membersCount ===
-                      "number"
-                        ? data.membersCount
-                        : cleanedMembers.length,
+                          gender:
+                            m?.gender ||
+                            "N/A",
 
-                    lastActivityAt:
-                      data.lastActivityAt ??
-                      data.createdAt,
-                  };
-                }
-              );
+                          photoURL:
+                            m?.photoURL ||
+                            "",
+
+                          joinedAt:
+                            m?.joinedAt ||
+                            data.createdAt,
+
+                          paid:
+                            m?.paid ||
+                            false,
+                        };
+                      }
+                    )
+                  : [];
+
+              /* AUTO DELETE EMPTY */
+
+              if (
+                cleanedMembers.length <= 0
+              ) {
+
+                try {
+
+                  await deleteDoc(
+                    doc(
+                      db,
+                      "groups",
+                      gDoc.id
+                    )
+                  );
+
+                } catch {}
+
+                continue;
+              }
+
+              userCount +=
+                cleanedMembers.length;
+
+              const paidUsers =
+                paidMap[
+                  gDoc.id
+                ] || [];
+
+              const membersDetailed =
+                cleanedMembers.map(
+                  (
+                    m: any
+                  ) => ({
+
+                    uid:
+                      m.uid,
+
+                    phone:
+                      m.phone,
+
+                    name:
+                      m.name,
+
+                    gender:
+                      m.gender ||
+                      "N/A",
+
+                    photoURL:
+                      m.photoURL ||
+                      "",
+
+                    joinedAt:
+                      m.joinedAt,
+
+                    paid:
+                      paidUsers.includes(
+                        m.uid
+                      ) ||
+                      paidUsers.includes(
+                        m.phone
+                      ) ||
+                      m.paid ||
+                      false,
+                  })
+                );
+
+              if (
+                data.status ===
+                "completed"
+              ) {
+
+                completedCount++;
+              }
+
+              builtGroups.push({
+
+                id:
+                  gDoc.id,
+
+                ...data,
+
+                membersDetailed,
+
+                membersCount:
+                  typeof data.membersCount ===
+                  "number"
+                    ? data.membersCount
+                    : cleanedMembers.length,
+
+                lastActivityAt:
+                  data.lastActivityAt ??
+                  data.createdAt,
+              });
+            }
 
             builtGroups.sort(
               (
@@ -556,7 +572,7 @@ export default function AdminPage() {
 
       if (
         !confirm(
-          "Delete this group?"
+          "Delete this group permanently?"
         )
       ) {
 
@@ -573,6 +589,23 @@ export default function AdminPage() {
           )
         );
 
+        setGroups(
+          (
+            prev
+          ) =>
+            prev.filter(
+              (
+                g
+              ) =>
+                g.id !==
+                id
+            )
+        );
+
+        alert(
+          "Group deleted successfully ✅"
+        );
+
       } catch (
         err
       ) {
@@ -580,12 +613,12 @@ export default function AdminPage() {
         console.error(
           err
         );
+
+        alert(
+          "Delete failed"
+        );
       }
     };
-
-  /* ---------------------------------------
-     LOADING
-  ---------------------------------------- */
 
   if (
     loading
@@ -598,10 +631,6 @@ export default function AdminPage() {
     );
   }
 
-  /* ---------------------------------------
-     UNAUTHORIZED
-  ---------------------------------------- */
-
   if (
     !authorized
   ) {
@@ -609,9 +638,25 @@ export default function AdminPage() {
     return null;
   }
 
-  /* ---------------------------------------
-     UI
-  ---------------------------------------- */
+  const filteredGroups =
+    groups.filter(
+      (
+        g
+      ) => {
+
+        const q =
+          search.toLowerCase();
+
+        return (
+          g.category
+            ?.toLowerCase()
+            .includes(q) ||
+          g.option
+            ?.toLowerCase()
+            .includes(q)
+        );
+      }
+    );
 
   return (
 
@@ -625,7 +670,18 @@ export default function AdminPage() {
           Admin — Partner Groups
         </h1>
 
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+
+          <input
+            value={search}
+            onChange={(e) =>
+              setSearch(
+                e.target.value
+              )
+            }
+            placeholder="Search category..."
+            className="bg-[#0c0c0c] border border-[#FFD166]/20 px-3 py-2 rounded text-sm"
+          />
 
           <button
             onClick={() =>
@@ -655,7 +711,6 @@ export default function AdminPage() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
 
         <div className="bg-[#0c0c0c] border border-[#FFD166]/20 rounded-xl p-4">
-
           <p className="text-gray-400 text-sm">
             Revenue
           </p>
@@ -663,11 +718,9 @@ export default function AdminPage() {
           <h2 className="text-2xl font-bold text-green-400 mt-1">
             ₹{totalRevenue}
           </h2>
-
         </div>
 
         <div className="bg-[#0c0c0c] border border-[#FFD166]/20 rounded-xl p-4">
-
           <p className="text-gray-400 text-sm">
             Paid Users
           </p>
@@ -675,11 +728,9 @@ export default function AdminPage() {
           <h2 className="text-2xl font-bold text-[#FFD166] mt-1">
             {totalPaidUsers}
           </h2>
-
         </div>
 
         <div className="bg-[#0c0c0c] border border-[#FFD166]/20 rounded-xl p-4">
-
           <p className="text-gray-400 text-sm">
             Total Members
           </p>
@@ -687,11 +738,10 @@ export default function AdminPage() {
           <h2 className="text-2xl font-bold text-blue-400 mt-1">
             {totalUsers}
           </h2>
-
         </div>
 
         <div className="bg-[#0c0c0c] border border-[#FFD166]/20 rounded-xl p-4">
-
+        
           <p className="text-gray-400 text-sm">
             Completed
           </p>
@@ -699,14 +749,13 @@ export default function AdminPage() {
           <h2 className="text-2xl font-bold text-purple-400 mt-1">
             {completedGroups}
           </h2>
-
         </div>
 
       </div>
 
       {/* GROUPS */}
 
-      {groups.length === 0 ? (
+      {filteredGroups.length === 0 ? (
 
         <div className="text-center text-gray-400 mt-20">
           No groups found
@@ -716,7 +765,7 @@ export default function AdminPage() {
 
         <div className="space-y-4">
 
-          {groups.map(
+          {filteredGroups.map(
             (
               g
             ) => (
@@ -725,8 +774,6 @@ export default function AdminPage() {
                 key={g.id}
                 className="p-4 bg-[#0c0c0c] border border-[#FFD166]/30 rounded-xl"
               >
-
-                {/* TOP */}
 
                 <div className="flex justify-between items-center flex-wrap gap-2">
 
@@ -745,7 +792,9 @@ export default function AdminPage() {
                         : "bg-yellow-500 text-black"
                     }`}
                   >
-                    {g.status}
+                    {g.status === "ready"
+                      ? "Ready for payment"
+                      : g.status}
                   </span>
 
                 </div>
@@ -829,8 +878,6 @@ export default function AdminPage() {
                           </div>
 
                         </div>
-
-                        {/* WHATSAPP */}
 
                         <button
                           onClick={() =>

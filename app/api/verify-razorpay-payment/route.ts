@@ -12,6 +12,7 @@ import {
   doc,
   getDoc,
   addDoc,
+  serverTimestamp,
 } from "firebase/firestore";
 
 /* =========================
@@ -19,10 +20,12 @@ import {
 ========================= */
 
 function getRazorpaySecret(): string {
+
   const secret =
     process.env.RAZORPAY_KEY_SECRET;
 
   if (!secret) {
+
     throw new Error(
       "RAZORPAY_KEY_SECRET is not set"
     );
@@ -63,6 +66,7 @@ function verifySignature(
 export async function POST(
   req: Request
 ) {
+
   try {
 
     const secret =
@@ -128,7 +132,7 @@ export async function POST(
     }
 
     /* =========================
-       FIND PENDING PAYMENT
+       PAYMENT COLLECTION
     ========================= */
 
     const paymentsRef =
@@ -136,6 +140,42 @@ export async function POST(
         db,
         "payments"
       );
+
+    /* =========================
+       DUPLICATE CHECK
+    ========================= */
+
+    const duplicateQuery =
+      query(
+        paymentsRef,
+
+        where(
+          "razorpayPaymentId",
+          "==",
+          razorpay_payment_id
+        )
+      );
+
+    const duplicateSnap =
+      await getDocs(
+        duplicateQuery
+      );
+
+    if (
+      !duplicateSnap.empty
+    ) {
+
+      return NextResponse.json({
+        success: true,
+
+        alreadyProcessed:
+          true,
+      });
+    }
+
+    /* =========================
+       FIND PENDING PAYMENT
+    ========================= */
 
     const pendingQuery =
       query(
@@ -165,7 +205,9 @@ export async function POST(
         pendingQuery
       );
 
-    if (pendingSnap.empty) {
+    if (
+      pendingSnap.empty
+    ) {
 
       return NextResponse.json(
         {
@@ -187,9 +229,12 @@ export async function POST(
       await updateDoc(
         docSnap.ref,
         {
-          status: "paid",
 
-          verified: true,
+          status:
+            "paid",
+
+          verified:
+            true,
 
           paidAt:
             new Date(),
@@ -199,12 +244,15 @@ export async function POST(
 
           razorpayOrderId:
             razorpay_order_id,
+
+          updatedAt:
+            serverTimestamp(),
         }
       );
     }
 
     /* =========================
-       CHECK GROUP
+       GROUP
     ========================= */
 
     const groupRef =
@@ -219,14 +267,66 @@ export async function POST(
         groupRef
       );
 
-    if (groupSnap.exists()) {
+    if (
+      groupSnap.exists()
+    ) {
 
       const groupData =
         groupSnap.data();
 
       const members =
-        groupData.members ||
-        [];
+        Array.isArray(
+          groupData.members
+        )
+          ? groupData.members
+          : [];
+
+      /* =========================
+         MARK MEMBER PAID
+      ========================= */
+
+      const updatedMembers =
+        members.map(
+          (
+            m: any
+          ) => {
+
+            if (
+              typeof m ===
+              "string"
+            ) {
+
+              return m;
+            }
+
+            if (
+              m.phone ===
+                uid ||
+              m.uid ===
+                uid
+            ) {
+
+              return {
+                ...m,
+                paid: true,
+              };
+            }
+
+            return m;
+          }
+        );
+
+      await updateDoc(
+        groupRef,
+        {
+
+          members:
+            updatedMembers,
+
+          lastActivityAt:
+            serverTimestamp(),
+        }
+      );
 
       /* =========================
          CHECK PAID USERS
@@ -254,27 +354,32 @@ export async function POST(
           paidQuery
         );
 
+      const requiredSize =
+        groupData.requiredSize ||
+        members.length;
+
       /* =========================
          COMPLETE GROUP
       ========================= */
 
-     if (
-  paidSnap.size >=
-    (groupData.requiredSize || members.length) &&
-  members.length > 0
-) {
+      if (
+        paidSnap.size >=
+          requiredSize &&
+        members.length > 0
+      ) {
 
         await updateDoc(
           groupRef,
           {
+
             status:
               "completed",
 
             completedAt:
-              new Date(),
+              serverTimestamp(),
 
             lastActivityAt:
-              new Date(),
+              serverTimestamp(),
           }
         );
 
@@ -304,17 +409,25 @@ export async function POST(
             chatQuery
           );
 
-        if (chatSnap.empty) {
+        if (
+          chatSnap.empty
+        ) {
 
           await addDoc(
             chatsRef,
             {
+
               groupId,
 
-              members,
+              members:
+                updatedMembers,
+
+              memberUIDs:
+                groupData.memberUIDs ||
+                [],
 
               createdAt:
-                new Date(),
+                serverTimestamp(),
 
               isActive:
                 true,
@@ -323,18 +436,66 @@ export async function POST(
                 "",
 
               lastMessageAt:
-                new Date(),
+                serverTimestamp(),
             }
           );
         }
       }
+
+      /* =========================
+         READY STATE
+      ========================= */
+
+      else {
+
+        await updateDoc(
+          groupRef,
+          {
+
+            status:
+              "ready",
+
+            lastActivityAt:
+              serverTimestamp(),
+          }
+        );
+      }
     }
+
+    /* =========================
+       OPTIONAL ANALYTICS
+    ========================= */
+
+    await addDoc(
+      collection(
+        db,
+        "paymentAnalytics"
+      ),
+      {
+
+        uid,
+
+        groupId,
+
+        amount: 29,
+
+        paymentMethod:
+          "razorpay",
+
+        razorpayPaymentId:
+          razorpay_payment_id,
+
+        createdAt:
+          serverTimestamp(),
+      }
+    );
 
     /* =========================
        SUCCESS
     ========================= */
 
     return NextResponse.json({
+
       success: true,
 
       paymentId:

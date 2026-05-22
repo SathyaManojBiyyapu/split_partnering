@@ -52,6 +52,9 @@ export default function DashboardPage() {
     setLatestSelection,
   ] = useState<any>(null);
 
+  const [unreadCounts, setUnreadCounts] =
+    useState<Record<string, number>>({});
+
   /* USER */
 
   const rawPhone =
@@ -563,9 +566,13 @@ export default function DashboardPage() {
                         : "bg-yellow-500 text-black"
                     }`}
                   >
+
                     {
-                      group.status
+                      group.status === "ready"
+                        ? "Ready for payment"
+                        : group.status
                     }
+
                   </div>
 
                 </div>
@@ -586,6 +593,11 @@ export default function DashboardPage() {
 
                     <p className="text-yellow-400 text-lg font-bold">
                       🔒 Partner Details Locked
+                    </p>
+
+                    <p className="mt-2 text-xs text-yellow-300">
+                      Secure payment required to unlock
+                      members and private coordination.
                     </p>
 
                     <p className="text-sm text-gray-400 mt-2 leading-relaxed">
@@ -644,10 +656,14 @@ export default function DashboardPage() {
                               <div>
 
                                 <p className="font-bold">
+
                                   👤 {
                                     member.name ||
                                     "User"
                                   }
+
+                                  <span className="ml-2 inline-block w-2 h-2 rounded-full bg-green-500"></span>
+
                                 </p>
 
                                 <p className="text-sm text-gray-400 mt-1">
@@ -655,6 +671,10 @@ export default function DashboardPage() {
                                     member.phone ||
                                     "N/A"
                                   }
+                                </p>
+
+                                <p className="text-xs text-gray-500 mt-1">
+                                  Joined recently
                                 </p>
 
                               </div>
@@ -691,9 +711,8 @@ export default function DashboardPage() {
 
                     <button
                       onClick={() =>
-                        router.push(
+                        window.location.href =
                           `/payment?groupId=${group.id}`
-                        )
                       }
                       className="
                         px-5 py-2 rounded-xl
@@ -704,7 +723,7 @@ export default function DashboardPage() {
                         transition
                       "
                     >
-                      Unlock for ₹29
+                      🔓 Unlock for ₹29
                     </button>
 
                   ) : (
@@ -723,7 +742,15 @@ export default function DashboardPage() {
                         transition
                       "
                     >
+
                       Open Chat
+
+                      {(unreadCounts[group.id] || 0) > 0 && (
+                        <span className="ml-2 text-xs">
+                          💬 {unreadCounts[group.id]}
+                        </span>
+                      )}
+
                     </button>
 
                   )}
@@ -742,7 +769,7 @@ export default function DashboardPage() {
                       transition
                     "
                   >
-                    Remove Match
+                    ❌ Remove Match
                   </button>
 
                 </div>

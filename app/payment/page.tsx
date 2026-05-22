@@ -75,6 +75,11 @@ function PaymentContent() {
     setPaymentCompleted,
   ] = useState(false);
 
+  const [
+    successAnim,
+    setSuccessAnim,
+  ] = useState(false);
+
   /* PHONE UID */
 
   const phone =
@@ -85,9 +90,26 @@ function PaymentContent() {
         )?.trim()
       : null;
 
+  const getUserId = () => {
+    if (phone) return phone;
+
+    const authPhone =
+      firebaseUser?.phoneNumber?.replace(
+        /^\+91/,
+        ""
+      );
+
+    return authPhone || null;
+  };
+
   /* FIXED PRICE */
 
   const PRICE = 29;
+
+  const stripeEnabled =
+    process.env
+      .NEXT_PUBLIC_STRIPE_ENABLED ===
+    "true";
 
   /* -----------------------------
      LOAD RAZORPAY SDK
@@ -204,8 +226,11 @@ function PaymentContent() {
 
   useEffect(() => {
 
+    const userId =
+      getUserId();
+
     if (
-      !phone ||
+      !userId ||
       !groupId
     )
       return;
@@ -228,7 +253,7 @@ function PaymentContent() {
               where(
                 "uid",
                 "==",
-                phone
+                userId
               ),
 
               where(
@@ -286,6 +311,7 @@ function PaymentContent() {
   }, [
     phone,
     groupId,
+    firebaseUser,
   ]);
 
   /* -----------------------------
@@ -295,8 +321,11 @@ function PaymentContent() {
   const markMemberPaid =
     async () => {
 
+      const userId =
+        getUserId();
+
       if (
-        !phone ||
+        !userId ||
         !groupId
       )
         return;
@@ -342,9 +371,9 @@ function PaymentContent() {
 
               if (
                 m.phone ===
-                  phone ||
+                  userId ||
                 m.uid ===
-                  phone
+                  userId
               ) {
 
                 return {
@@ -374,6 +403,96 @@ function PaymentContent() {
       }
     };
 
+  const finalizeRazorpayPayment =
+    async (
+      razorpayPaymentId: string,
+      razorpayOrderId: string
+    ) => {
+
+      const userId =
+        getUserId();
+
+      if (
+        !userId ||
+        !groupId
+      ) {
+
+        throw new Error(
+          "User phone not found. Log in with your mobile number."
+        );
+      }
+
+      const paymentsRef =
+        collection(
+          db,
+          "payments"
+        );
+
+      const qPay =
+        query(
+          paymentsRef,
+
+          where(
+            "uid",
+            "==",
+            userId
+          ),
+
+          where(
+            "groupId",
+            "==",
+            groupId
+          ),
+
+          where(
+            "status",
+            "==",
+            "pending"
+          )
+        );
+
+      const paySnap =
+        await getDocs(
+          qPay
+        );
+
+      if (
+        paySnap.empty
+      ) {
+
+        throw new Error(
+          "No pending payment record found"
+        );
+      }
+
+      for (const d of paySnap.docs) {
+
+        await updateDoc(
+          doc(
+            db,
+            "payments",
+            d.id
+          ),
+          {
+            status:
+              "paid",
+
+            verified:
+              true,
+
+            razorpayPaymentId,
+
+            razorpayOrderId,
+
+            paidAt:
+              serverTimestamp(),
+          }
+        );
+      }
+
+      await markMemberPaid();
+    };
+
   /* -----------------------------
      STRIPE PAYMENT
   ----------------------------- */
@@ -381,12 +500,21 @@ function PaymentContent() {
   const handlePayment =
     async () => {
 
+      const userId =
+        getUserId();
+
       if (
-        !phone ||
+        !userId ||
         !groupData ||
         !groupId
-      )
+      ) {
+
+        alert(
+          "Please log in with your mobile number before paying."
+        );
+
         return;
+      }
 
       try {
 
@@ -401,9 +529,10 @@ function PaymentContent() {
           ),
           {
             uid:
-              phone,
+              userId,
 
-            phone,
+            phone:
+              userId,
 
             groupId,
 
@@ -446,7 +575,7 @@ function PaymentContent() {
                   groupId,
 
                   uid:
-                    phone,
+                    userId,
                 }
               ),
             }
@@ -456,22 +585,24 @@ function PaymentContent() {
           await response.json();
 
         if (
-          data.url
+          !response.ok ||
+          !data.url
         ) {
 
-          window.location.href =
-            data.url;
-
-        } else {
-
           alert(
-            "Stripe session creation failed ❌"
+            data.error ||
+              "Stripe session creation failed ❌. Check STRIPE_SECRET_KEY in .env.local."
           );
 
           setProcessing(
             false
           );
+
+          return;
         }
+
+        window.location.href =
+          data.url;
 
       } catch (error) {
 
@@ -497,20 +628,27 @@ function PaymentContent() {
   const handleRazorpay =
     async () => {
 
+      const userId =
+        getUserId();
+
       if (
-        !phone ||
+        !userId ||
         !groupData ||
         !groupId
-      )
+      ) {
+
+        alert(
+          "Please log in with your mobile number before paying."
+        );
+
         return;
+      }
 
       try {
 
         setProcessing(
           true
         );
-
-        /* CREATE PAYMENT */
 
         await addDoc(
           collection(
@@ -519,9 +657,10 @@ function PaymentContent() {
           ),
           {
             uid:
-              phone,
+              userId,
 
-            phone,
+            phone:
+              userId,
 
             groupId,
 
@@ -548,8 +687,6 @@ function PaymentContent() {
           }
         );
 
-        /* CREATE ORDER */
-
         const orderRes =
           await fetch(
             "/api/create-razorpay-order",
@@ -567,6 +704,11 @@ function PaymentContent() {
                   {
                     amount:
                       PRICE,
+
+                    groupId,
+
+                    uid:
+                      userId,
                   }
                 ),
             }
@@ -575,16 +717,28 @@ function PaymentContent() {
         const order =
           await orderRes.json();
 
-        /* RAZORPAY OPTIONS */
+        if (
+          !orderRes.ok ||
+          !order.id
+        ) {
+
+          alert(
+            order.error ||
+              "Could not create Razorpay order ❌"
+          );
+
+          setProcessing(
+            false
+          );
+
+          return;
+        }
 
         const options = {
 
           key:
             process.env
               .NEXT_PUBLIC_RAZORPAY_KEY_ID,
-
-          amount:
-            PRICE * 100,
 
           currency:
             "INR",
@@ -604,8 +758,6 @@ function PaymentContent() {
             ) {
 
               try {
-
-                /* VERIFY PAYMENT */
 
                 const verifyRes =
                   await fetch(
@@ -633,7 +785,7 @@ function PaymentContent() {
                               response.razorpay_signature,
 
                             uid:
-                              phone,
+                              userId,
 
                             groupId,
                           }
@@ -645,28 +797,44 @@ function PaymentContent() {
                   await verifyRes.json();
 
                 if (
+                  !verifyRes.ok ||
                   !verifyData.success
                 ) {
 
                   alert(
-                    "Payment verification failed ❌"
+                    verifyData.error ||
+                      "Payment verification failed ❌"
+                  );
+
+                  setProcessing(
+                    false
                   );
 
                   return;
                 }
 
-                await markMemberPaid();
+                await finalizeRazorpayPayment(
+                  response.razorpay_payment_id,
+                  response.razorpay_order_id
+                );
 
                 setPaymentCompleted(
                   true
                 );
 
-                alert(
-                  "Payment successful ✅"
+                setSuccessAnim(
+                  true
                 );
 
-                router.push(
-                  `/chat/${groupId}`
+                setTimeout(
+                  () => {
+
+                    router.push(
+                      `/chat/${groupId}`
+                    );
+
+                  },
+                  1800
                 );
 
               } catch (err) {
@@ -677,6 +845,10 @@ function PaymentContent() {
 
                 alert(
                   "Payment verification failed ❌"
+                );
+
+                setProcessing(
+                  false
                 );
               }
             },
@@ -735,9 +907,35 @@ function PaymentContent() {
     );
   }
 
-  /* -----------------------------
-     UI
-  ----------------------------- */
+  /* SUCCESS */
+
+  if (
+    successAnim
+  ) {
+
+    return (
+
+      <div className="min-h-screen flex items-center justify-center bg-black text-white">
+
+        <div className="text-center">
+
+          <div className="text-7xl mb-6">
+            ✅
+          </div>
+
+          <h1 className="text-4xl font-bold text-green-400">
+            Payment Successful
+          </h1>
+
+          <p className="text-gray-400 mt-4">
+            Redirecting to private group chat...
+          </p>
+
+        </div>
+
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center text-white px-4">
@@ -761,8 +959,6 @@ function PaymentContent() {
         <p className="text-gray-400 text-sm mb-6">
           Unlock secure coordination and verified group benefits.
         </p>
-
-        {/* GROUP INFO */}
 
         {groupData && (
 
@@ -822,8 +1018,6 @@ function PaymentContent() {
           </div>
         )}
 
-        {/* PRICE */}
-
         <div className="mb-4 text-gray-300 text-sm">
           Fixed Activation Fee
         </div>
@@ -831,8 +1025,6 @@ function PaymentContent() {
         <div className="text-3xl font-bold text-green-400 mb-6">
           ₹29
         </div>
-
-        {/* ALREADY PAID */}
 
         {paymentCompleted ? (
 
@@ -854,28 +1046,29 @@ function PaymentContent() {
         ) : (
 
           <>
-            {/* STRIPE */}
 
-            <button
-              onClick={
-                handlePayment
-              }
-              disabled={
-                processing
-              }
-              className="
-                w-full py-3 rounded-xl
-                bg-[#635BFF]
-                text-white font-bold
-                hover:opacity-90
-                transition
-                disabled:opacity-50
-              "
-            >
-              {processing
-                ? "Processing..."
-                : "Pay with Stripe"}
-            </button>
+            {stripeEnabled ? (
+              <button
+                onClick={
+                  handlePayment
+                }
+                disabled={
+                  processing
+                }
+                className="
+                  w-full py-3 rounded-xl
+                  bg-[#635BFF]
+                  text-white font-bold
+                  hover:opacity-90
+                  transition
+                  disabled:opacity-50
+                "
+              >
+                {processing
+                  ? "Processing..."
+                  : "Pay with Stripe"}
+              </button>
+            ) : null}
 
             {/* RAZORPAY */}
 
@@ -900,10 +1093,9 @@ function PaymentContent() {
                 ? "Processing..."
                 : "Pay ₹29 with Razorpay"}
             </button>
+
           </>
         )}
-
-        {/* BACK */}
 
         <button
           onClick={() =>

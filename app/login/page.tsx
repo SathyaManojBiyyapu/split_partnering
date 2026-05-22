@@ -104,6 +104,12 @@ export default function LoginPage() {
       localStorage.setItem("uid", user.uid);
       localStorage.setItem("email", user.email || "");
       localStorage.setItem("name", user.displayName || "");
+
+      const authPhone = user.phoneNumber?.replace(/^\+91/, "").trim();
+      if (authPhone) {
+        localStorage.setItem("phone", authPhone);
+      }
+
       localStorage.removeItem("guest");
 
       alert("Google login successful!");

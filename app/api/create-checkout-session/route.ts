@@ -1,13 +1,11 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 
-function getStripe(): Stripe {
+function getStripe(): Stripe | null {
   const key = process.env.STRIPE_SECRET_KEY;
 
-  if (!key) {
-    throw new Error(
-      "STRIPE_SECRET_KEY is not set"
-    );
+  if (!key || key.includes("xxxx")) {
+    return null;
   }
 
   return new Stripe(key);
@@ -21,6 +19,16 @@ export async function POST(
 
     const stripe =
       getStripe();
+
+    if (!stripe) {
+      return NextResponse.json(
+        {
+          error:
+            "Stripe is not configured. Add a real STRIPE_SECRET_KEY to .env.local and set NEXT_PUBLIC_STRIPE_ENABLED=true",
+        },
+        { status: 503 }
+      );
+    }
 
     const body =
       await req.json();

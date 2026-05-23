@@ -1,3 +1,5 @@
+export const runtime = "nodejs";
+
 import { NextResponse } from "next/server";
 import Razorpay from "razorpay";
 
@@ -152,7 +154,7 @@ export async function POST(
         order.currency,
     });
 
-  } catch (error) {
+  } catch (error: any) {
 
     console.error(
       "Razorpay order creation error:",
@@ -162,6 +164,7 @@ export async function POST(
     return NextResponse.json(
       {
         error:
+          error?.message ||
           "Razorpay order creation failed",
       },
       {

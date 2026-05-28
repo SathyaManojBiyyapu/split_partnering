@@ -19,16 +19,17 @@ function getRazorpay(): Razorpay {
   const keySecret =
     process.env
       .RAZORPAY_KEY_SECRET;
-
-  if (
-    !keyId ||
-    !keySecret
-  ) {
-
-    throw new Error(
-      "Razorpay keys are not configured"
-    );
-  }
+      if (
+        !keyId ||
+        !keySecret
+      ) {
+      
+        throw new Error(
+          `Missing Razorpay keys:
+           keyId=${keyId}
+           keySecret=${keySecret}`
+        );
+      }
 
   return new Razorpay({
 
@@ -157,8 +158,8 @@ export async function POST(
   } catch (error: any) {
 
     console.error(
-      "Razorpay order creation error:",
-      error
+      "FULL Razorpay order creation error:",  
+      JSON.stringify(error, null, 2)
     );
 
     return NextResponse.json(

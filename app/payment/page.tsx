@@ -714,31 +714,41 @@ function PaymentContent() {
             }
           );
 
-        const order =
+          const order =
           await orderRes.json();
-
-        if (
-          !orderRes.ok ||
-          !order.id
-        ) {
-
+        
+        console.log(
+          "ORDER RESPONSE:",
+          order
+        );
+        
+        if (!orderRes.ok) {
+        
           alert(
-            order.error ||
-              "Could not create Razorpay order ❌"
+            order?.error ||
+            JSON.stringify(order)
           );
-
-          setProcessing(
-            false
-          );
-
+        
+          setProcessing(false);
+        
           return;
         }
-
+        
+        if (!order?.id) {
+        
+          alert(
+            "Order ID missing: " +
+            JSON.stringify(order)
+          );
+        
+          setProcessing(false);
+        
+          return;
+        }
         const options = {
 
           key:
-            process.env
-              .NEXT_PUBLIC_RAZORPAY_KEY_ID,
+          "rzp_test_SufUm1aRiL4317",
 
           currency:
             "INR",
@@ -868,13 +878,26 @@ function PaymentContent() {
           },
         };
 
+        if (
+          !(window as any).Razorpay
+        ) {
+        
+          alert(
+            "Razorpay SDK not loaded"
+          );
+        
+          setProcessing(false);
+        
+          return;
+        }
+        
         const razor =
           new (
             window as any
           ).Razorpay(
             options
           );
-
+        
         razor.open();
 
       } catch (error) {

@@ -4,7 +4,11 @@ import Stripe from "stripe";
 function getStripe(): Stripe | null {
   const key = process.env.STRIPE_SECRET_KEY;
 
-  if (!key || key.includes("xxxx")) {
+  if (
+    !key ||
+    key.includes("xxxx") ||
+    (process.env.NODE_ENV === "production" && key.startsWith("sk_test_"))
+  ) {
     return null;
   }
 

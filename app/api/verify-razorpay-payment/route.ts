@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
+import { adminDb, adminTimestamp } from "@/firebase/admin";
 
 function getRazorpaySecret(): string {
   const secret = process.env.RAZORPAY_KEY_SECRET;
@@ -23,7 +24,6 @@ function verifySignature(
   return expected === signature;
 }
 
-/** Server only verifies Razorpay signature; Firestore updates run on the authenticated client. */
 export async function POST(req: Request) {
   try {
     const secret = getRazorpaySecret();
@@ -62,6 +62,47 @@ export async function POST(req: Request) {
         { error: "Invalid payment signature" },
         { status: 400 }
       );
+    }
+
+    // ============================================================
+    // SERVER-SIDE: Update payment document from pending → paid
+    // Admin SDK bypasses Firestore security rules.
+    // ============================================================
+
+    const paymentsRef = adminDb.collection("payments");
+    const paySnap = await paymentsRef
+      .where("uid", "==", uid)
+      .where("groupId", "==", groupId)
+      .where("status", "==", "pending")
+      .get();
+
+    for (const d of paySnap.docs) {
+      await d.ref.update({
+        status: "paid",
+        verified: true,
+        razorpayPaymentId: razorpay_payment_id,
+        razorpayOrderId: razorpay_order_id,
+        paidAt: adminTimestamp(),
+      });
+    }
+
+    // ============================================================
+    // SERVER-SIDE: Mark member as paid in the group document
+    // ============================================================
+
+    const groupRef = adminDb.collection("groups").doc(groupId);
+    const groupSnap = await groupRef.get();
+
+    if (groupSnap.exists) {
+      const group = groupSnap.data();
+      const updatedMembers = (group?.members || []).map((m: any) => {
+        if (typeof m === "string") return m;
+        if (m.phone === uid || m.uid === uid) {
+          return { ...m, paid: true };
+        }
+        return m;
+      });
+      await groupRef.update({ members: updatedMembers });
     }
 
     return NextResponse.json({

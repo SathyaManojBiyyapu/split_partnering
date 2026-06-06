@@ -31,6 +31,17 @@ function getRazorpay(): Razorpay {
         );
       }
 
+  // Block production startup with test keys
+  if (
+    process.env.NODE_ENV === "production" &&
+    keyId.startsWith("rzp_test_")
+  ) {
+    throw new Error(
+      "PRODUCTION BLOCKED: You are using Razorpay TEST keys (rzp_test_*) in production. " +
+      "Replace with LIVE keys from https://dashboard.razorpay.com/app/keys"
+    );
+  }
+
   return new Razorpay({
 
     key_id:

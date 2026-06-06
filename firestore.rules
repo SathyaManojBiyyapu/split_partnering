@@ -1,0 +1,223 @@
+rules_version = '2';
+
+service cloud.firestore {
+
+  match /databases/{database}/documents {
+
+    /* =========================
+       HELPERS
+    ========================== */
+
+    function loggedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return request.auth != null &&
+             request.auth.token.admin == true;
+    }
+
+    function isOwner(uid) {
+      return request.auth != null &&
+             request.auth.uid == uid;
+    }
+
+    function validString(field) {
+      return field is string &&
+             field.size() > 0;
+    }
+
+    /* =========================
+       USER PROFILES
+    ========================== */
+
+    match /users/{uid} {
+
+      allow read: if loggedIn();
+
+      allow create: if
+        loggedIn();
+
+      allow update: if
+        loggedIn();
+
+      allow delete: if false;
+    }
+
+    /* =========================
+       CATEGORY SYSTEM
+    ========================== */
+
+    match /categories/{categoryId} {
+
+      allow read: if true;
+
+      allow write: if isAdmin();
+
+      match /subcategories/{subId} {
+
+        allow read: if true;
+
+        allow write: if isAdmin();
+      }
+    }
+
+    /* =========================
+       USER SAVED PARTNERS
+    ========================== */
+
+    match /selections/{docId} {
+
+      allow read: if loggedIn();
+
+      allow create: if
+        loggedIn();
+
+      allow update: if
+        loggedIn();
+
+      allow delete: if
+        loggedIn();
+    }
+
+    /* =========================
+       GROUP MATCHING
+    ========================== */
+
+    match /groups/{groupId} {
+
+      allow read: if loggedIn();
+
+      allow create: if
+        loggedIn() &&
+        request.resource.data.membersCount is int &&
+        request.resource.data.requiredSize is int &&
+        request.resource.data.members is list &&
+        request.resource.data.memberUIDs is list &&
+        validString(
+          request.resource.data.category
+        ) &&
+        validString(
+          request.resource.data.option
+        );
+
+      allow update: if
+        loggedIn();
+
+      allow delete: if isAdmin();
+    }
+
+    /* =========================
+       PAYMENTS
+    ========================== */
+
+    match /payments/{paymentId} {
+
+      allow read: if
+        loggedIn();
+
+      allow create: if
+        loggedIn() &&
+        request.resource.data.uid is string &&
+        request.resource.data.amount is number;
+
+      allow update: if
+        isAdmin();
+
+      allow delete: if false;
+    }
+
+    /* =========================
+       CHAT SYSTEM
+    ========================== */
+
+    match /chats/{chatId} {
+
+      allow read: if loggedIn();
+
+      allow create: if loggedIn();
+
+      allow update: if loggedIn();
+
+      /* ---------- MESSAGES ---------- */
+
+      match /messages/{messageId} {
+
+        allow read: if loggedIn();
+
+        allow create: if
+          loggedIn() &&
+          request.resource.data.senderId is string &&
+          validString(
+            request.resource.data.text
+          );
+
+        allow update: if
+          loggedIn();
+
+        allow delete: if false;
+      }
+
+      /* ---------- TYPING ---------- */
+
+      match /typing/{uid} {
+
+        allow read: if loggedIn();
+
+        allow write: if
+          loggedIn();
+      }
+    }
+
+    /* =========================
+       ONLINE STATUS
+    ========================== */
+
+    match /status/{uid} {
+
+      allow read: if loggedIn();
+
+      allow write: if
+        loggedIn();
+    }
+
+    /* =========================
+       MOVIE TICKETS
+    ========================== */
+
+    match /movieTickets/{ticketId} {
+
+      allow read: if loggedIn();
+
+      allow create: if loggedIn();
+
+      allow update: if isAdmin();
+
+      allow delete: if false;
+    }
+
+    /* =========================
+       TICKET REQUESTS
+    ========================== */
+
+    match /ticketRequests/{requestId} {
+
+      allow read: if isAdmin();
+
+      allow create: if loggedIn();
+
+      allow update: if isAdmin();
+
+      allow delete: if false;
+    }
+
+    /* =========================
+       FALLBACK
+    ========================== */
+
+    match /{document=**} {
+
+      allow read, write: if false;
+    }
+  }
+}

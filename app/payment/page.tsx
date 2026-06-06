@@ -25,7 +25,6 @@ import {
   getDocs,
   query,
   where,
-  updateDoc,
 } from "firebase/firestore";
 
 import {
@@ -313,185 +312,6 @@ function PaymentContent() {
     groupId,
     firebaseUser,
   ]);
-
-  /* -----------------------------
-     MARK MEMBER PAID
-  ----------------------------- */
-
-  const markMemberPaid =
-    async () => {
-
-      const userId =
-        getUserId();
-
-      if (
-        !userId ||
-        !groupId
-      )
-        return;
-
-      try {
-
-        const groupRef =
-          doc(
-            db,
-            "groups",
-            groupId
-          );
-
-        const groupSnap =
-          await getDoc(
-            groupRef
-          );
-
-        if (
-          !groupSnap.exists()
-        )
-          return;
-
-        const group =
-          groupSnap.data();
-
-        const updatedMembers =
-          (
-            group.members ||
-            []
-          ).map(
-            (
-              m: any
-            ) => {
-
-              if (
-                typeof m ===
-                "string"
-              ) {
-
-                return m;
-              }
-
-              if (
-                m.phone ===
-                  userId ||
-                m.uid ===
-                  userId
-              ) {
-
-                return {
-                  ...m,
-                  paid: true,
-                };
-              }
-
-              return m;
-            }
-          );
-
-        await updateDoc(
-          groupRef,
-          {
-            members:
-              updatedMembers,
-          }
-        );
-
-      } catch (err) {
-
-        console.error(
-          "Paid update error:",
-          err
-        );
-      }
-    };
-
-  const finalizeRazorpayPayment =
-    async (
-      razorpayPaymentId: string,
-      razorpayOrderId: string
-    ) => {
-
-      const userId =
-        getUserId();
-
-      if (
-        !userId ||
-        !groupId
-      ) {
-
-        throw new Error(
-          "User phone not found. Log in with your mobile number."
-        );
-      }
-
-      const paymentsRef =
-        collection(
-          db,
-          "payments"
-        );
-
-      const qPay =
-        query(
-          paymentsRef,
-
-          where(
-            "uid",
-            "==",
-            userId
-          ),
-
-          where(
-            "groupId",
-            "==",
-            groupId
-          ),
-
-          where(
-            "status",
-            "==",
-            "pending"
-          )
-        );
-
-      const paySnap =
-        await getDocs(
-          qPay
-        );
-
-      if (
-        paySnap.empty
-      ) {
-
-        throw new Error(
-          "No pending payment record found"
-        );
-      }
-
-      for (const d of paySnap.docs) {
-
-        await updateDoc(
-          doc(
-            db,
-            "payments",
-            d.id
-          ),
-          {
-            status:
-              "paid",
-
-            verified:
-              true,
-
-            razorpayPaymentId,
-
-            razorpayOrderId,
-
-            paidAt:
-              serverTimestamp(),
-          }
-        );
-      }
-
-      await markMemberPaid();
-    };
 
   /* -----------------------------
      STRIPE PAYMENT
@@ -823,10 +643,6 @@ function PaymentContent() {
                   return;
                 }
 
-                await finalizeRazorpayPayment(
-                  response.razorpay_payment_id,
-                  response.razorpay_order_id
-                );
 
                 setPaymentCompleted(
                   true

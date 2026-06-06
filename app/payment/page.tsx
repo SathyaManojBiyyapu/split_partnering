@@ -748,7 +748,7 @@ function PaymentContent() {
         const options = {
 
           key:
-          "rzp_test_SufUm1aRiL4317",
+          process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
 
           currency:
             "INR",

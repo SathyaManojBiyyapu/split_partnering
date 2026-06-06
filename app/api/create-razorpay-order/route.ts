@@ -121,7 +121,7 @@ export async function POST(
           "INR",
 
         receipt:
-          `receipt_${groupId || "group"}_${Date.now()}`,
+          `grp_${Date.now()}`,
 
         notes: {
 

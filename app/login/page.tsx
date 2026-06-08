@@ -27,14 +27,17 @@ export default function LoginPage() {
   /* ------------------------------------------
      SETUP RECAPTCHA
   ------------------------------------------ */
-  const setupRecaptcha = () => {
-    if (!window.recaptchaVerifier) {
-      window.recaptchaVerifier = new RecaptchaVerifier(
-        auth,
-        "recaptcha-container",
-        { size: "invisible" }
-      );
+  const setupRecaptcha = async () => {
+    if (window.recaptchaVerifier) {
+      window.recaptchaVerifier.clear();
+      window.recaptchaVerifier = null;
     }
+    window.recaptchaVerifier = new RecaptchaVerifier(
+      auth,
+      "recaptcha-container",
+      { size: "invisible" }
+    );
+    await window.recaptchaVerifier.render();
     return window.recaptchaVerifier;
   };
 
@@ -52,7 +55,7 @@ export default function LoginPage() {
       setLoading(true);
 
       if (!otpSent) {
-        const verifier = setupRecaptcha();
+        const verifier = await setupRecaptcha();
         const confirmation = await signInWithPhoneNumber(
           auth,
           "+91" + phone,
@@ -82,10 +85,11 @@ export default function LoginPage() {
       toast.success("Login successful 🎉"); // ✅ ADDED
       window.location.href = "/profile";
     } catch (err) {
-      console.error("Firebase Auth Error Code:", (err as any)?.code);
-      console.error("Firebase Auth Error Message:", (err as any)?.message);
-      console.error(err);
-      alert(`${(err as any)?.code}: ${(err as any)?.message}`);
+      console.error("Firebase Auth Error:", err);
+      console.error("Code:", (err as any)?.code);
+      console.error("Message:", (err as any)?.message);
+      console.error("Full JSON:", JSON.stringify(err, Object.getOwnPropertyNames(err)));
+      alert(`${(err as any)?.code} : ${(err as any)?.message}`);
       toast.error("OTP failed. Try again ❌"); // ✅ ADDED
     } finally {
       setLoading(false);
@@ -118,10 +122,11 @@ export default function LoginPage() {
       toast.success("Google login successful 🎉"); // ✅ ADDED
       window.location.href = "/profile";
     } catch (err) {
-      console.error("Firebase Auth Error Code:", (err as any)?.code);
-      console.error("Firebase Auth Error Message:", (err as any)?.message);
-      console.error(err);
-      alert(`${(err as any)?.code}: ${(err as any)?.message}`);
+      console.error("Firebase Auth Error:", err);
+      console.error("Code:", (err as any)?.code);
+      console.error("Message:", (err as any)?.message);
+      console.error("Full JSON:", JSON.stringify(err, Object.getOwnPropertyNames(err)));
+      alert(`${(err as any)?.code} : ${(err as any)?.message}`);
       toast.error("Google login failed ❌"); // ✅ ADDED
     } finally {
       setLoading(false);

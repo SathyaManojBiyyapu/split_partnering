@@ -82,8 +82,10 @@ export default function LoginPage() {
       toast.success("Login successful 🎉"); // ✅ ADDED
       window.location.href = "/profile";
     } catch (err) {
+      console.error("Firebase Auth Error Code:", (err as any)?.code);
+      console.error("Firebase Auth Error Message:", (err as any)?.message);
       console.error(err);
-      alert("OTP failed. Try again.");
+      alert(`${(err as any)?.code}: ${(err as any)?.message}`);
       toast.error("OTP failed. Try again ❌"); // ✅ ADDED
     } finally {
       setLoading(false);
@@ -116,8 +118,10 @@ export default function LoginPage() {
       toast.success("Google login successful 🎉"); // ✅ ADDED
       window.location.href = "/profile";
     } catch (err) {
+      console.error("Firebase Auth Error Code:", (err as any)?.code);
+      console.error("Firebase Auth Error Message:", (err as any)?.message);
       console.error(err);
-      alert("Google login failed");
+      alert(`${(err as any)?.code}: ${(err as any)?.message}`);
       toast.error("Google login failed ❌"); // ✅ ADDED
     } finally {
       setLoading(false);

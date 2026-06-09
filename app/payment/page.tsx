@@ -79,6 +79,11 @@ function PaymentContent() {
     setSuccessAnim,
   ] = useState(false);
 
+  const [
+    razorpayLoaded,
+    setRazorpayLoaded,
+  ] = useState(false);
+
   /* PHONE UID */
 
   const phone =
@@ -116,6 +121,14 @@ function PaymentContent() {
 
   useEffect(() => {
 
+    // If already loaded or loading, skip
+    if (document.querySelector('script[src*="checkout.razorpay.com"]')) {
+      if ((window as any).Razorpay) {
+        setRazorpayLoaded(true);
+      }
+      return;
+    }
+
     const script =
       document.createElement(
         "script"
@@ -125,6 +138,15 @@ function PaymentContent() {
       "https://checkout.razorpay.com/v1/checkout.js";
 
     script.async = true;
+
+    script.onload = () => {
+      setRazorpayLoaded(true);
+      console.log("Razorpay SDK loaded successfully");
+    };
+
+    script.onerror = () => {
+      console.error("Failed to load Razorpay SDK");
+    };
 
     document.body.appendChild(
       script

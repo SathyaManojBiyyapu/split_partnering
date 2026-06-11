@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import Link from "next/link";
 import {
   RecaptchaVerifier,
@@ -9,7 +9,7 @@ import {
 } from "firebase/auth";
 
 import { auth, googleProvider } from "@/firebase/config";
-import toast from "react-hot-toast"; // ✅ ADDED (ONLY THIS IMPORT)
+import toast from "react-hot-toast";
 
 declare global {
   interface Window {
@@ -27,18 +27,36 @@ export default function LoginPage() {
   /* ------------------------------------------
      SETUP RECAPTCHA
   ------------------------------------------ */
-  const setupRecaptcha = async () => {
-    if (window.recaptchaVerifier) {
-      window.recaptchaVerifier.clear();
-      window.recaptchaVerifier = null;
-    }
-    window.recaptchaVerifier = new RecaptchaVerifier(
-      auth,
-      "recaptcha-container",
-      { size: "invisible" }
-    );
-    await window.recaptchaVerifier.render();
-    return window.recaptchaVerifier;
+  const setupRecaptcha = (): Promise<any> => {
+    return new Promise<any>((resolve, reject) => {
+      try {
+        if (window.recaptchaVerifier) {
+          try {
+            window.recaptchaVerifier.clear();
+          } catch (_) {}
+          window.recaptchaVerifier = null;
+        }
+
+        // Use 'normal' (visible checkbox) instead of 'invisible' to avoid CSP/Enterprise issues
+        window.recaptchaVerifier = new RecaptchaVerifier(
+          auth,
+          "recaptcha-container",
+          {
+            size: "normal",
+            callback: () => {
+              resolve(window.recaptchaVerifier);
+            },
+            "expired-callback": () => {
+              if (window.recaptchaVerifier) {
+                window.recaptchaVerifier.reset();
+              }
+            },
+          }
+        );
+      } catch (err) {
+        reject(err);
+      }
+    });
   };
 
   /* ------------------------------------------
@@ -46,8 +64,7 @@ export default function LoginPage() {
   ------------------------------------------ */
   const handleLoginWithOTP = async () => {
     if (!phone || phone.length !== 10) {
-      alert("Enter valid 10-digit mobile number");
-      toast.error("Enter valid 10-digit mobile number"); // ✅ ADDED
+      toast.error("Enter valid 10-digit mobile number");
       return;
     }
 
@@ -56,6 +73,7 @@ export default function LoginPage() {
 
       if (!otpSent) {
         const verifier = await setupRecaptcha();
+        // Verifier is already rendered when using "normal" size via callback
         const confirmation = await signInWithPhoneNumber(
           auth,
           "+91" + phone,
@@ -64,14 +82,12 @@ export default function LoginPage() {
 
         window.confirmationResult = confirmation;
         setOtpSent(true);
-        alert("OTP sent to your mobile");
-        toast.success("OTP sent to your mobile 📩"); // ✅ ADDED
+        toast.success("OTP sent to your mobile 📩");
         return;
       }
 
       if (!otp) {
-        alert("Enter OTP");
-        toast.error("Enter OTP"); // ✅ ADDED
+        toast.error("Enter OTP");
         return;
       }
 
@@ -81,16 +97,28 @@ export default function LoginPage() {
       localStorage.setItem("phone", phone.trim());
       localStorage.removeItem("guest");
 
-      alert("Login successful!");
-      toast.success("Login successful 🎉"); // ✅ ADDED
+      toast.success("Login successful 🎉");
       window.location.href = "/profile";
-    } catch (err) {
-      console.error("Firebase Auth Error:", err);
-      console.error("Code:", (err as any)?.code);
-      console.error("Message:", (err as any)?.message);
-      console.error("Full JSON:", JSON.stringify(err, Object.getOwnPropertyNames(err)));
-      alert(`${(err as any)?.code} : ${(err as any)?.message}`);
-      toast.error("OTP failed. Try again ❌"); // ✅ ADDED
+    } catch (err: any) {
+      // If reCAPTCHA fails, reset it so user can try again
+      if (window.recaptchaVerifier) {
+        try {
+          window.recaptchaVerifier.reset();
+        } catch (_) {}
+      }
+      const code = err?.code || "";
+      const message = err?.message || err?.toString() || "Unknown error";
+
+      // Provide clear user-facing messages
+      if (code === "auth/internal-error" || code === "auth/network-request-failed") {
+        toast.error("Phone login unavailable. Please use Google login instead.");
+      } else if (code === "auth/invalid-phone-number") {
+        toast.error("Invalid phone number. Enter a valid 10-digit number.");
+      } else if (code === "auth/too-many-requests") {
+        toast.error("Too many attempts. Please try again later.");
+      } else {
+        toast.error(`OTP failed: ${message.substring(0, 80)}`);
+      }
     } finally {
       setLoading(false);
     }

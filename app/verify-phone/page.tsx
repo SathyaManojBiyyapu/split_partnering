@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import {
   RecaptchaVerifier,
   signInWithPhoneNumber,
@@ -18,23 +18,36 @@ export default function VerifyPhonePage() {
   const [otpSent, setOtpSent] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  /* ---------------- SETUP RECAPTCHA ---------------- */
+  /* ---------------- SETUP RECAPTCHA (visible fallback) ---------------- */
 
-  const setupRecaptcha = () => {
-    if (!window.recaptchaVerifier) {
-      window.recaptchaVerifier = new RecaptchaVerifier(
-        auth,
-        "recaptcha-container",
-        {
-          size: "invisible",
-          callback: () => {
-            console.log("Recaptcha verified");
-          },
+  const setupRecaptcha = (): Promise<any> => {
+    return new Promise<any>((resolve, reject) => {
+      try {
+        if (window.recaptchaVerifier) {
+          try {
+            window.recaptchaVerifier.clear();
+          } catch (_) {}
+          window.recaptchaVerifier = null;
         }
-      );
-    }
-
-    return window.recaptchaVerifier;
+        window.recaptchaVerifier = new RecaptchaVerifier(
+          auth,
+          "recaptcha-container",
+          {
+            size: "normal",
+            callback: () => {
+              resolve(window.recaptchaVerifier);
+            },
+            "expired-callback": () => {
+              if (window.recaptchaVerifier) {
+                window.recaptchaVerifier.reset();
+              }
+            },
+          }
+        );
+      } catch (err) {
+        reject(err);
+      }
+    });
   };
 
   /* ---------------- HANDLE VERIFY ---------------- */
@@ -51,7 +64,7 @@ export default function VerifyPhonePage() {
       /* -------- SEND OTP -------- */
 
       if (!otpSent) {
-        const verifier = setupRecaptcha();
+        const verifier = await setupRecaptcha();
 
         const confirmation = await signInWithPhoneNumber(
           auth,

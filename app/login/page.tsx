@@ -37,14 +37,15 @@ export default function LoginPage() {
           window.recaptchaVerifier = null;
         }
 
-        // Use 'normal' (visible checkbox) instead of 'invisible' to avoid CSP/Enterprise issues
+        // Use 'normal' (visible checkbox) — the verifier is ready immediately after construction.
+        // The Promise resolves right away; Firebase will auto-trigger reCAPTCHA when signInWithPhoneNumber is called.
         window.recaptchaVerifier = new RecaptchaVerifier(
           auth,
           "recaptcha-container",
           {
             size: "normal",
             callback: () => {
-              resolve(window.recaptchaVerifier);
+              console.log("reCAPTCHA verified");
             },
             "expired-callback": () => {
               if (window.recaptchaVerifier) {
@@ -53,6 +54,9 @@ export default function LoginPage() {
             },
           }
         );
+
+        // Resolve immediately — the RecaptchaVerifier is constructed and ready
+        resolve(window.recaptchaVerifier);
       } catch (err) {
         reject(err);
       }

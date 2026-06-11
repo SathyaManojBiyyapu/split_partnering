@@ -35,7 +35,7 @@ export default function VerifyPhonePage() {
           {
             size: "normal",
             callback: () => {
-              resolve(window.recaptchaVerifier);
+              console.log("reCAPTCHA verified");
             },
             "expired-callback": () => {
               if (window.recaptchaVerifier) {
@@ -44,6 +44,8 @@ export default function VerifyPhonePage() {
             },
           }
         );
+        // Resolve immediately — verifier is constructed and ready
+        resolve(window.recaptchaVerifier);
       } catch (err) {
         reject(err);
       }

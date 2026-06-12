@@ -61,8 +61,8 @@ export default function Navbar() {
                 className={`px-4 py-1.5 rounded-full transition-all duration-200
                   ${
                     isActive
-                      ? "text-gold-primary border border-gold-primary shadow-[0_0_20px_rgba(212,175,55,0.9)]"
-                      : "text-text-muted hover:text-gold-primary hover:border hover:border-gold-primary hover:shadow-[0_0_18px_rgba(212,175,55,0.7)]"
+                      ? "text-gold-primary border border-gold-primary shadow-[0_0_10px_rgba(212,175,55,0.5)]"
+                      : "text-text-muted hover:text-gold-primary hover:border hover:border-gold-primary hover:shadow-[0_0_9px_rgba(212,175,55,0.4)]"
                   }`}
               >
                 {link.label}

@@ -22,7 +22,11 @@ import {
   updateDoc,
   deleteDoc,
   arrayRemove,
+  query,
+  where,
 } from "firebase/firestore";
+
+import { isExpired } from "@/app/data/matchExpiry";
 
 type Group = {
   id: string;
@@ -34,6 +38,20 @@ type Group = {
   status: string;
   createdAt?: any;
   isPaid?: boolean;
+};
+
+type PartnerMatch = {
+  uid: string;
+  name: string;
+  phone: string;
+  city: string;
+  district: string;
+  state: string;
+  photoURL: string;
+  category: string;
+  option: string;
+  matchLevel: "same-city" | "same-district" | "same-state";
+  groupId: string;
 };
 
 export default function DashboardPage() {
@@ -67,6 +85,197 @@ export default function DashboardPage() {
 
   const phone =
     rawPhone?.trim() || null;
+
+  /* LOCATION-BASED MATCHING */
+
+  const [userProfile, setUserProfile] =
+    useState<any>(null);
+
+  const [nearbyPartners, setNearbyPartners] =
+    useState<PartnerMatch[]>([]);
+
+  useEffect(() => {
+
+    if (!phone) {
+
+      return;
+    }
+
+    const loadNearby =
+      async () => {
+
+        try {
+
+          /* FETCH CURRENT USER PROFILE */
+
+          const userRef =
+            doc(
+              db,
+              "users",
+              phone
+            );
+
+          const userSnap =
+            await getDoc(
+              userRef
+            );
+
+          if (
+            !userSnap.exists()
+          )
+            return;
+
+          const me =
+            userSnap.data() as any;
+
+          setUserProfile(me);
+
+          if (
+            !me.state
+          )
+            return;
+
+          /* FETCH USERS IN SAME STATE ONLY */
+
+          const usersSnap =
+            await getDocs(
+              query(
+                collection(
+                  db,
+                  "users"
+                ),
+                where(
+                  "state",
+                  "==",
+                  me.state
+                )
+              )
+            );
+
+          const partners: PartnerMatch[] =
+            [];
+
+          const currentUserPhone =
+            phone;
+
+          usersSnap.forEach(
+            (uDoc) => {
+
+              const u =
+                uDoc.data() as any;
+
+              if (
+                u.phone ===
+                  currentUserPhone
+              )
+                return;
+
+              if (
+                !u.state
+              )
+                return;
+
+              let matchLevel:
+                "same-city" | "same-district" | "same-state" =
+                  "same-state";
+
+              /* PRIORITY: Same City = Highest */
+
+              if (
+                u.city &&
+                me.city &&
+                u.city ===
+                  me.city
+              ) {
+
+                matchLevel =
+                  "same-city";
+
+              } else if (
+
+                /* Same District = High */
+
+                u.district &&
+                me.district &&
+                u.district ===
+                  me.district
+              ) {
+
+                matchLevel =
+                  "same-district";
+              }
+
+              partners.push({
+
+                uid:
+                  u.phone,
+
+                name:
+                  u.name ||
+                  "User",
+
+                phone:
+                  u.phone,
+
+                city:
+                  u.city ||
+                  "",
+
+                district:
+                  u.district ||
+                  "",
+
+                state:
+                  u.state,
+
+                photoURL:
+                  u.photoURL ||
+                  "",
+
+                category:
+                  "",
+
+                option:
+                  "",
+
+                matchLevel,
+
+                groupId:
+                  "",
+              });
+            }
+          );
+
+          /* SORT: same-city first, then same-district, then same-state */
+
+          const priority: Record<string, number> = {
+            "same-city": 0,
+            "same-district": 1,
+            "same-state": 2,
+          };
+
+          partners.sort(
+            (a, b) =>
+              (priority[a.matchLevel] || 0) -
+              (priority[b.matchLevel] || 0)
+          );
+
+          setNearbyPartners(
+            partners
+          );
+
+        } catch (err) {
+
+          console.error(
+            "Matching error:",
+            err
+          );
+        }
+      };
+
+    loadNearby();
+
+  }, [phone]);
 
   /* FETCH GROUPS */
 
@@ -498,6 +707,90 @@ export default function DashboardPage() {
         </p>
       )}
 
+      {/* ===== NEARBY PARTNERS (LOCATION-BASED) ===== */}
+
+      {userProfile?.state && nearbyPartners.length > 0 && (
+
+        <div className="mt-12">
+
+          <h2 className="text-2xl font-bold text-[#FFD166] mb-2">
+            📍 Nearby Partners
+          </h2>
+
+          <p className="text-gray-400 text-sm mb-6">
+            Potential matches in your area based on location proximity.
+          </p>
+
+          <div className="space-y-4">
+
+            {nearbyPartners.map(
+              (partner, idx) => (
+                <div
+                  key={idx}
+                  className="bg-[#0c0c0c] border border-[#FFD166]/20 rounded-2xl p-4 flex items-center justify-between"
+                >
+                  <div className="flex items-center gap-4">
+
+                    <img
+                      src={
+                        partner.photoURL ||
+                        "https://ui-avatars.com/api/?background=000000&color=FFD166&name=User"
+                      }
+                      alt=""
+                      className="w-12 h-12 rounded-full border border-[#FFD166]"
+                    />
+
+                    <div>
+
+                      <p className="font-bold text-white">
+                        {partner.name}
+                      </p>
+
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        {partner.city}
+                        {partner.city && partner.district ? ", " : ""}
+                        {partner.district}
+                        {" • "}
+                        {partner.state}
+                      </p>
+
+                      <p className="text-[10px] text-[#FFD166] mt-0.5">
+                        {partner.matchLevel === "same-city"
+                          ? "⭐ Same City"
+                          : partner.matchLevel === "same-district"
+                          ? "📌 Same District"
+                          : "📍 Same State"}
+                      </p>
+
+                    </div>
+
+                  </div>
+
+                  <span
+                    className={`text-[10px] px-3 py-1 rounded-full font-bold ${
+                      partner.matchLevel === "same-city"
+                        ? "bg-green-600 text-white"
+                        : partner.matchLevel === "same-district"
+                        ? "bg-yellow-600 text-white"
+                        : "bg-blue-600 text-white"
+                    }`}
+                  >
+                    {partner.matchLevel === "same-city"
+                      ? "Best Match"
+                      : partner.matchLevel === "same-district"
+                      ? "Good Match"
+                      : "Nearby"}
+                  </span>
+
+                </div>
+              )
+            )}
+
+          </div>
+
+        </div>
+      )}
+
       {matches.length === 0 ? (
 
         <p className="mt-8 text-gray-400">
@@ -515,6 +808,19 @@ export default function DashboardPage() {
                 key={group.id}
                 className="bg-[#0c0c0c] border border-[#FFD166]/20 rounded-2xl p-5"
               >
+
+                {/* EXPIRY BANNER */}
+
+                {isExpired(
+                  group.createdAt,
+                  group.category
+                ) && (
+                  <div className="mb-3 px-4 py-2 bg-red-900/30 border border-red-500/30 rounded-xl text-center">
+                    <p className="text-red-400 text-xs font-bold">
+                      ⏰ This match has expired
+                    </p>
+                  </div>
+                )}
 
                 {/* TOP */}
 
@@ -563,15 +869,23 @@ export default function DashboardPage() {
                         : group.status ===
                           "ready"
                         ? "bg-green-600"
+                        : isExpired(
+                            group.createdAt,
+                            group.category
+                          )
+                        ? "bg-red-600"
                         : "bg-yellow-500 text-black"
                     }`}
                   >
 
-                    {
-                      group.status === "ready"
-                        ? "Ready for payment"
-                        : group.status
-                    }
+                    {isExpired(
+                      group.createdAt,
+                      group.category
+                    )
+                      ? "Expired"
+                      : group.status === "ready"
+                      ? "Ready for payment"
+                      : group.status}
 
                   </div>
 

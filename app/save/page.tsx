@@ -31,6 +31,7 @@ import {
 } from "firebase/firestore";
 
 import { partneringInfo } from "@/app/data/partneringInfo";
+import { getExpiryDate, isExpired } from "@/app/data/matchExpiry";
 
 /* -----------------------------------------
    GROUP SIZE
@@ -205,6 +206,18 @@ async function createOrJoinGroup(
 
     paid:
       false,
+
+    state:
+      userData.state ||
+      "",
+
+    district:
+      userData.district ||
+      "",
+
+    city:
+      userData.city ||
+      "",
   };
 
   /* -------- JOIN EXISTING -------- */
@@ -486,6 +499,11 @@ async function createOrJoinGroup(
 
       revenue:
         0,
+
+      expiresAt:
+        getExpiryDate(
+          category
+        ),
     }
   );
 
@@ -550,6 +568,18 @@ function SaveContent() {
     existingGroup,
     setExistingGroup,
   ] = useState<any>(
+    null
+  );
+
+  const [
+    duplicateCategory,
+    setDuplicateCategory,
+  ] = useState(false);
+
+  const [
+    duplicateGroupId,
+    setDuplicateGroupId,
+  ] = useState<string | null>(
     null
   );
 
@@ -678,6 +708,44 @@ function SaveContent() {
       async () => {
 
         try {
+
+          /* DUPLICATE CATEGORY CHECK */
+          const qCatGroups =
+            query(
+              collection(
+                db,
+                "groups"
+              ),
+              where(
+                "category",
+                "==",
+                category
+              )
+            );
+
+          const catSnap =
+            await getDocs(
+              qCatGroups
+            );
+
+          let foundDup = false;
+          let dupId: string | null = null;
+
+          for (const catDoc of catSnap.docs) {
+            const catData = catDoc.data();
+            const catMembers = catData.members || [];
+            const isIn = catMembers.some(
+              (m: any) => m?.phone === phone
+            );
+            if (isIn) {
+              foundDup = true;
+              dupId = catDoc.id;
+              break;
+            }
+          }
+
+          setDuplicateCategory(foundDup);
+          setDuplicateGroupId(dupId);
 
           const qGroups =
             query(
@@ -909,6 +977,22 @@ function SaveContent() {
         </span>
 
       </p>
+
+      {duplicateCategory && (
+
+        <div className="mb-6 border border-yellow-500/30 bg-yellow-500/10 rounded-xl p-4">
+
+          <p className="text-yellow-400 font-bold">
+            ⚠️ Already Active in {category.replace("-", " ")}
+          </p>
+
+          <p className="text-gray-300 text-xs mt-1">
+            You already have an active request in this category.
+            Joining again will update your existing request.
+          </p>
+
+        </div>
+      )}
 
       {existingGroup && (
 

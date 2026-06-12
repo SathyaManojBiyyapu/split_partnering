@@ -9,6 +9,8 @@ import {
 } from "firebase/auth";
 
 import { auth, googleProvider } from "@/firebase/config";
+import { db } from "@/firebase/config";
+import { doc, getDoc } from "firebase/firestore";
 import toast from "react-hot-toast";
 
 declare global {
@@ -102,7 +104,13 @@ export default function LoginPage() {
       localStorage.removeItem("guest");
 
       toast.success("Login successful 🎉");
-      window.location.href = "/profile";
+
+      /* POST-LOGIN REDIRECTION */
+      const cleanPhone = phone.trim();
+      const userRef = doc(db, "users", cleanPhone);
+      const userSnap = await getDoc(userRef);
+      const profileCompleted = userSnap.exists() && (userSnap.data() as any)?.profileCompleted === true;
+      window.location.href = profileCompleted ? "/" : "/profile";
     } catch (err: any) {
       // If reCAPTCHA fails, reset it so user can try again
       if (window.recaptchaVerifier) {
@@ -152,7 +160,12 @@ export default function LoginPage() {
 
       alert("Google login successful!");
       toast.success("Google login successful 🎉"); // ✅ ADDED
-      window.location.href = "/profile";
+
+      /* POST-LOGIN REDIRECTION */
+      const gUserRef = doc(db, "users", auth.currentUser?.uid || user.uid);
+      const gUserSnap = await getDoc(gUserRef);
+      const gProfileCompleted = gUserSnap.exists() && (gUserSnap.data() as any)?.profileCompleted === true;
+      window.location.href = gProfileCompleted ? "/" : "/profile";
     } catch (err) {
       console.error("Firebase Auth Error:", err);
       console.error("Code:", (err as any)?.code);

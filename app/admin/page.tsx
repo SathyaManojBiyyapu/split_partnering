@@ -111,6 +111,26 @@ export default function AdminPage() {
     setCompletedGroups,
   ] = useState(0);
 
+  const [
+    completedProfiles,
+    setCompletedProfiles,
+  ] = useState(0);
+
+  const [
+    readyGroupsCount,
+    setReadyGroupsCount,
+  ] = useState(0);
+
+  const [
+    activeRequests,
+    setActiveRequests,
+  ] = useState(0);
+
+  const [
+    reportedUsers,
+    setReportedUsers,
+  ] = useState(0);
+
   /* ---------------------------------------
      ADMIN AUTH
   ---------------------------------------- */
@@ -243,6 +263,10 @@ export default function AdminPage() {
             let userCount = 0;
 
             let completedCount = 0;
+
+            let readyCount = 0;
+
+            let waitingCount = 0;
 
             const builtGroups =
               [];
@@ -401,6 +425,20 @@ export default function AdminPage() {
               ) {
 
                 completedCount++;
+
+              } else if (
+                data.status ===
+                "ready"
+              ) {
+
+                readyCount++;
+
+              } else if (
+                data.status ===
+                "waiting"
+              ) {
+
+                waitingCount++;
               }
 
               builtGroups.push({
@@ -474,6 +512,63 @@ export default function AdminPage() {
             setCompletedGroups(
               completedCount
             );
+
+            setReadyGroupsCount(
+              readyCount
+            );
+
+            setActiveRequests(
+              waitingCount
+            );
+
+            /* FETCH COMPLETED PROFILES */
+            const usersSnap =
+              await getDocs(
+                collection(
+                  db,
+                  "users"
+                )
+              );
+
+            let profileDone = 0;
+            let totalUsersCount = 0;
+
+            usersSnap.forEach(
+              (u) => {
+                const uData = u.data();
+                totalUsersCount++;
+                if (
+                  uData.profileCompleted ===
+                    true
+                ) {
+                  profileDone++;
+                }
+              }
+            );
+
+            setTotalUsers(
+              totalUsersCount
+            );
+
+            setCompletedProfiles(
+              profileDone
+            );
+
+            /* FETCH REPORTS */
+            try {
+              const reportsSnap =
+                await getDocs(
+                  collection(
+                    db,
+                    "reports"
+                  )
+                );
+              setReportedUsers(
+                reportsSnap.size
+              );
+            } catch {
+              setReportedUsers(0);
+            }
 
           } catch (
             err
@@ -706,13 +801,13 @@ export default function AdminPage() {
         </div>
       </div>
 
-      {/* STATS */}
+      {/* STATS - ROW 1 */}
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
 
         <div className="bg-[#0c0c0c] border border-[#FFD166]/20 rounded-xl p-4">
           <p className="text-gray-400 text-sm">
-            Revenue
+            💰 Revenue
           </p>
 
           <h2 className="text-2xl font-bold text-green-400 mt-1">
@@ -722,7 +817,66 @@ export default function AdminPage() {
 
         <div className="bg-[#0c0c0c] border border-[#FFD166]/20 rounded-xl p-4">
           <p className="text-gray-400 text-sm">
-            Paid Users
+            ✅ Completed Profiles
+          </p>
+
+          <h2 className="text-2xl font-bold text-[#FFD166] mt-1">
+            {completedProfiles}
+            <span className="text-sm text-gray-500 ml-1">
+              / {totalUsers}
+            </span>
+          </h2>
+        </div>
+
+        <div className="bg-[#0c0c0c] border border-[#FFD166]/20 rounded-xl p-4">
+          <p className="text-gray-400 text-sm">
+            🕐 Active Requests
+          </p>
+
+          <h2 className="text-2xl font-bold text-blue-400 mt-1">
+            {activeRequests}
+          </h2>
+        </div>
+
+        <div className="bg-[#0c0c0c] border border-[#FFD166]/20 rounded-xl p-4">
+          <p className="text-gray-400 text-sm">
+            🟢 Ready Groups
+          </p>
+
+          <h2 className="text-2xl font-bold text-green-400 mt-1">
+            {readyGroupsCount}
+          </h2>
+        </div>
+
+      </div>
+
+      {/* STATS - ROW 2 */}
+
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+
+        <div className="bg-[#0c0c0c] border border-[#FFD166]/20 rounded-xl p-4">
+          <p className="text-gray-400 text-sm">
+            ✔️ Completed Groups
+          </p>
+
+          <h2 className="text-2xl font-bold text-purple-400 mt-1">
+            {completedGroups}
+          </h2>
+        </div>
+
+        <div className="bg-[#0c0c0c] border border-[#FFD166]/20 rounded-xl p-4">
+          <p className="text-gray-400 text-sm">
+            👥 Total Users
+          </p>
+
+          <h2 className="text-2xl font-bold text-blue-400 mt-1">
+            {totalUsers}
+          </h2>
+        </div>
+
+        <div className="bg-[#0c0c0c] border border-[#FFD166]/20 rounded-xl p-4">
+          <p className="text-gray-400 text-sm">
+            💳 Paid Users
           </p>
 
           <h2 className="text-2xl font-bold text-[#FFD166] mt-1">
@@ -732,22 +886,11 @@ export default function AdminPage() {
 
         <div className="bg-[#0c0c0c] border border-[#FFD166]/20 rounded-xl p-4">
           <p className="text-gray-400 text-sm">
-            Total Members
+            🚩 Reported Users
           </p>
 
-          <h2 className="text-2xl font-bold text-blue-400 mt-1">
-            {totalUsers}
-          </h2>
-        </div>
-
-        <div className="bg-[#0c0c0c] border border-[#FFD166]/20 rounded-xl p-4">
-        
-          <p className="text-gray-400 text-sm">
-            Completed
-          </p>
-
-          <h2 className="text-2xl font-bold text-purple-400 mt-1">
-            {completedGroups}
+          <h2 className="text-2xl font-bold text-red-400 mt-1">
+            {reportedUsers}
           </h2>
         </div>
 

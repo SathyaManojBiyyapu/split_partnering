@@ -22,6 +22,10 @@ import {
   getDownloadURL,
 } from "firebase/storage";
 
+import { indiaStates } from "@/app/data/indiaStates";
+import { districts } from "@/app/data/districts";
+import { citiesByDistrict } from "@/app/data/cities";
+
 export default function ProfilePage() {
 
   const [
@@ -35,6 +39,11 @@ export default function ProfilePage() {
   ] = useState("");
 
   const [
+    district,
+    setDistrict,
+  ] = useState("");
+
+  const [
     stateVal,
     setStateVal,
   ] = useState("");
@@ -42,16 +51,6 @@ export default function ProfilePage() {
   const [
     country,
     setCountry,
-  ] = useState("");
-
-  const [
-    pincode,
-    setPincode,
-  ] = useState("");
-
-  const [
-    address,
-    setAddress,
   ] = useState("");
 
   const [
@@ -96,6 +95,11 @@ export default function ProfilePage() {
     setSaving,
   ] = useState(false);
 
+  const [
+    profileCompleted,
+    setProfileCompleted,
+  ] = useState(false);
+
   const phone =
     typeof window !==
     "undefined"
@@ -111,6 +115,18 @@ export default function ProfilePage() {
           "guest"
         ) === "true"
       : false;
+
+  /* Derived dropdown options */
+
+  const selectedStateDistricts =
+    stateVal && districts
+      ? (districts as any)[stateVal] || []
+      : [];
+
+  const selectedDistrictCities =
+    district && citiesByDistrict
+      ? (citiesByDistrict as any)[stateVal]?.[district] || []
+      : [];
 
   /* ------------------------------------------
         FETCH PROFILE VALUES
@@ -157,20 +173,16 @@ export default function ProfilePage() {
               data.city || ""
             );
 
+            setDistrict(
+              data.district || ""
+            );
+
             setStateVal(
               data.state || ""
             );
 
             setCountry(
               data.country || ""
-            );
-
-            setPincode(
-              data.pincode || ""
-            );
-
-            setAddress(
-              data.address || ""
             );
 
             setGender(
@@ -191,6 +203,10 @@ export default function ProfilePage() {
 
             setPhotoURL(
               data.photoURL || ""
+            );
+
+            setProfileCompleted(
+              data.profileCompleted === true
             );
           }
 
@@ -293,6 +309,12 @@ export default function ProfilePage() {
           "Login again. Phone number missing!"
         );
 
+      if (!stateVal || !district || !city) {
+        return alert(
+          "Please select State, District, and City."
+        );
+      }
+
       try {
 
         setSaving(true);
@@ -313,14 +335,12 @@ export default function ProfilePage() {
 
             city,
 
+            district,
+
             state:
               stateVal,
 
             country,
-
-            pincode,
-
-            address,
 
             gender,
 
@@ -329,8 +349,6 @@ export default function ProfilePage() {
             interests,
 
             college,
-
-            /* NEW */
 
             photoURL,
 
@@ -365,6 +383,8 @@ export default function ProfilePage() {
         alert(
           "Profile saved successfully!"
         );
+
+        setProfileCompleted(true);
 
         window.location.href =
           "/categories";
@@ -461,6 +481,16 @@ export default function ProfilePage() {
         Your Profile
       </h1>
 
+      {/* PREMIUM INFORMATIONAL CARD */}
+      <div className="w-72 p-4 rounded-xl border border-[#FFD700]/30 bg-gradient-to-br from-[#1a1500] to-black text-center">
+        <p className="text-[#FFD700] text-sm font-semibold">
+          ✦ Complete Your Location Profile ✦
+        </p>
+        <p className="text-gray-300 text-xs mt-2 leading-relaxed">
+          Complete your location profile to receive accurate local matches and better partnership opportunities.
+        </p>
+      </div>
+
       {/* PROFILE IMAGE */}
 
       <div className="relative">
@@ -550,7 +580,7 @@ export default function ProfilePage() {
 
       </p>
 
-      {/* PHONE */}
+      {/* PHONE (LOCKED IF COMPLETED) */}
 
       <div className="bg-black/50 border border-[#FFD700]/30 px-4 py-2 rounded-lg w-72 text-center text-sm mb-2">
 
@@ -566,6 +596,12 @@ export default function ProfilePage() {
 
       </div>
 
+      {profileCompleted && (
+        <div className="text-[10px] text-yellow-400 text-center -mt-3 mb-1">
+          Contact Admin if corrections are required.
+        </div>
+      )}
+
       {/* NAME */}
 
       <input
@@ -577,9 +613,15 @@ export default function ProfilePage() {
             e.target.value
           )
         }
-        className="neon-input w-72 border-[#FFD700]/30 focus:border-[#FFD700]"
-        disabled={guest}
+        className={`neon-input w-72 border-[#FFD700]/30 focus:border-[#FFD700] ${profileCompleted ? 'opacity-60 cursor-not-allowed' : ''}`}
+        disabled={guest || profileCompleted}
       />
+
+      {profileCompleted && name && (
+        <div className="text-[10px] text-yellow-400 text-center -mt-3">
+          Contact Admin if corrections are required.
+        </div>
+      )}
 
       {/* GENDER */}
 
@@ -590,8 +632,8 @@ export default function ProfilePage() {
             e.target.value
           )
         }
-        className="neon-input w-72 border-[#FFD700]/30 focus:border-[#FFD700] bg-black"
-        disabled={guest}
+        className={`neon-input w-72 border-[#FFD700]/30 focus:border-[#FFD700] bg-black ${profileCompleted ? 'opacity-60 cursor-not-allowed' : ''}`}
+        disabled={guest || profileCompleted}
       >
 
         <option value="">
@@ -612,6 +654,12 @@ export default function ProfilePage() {
 
       </select>
 
+      {profileCompleted && gender && (
+        <div className="text-[10px] text-yellow-400 text-center -mt-3">
+          Contact Admin if corrections are required.
+        </div>
+      )}
+
       {/* COLLEGE */}
 
       <input
@@ -627,65 +675,77 @@ export default function ProfilePage() {
         disabled={guest}
       />
 
-      {/* CITY */}
+      {/* STATE DROPDOWN */}
 
-      <input
-        type="text"
-        placeholder="City"
+      <select
+        value={stateVal}
+        onChange={(e) => {
+          setStateVal(e.target.value);
+          setDistrict("");
+          setCity("");
+        }}
+        className="neon-input w-72 border-[#FFD700]/30 focus:border-[#FFD700] bg-black"
+        disabled={guest}
+      >
+
+        <option value="">
+          Select State
+        </option>
+
+        {indiaStates.map((s) => (
+          <option key={s} value={s}>
+            {s}
+          </option>
+        ))}
+
+      </select>
+
+      {/* DISTRICT DROPDOWN */}
+
+      <select
+        value={district}
+        onChange={(e) => {
+          setDistrict(e.target.value);
+          setCity("");
+        }}
+        className="neon-input w-72 border-[#FFD700]/30 focus:border-[#FFD700] bg-black"
+        disabled={guest || !stateVal}
+      >
+
+        <option value="">
+          Select District
+        </option>
+
+        {selectedStateDistricts.map((d: string) => (
+          <option key={d} value={d}>
+            {d}
+          </option>
+        ))}
+
+      </select>
+
+      {/* CITY DROPDOWN */}
+
+      <select
         value={city}
         onChange={(e) =>
-          setCity(
-            e.target.value
-          )
+          setCity(e.target.value)
         }
-        className="neon-input w-72 border-[#FFD700]/30 focus:border-[#FFD700]"
-        disabled={guest}
-      />
+        className="neon-input w-72 border-[#FFD700]/30 focus:border-[#FFD700] bg-black"
+        disabled={guest || !district}
+      >
 
-      {/* STATE */}
+        <option value="">
+          Select City
+        </option>
 
-      <input
-        type="text"
-        placeholder="State"
-        value={stateVal}
-        onChange={(e) =>
-          setStateVal(
-            e.target.value
-          )
-        }
-        className="neon-input w-72 border-[#FFD700]/30 focus:border-[#FFD700]"
-        disabled={guest}
-      />
+        {selectedDistrictCities.map((c: string) => (
+          <option key={c} value={c}>
+            {c}
+          </option>
+        ))}
 
-      {/* COUNTRY */}
-
-      <input
-        type="text"
-        placeholder="Country"
-        value={country}
-        onChange={(e) =>
-          setCountry(
-            e.target.value
-          )
-        }
-        className="neon-input w-72 border-[#FFD700]/30 focus:border-[#FFD700]"
-        disabled={guest}
-      />
-
-      {/* PINCODE */}
-
-      <input
-        type="text"
-        placeholder="Pincode"
-        value={pincode}
-        onChange={(e) =>
-          setPincode(
-            e.target.value
-          )
-        }
-        className="neon-input w-72 border-[#FFD700]/30 focus:border-[#FFD700]"
-        disabled={guest}
-      />
+      </select>
 
       {/* INTERESTS */}
 
@@ -709,20 +769,6 @@ export default function ProfilePage() {
         value={bio}
         onChange={(e) =>
           setBio(
-            e.target.value
-          )
-        }
-        className="neon-input w-72 h-20 resize-none border-[#FFD700]/30 focus:border-[#FFD700]"
-        disabled={guest}
-      />
-
-      {/* ADDRESS */}
-
-      <textarea
-        placeholder="Address"
-        value={address}
-        onChange={(e) =>
-          setAddress(
             e.target.value
           )
         }

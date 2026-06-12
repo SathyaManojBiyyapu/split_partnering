@@ -94,6 +94,49 @@ export default function DashboardPage() {
   const [nearbyPartners, setNearbyPartners] =
     useState<PartnerMatch[]>([]);
 
+  /* Compute matching members in a group based on current user's location */
+  /* Members are already in the same group (same category+option).
+     A member counts toward progress ONLY if state, district, AND city all match. */
+  function computeGroupMatch(
+    groupMembers: any[],
+    groupCategory: string,
+    groupOption: string
+  ): {
+    matchingCount: number;
+    matchLevel: "same-city" | "none";
+  } {
+    if (!userProfile?.city) {
+      return { matchingCount: 0, matchLevel: "none" };
+    }
+
+    let count = 0;
+
+    for (const m of groupMembers) {
+      const member = typeof m === "string" ? { phone: m } : m;
+
+      /* Skip self */
+      if (member.phone?.trim() === phone) continue;
+
+      const mState = member.state || "";
+      const mDistrict = member.district || "";
+      const mCity = member.city || "";
+
+      /* REQUIRE ALL THREE: state, district, city must match the current user */
+      if (
+        mState === userProfile.state &&
+        mDistrict === userProfile.district &&
+        mCity === userProfile.city
+      ) {
+        count++;
+      }
+    }
+
+    return {
+      matchingCount: count,
+      matchLevel: count > 0 ? "same-city" : "none",
+    };
+  }
+
   useEffect(() => {
 
     if (!phone) {
@@ -844,17 +887,37 @@ export default function DashboardPage() {
 
                     <p className="mt-2 text-sm text-gray-400">
 
-                      Progress:
-                      {" "}
+                      {userProfile?.state
+                        ? (() => {
+                            const result = computeGroupMatch(
+                              group.members,
+                              group.category,
+                              group.option
+                            );
+                            const matchingCount = result.matchingCount;
+                            const matchLevel = result.matchLevel;
+                            const required = group.requiredSize;
+                            const isReady = matchingCount >= required;
 
-                      {
-                        group.membersCount
-                      }
-
-                      /
-
-                      {
-                        group.requiredSize
+                            return (
+                              <>
+                                <span>
+                                  Progress: {Math.min(matchingCount, required)} / {required}
+                                </span>
+                                {matchingCount > 0 && (
+                                  <span className="block text-[10px] mt-1 text-green-400">
+                                    ✓ Exact Location Match — Same City
+                                  </span>
+                                )}
+                                {matchingCount === 0 && userProfile.state && (
+                                  <span className="block text-[10px] text-yellow-400 mt-1">
+                                    ⏳ Waiting for location-matched partners
+                                  </span>
+                                )}
+                              </>
+                            );
+                          })()
+                        : `Progress: ${group.membersCount} / ${group.requiredSize}`
                       }
 
                     </p>
@@ -866,15 +929,23 @@ export default function DashboardPage() {
                       group.status ===
                       "completed"
                         ? "bg-blue-600"
-                        : group.status ===
-                          "ready"
-                        ? "bg-green-600"
-                        : isExpired(
-                            group.createdAt,
-                            group.category
-                          )
-                        ? "bg-red-600"
-                        : "bg-yellow-500 text-black"
+                        : (() => {
+                            if (!userProfile?.state) {
+                              return group.status === "ready"
+                                ? "bg-green-600"
+                                : "bg-yellow-500 text-black";
+                            }
+                            const result = computeGroupMatch(
+                              group.members,
+                              group.category,
+                              group.option
+                            );
+                            return result.matchingCount >= group.requiredSize
+                              ? "bg-green-600"
+                              : isExpired(group.createdAt, group.category)
+                              ? "bg-red-600"
+                              : "bg-yellow-500 text-black";
+                          })()
                     }`}
                   >
 
@@ -883,9 +954,21 @@ export default function DashboardPage() {
                       group.category
                     )
                       ? "Expired"
-                      : group.status === "ready"
-                      ? "Ready for payment"
-                      : group.status}
+                      : (() => {
+                          if (!userProfile?.state) {
+                            return group.status === "ready"
+                              ? "Ready for payment"
+                              : group.status;
+                          }
+                          const result = computeGroupMatch(
+                            group.members,
+                            group.category,
+                            group.option
+                          );
+                          return result.matchingCount >= group.requiredSize
+                            ? "Ready for payment"
+                            : "Waiting";
+                        })()}
 
                   </div>
 

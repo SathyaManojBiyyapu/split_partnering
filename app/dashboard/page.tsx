@@ -94,9 +94,16 @@ export default function DashboardPage() {
   const [nearbyPartners, setNearbyPartners] =
     useState<PartnerMatch[]>([]);
 
+  /* COUNTDOWN TIMER STATE */
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 60000); // update every minute
+    return () => clearInterval(interval);
+  }, []);
+
   /* Compute matching members in a group based on current user's location */
-  /* Members are already in the same group (same category+option).
-     A member counts toward progress ONLY if state, district, AND city all match. */
+  /* FIX: Self always counts as 1. Additional location-matched members add to count. */
   function computeGroupMatch(
     groupMembers: any[],
     groupCategory: string,
@@ -109,7 +116,8 @@ export default function DashboardPage() {
       return { matchingCount: 0, matchLevel: "none" };
     }
 
-    let count = 0;
+    /* Self always counts as 1 */
+    let count = 1;
 
     for (const m of groupMembers) {
       const member = typeof m === "string" ? { phone: m } : m;
@@ -133,8 +141,88 @@ export default function DashboardPage() {
 
     return {
       matchingCount: count,
-      matchLevel: count > 0 ? "same-city" : "none",
+      matchLevel: count > 1 ? "same-city" : "none",
     };
+  }
+
+  /* Compute countdown display */
+  function getCountdown(createdAt: any): string {
+    if (!createdAt?.seconds) return "";
+    const created = new Date(createdAt.seconds * 1000);
+    const expiresAt = new Date(created.getTime() + 72 * 60 * 60 * 1000); // 72 hours
+    const diff = expiresAt.getTime() - now;
+
+    if (diff <= 0) return "Expired";
+
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+
+    if (days > 0) return `${days}d ${hours}h`;
+    return `${hours}h ${minutes}m`;
+  }
+
+  /* Progress bar component */
+  function ProgressBar({ current, max }: { current: number; max: number }) {
+    const percent = Math.min((current / max) * 100, 100);
+    const barColor = percent >= 100 ? "bg-green-500" : "bg-[#FFD166]";
+    return (
+      <div className="mt-2">
+        <div className="w-full h-2.5 bg-gray-800 rounded-full overflow-hidden">
+          <div
+            className={`h-full ${barColor} rounded-full transition-all duration-500`}
+            style={{ width: `${percent}%` }}
+          ></div>
+        </div>
+        <p className="text-[11px] text-gray-500 mt-0.5">{Math.round(percent)}% complete</p>
+      </div>
+    );
+  }
+
+  /* Status color config */
+  const statusColors: Record<string, string> = {
+    searching: "bg-blue-600",
+    waiting: "bg-yellow-500 text-black",
+    ready: "bg-green-600",
+    paid: "bg-emerald-500",
+    chat: "bg-purple-600",
+    expired: "bg-red-600",
+  };
+
+  const statusLabels: Record<string, string> = {
+    searching: "Searching",
+    waiting: "Waiting",
+    ready: "Ready for payment",
+    paid: "Paid",
+    expired: "Expired",
+  };
+
+  function getStatusColor(group: Group, matchingCount: number, required: number): string {
+    if (isExpired(group.createdAt, group.category)) return "bg-red-600";
+    if (group.isPaid) return "bg-emerald-500";
+    if (matchingCount >= required) return "bg-green-600";
+    if (matchingCount <= 1) return "bg-blue-600";
+    return "bg-yellow-500 text-black";
+  }
+
+  function getStatusLabel(group: Group, matchingCount: number, required: number): string {
+    if (isExpired(group.createdAt, group.category)) return "Expired";
+    if (group.isPaid) return "Paid";
+    if (matchingCount >= required) return "Ready for payment";
+    if (matchingCount <= 1) return "Searching";
+    return "Waiting";
+  }
+
+  /* Match quality badge */
+  function getMatchBadge(matchLevel: string): { label: string; stars: string; color: string } {
+    switch (matchLevel) {
+      case "same-city":
+        return { label: "Perfect Match", stars: "★★★★★", color: "text-green-400" };
+      case "same-district":
+        return { label: "Strong Match", stars: "★★★★", color: "text-yellow-400" };
+      default:
+        return { label: "Regional Match", stars: "★★", color: "text-blue-400" };
+    }
   }
 
   useEffect(() => {
@@ -276,9 +364,11 @@ export default function DashboardPage() {
                   "",
 
                 category:
+                  u.category ||
                   "",
 
                 option:
+                  u.option ||
                   "",
 
                 matchLevel,
@@ -719,6 +809,16 @@ export default function DashboardPage() {
     );
   }
 
+  /* Compute summary stats */
+  const activeMatches = matches.filter(g => !isExpired(g.createdAt, g.category)).length;
+  const readyMatches = matches.filter(g => {
+    if (isExpired(g.createdAt, g.category)) return false;
+    if (g.isPaid) return false;
+    if (!userProfile?.state) return g.membersCount >= g.requiredSize;
+    const info = computeGroupMatch(g.members, g.category, g.option);
+    return info.matchingCount >= g.requiredSize;
+  }).length;
+
   return (
 
     <div className="pt-32 px-6 max-w-5xl mx-auto text-white">
@@ -750,6 +850,23 @@ export default function DashboardPage() {
         </p>
       )}
 
+      {/* ===== SECTION 9: DASHBOARD SUMMARY CARDS ===== */}
+
+      <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="bg-[#0c0c0c] border border-blue-500/20 rounded-xl p-4 text-center">
+          <p className="text-2xl font-bold text-blue-400">{activeMatches}</p>
+          <p className="text-xs text-gray-400 mt-1">Active Matches</p>
+        </div>
+        <div className="bg-[#0c0c0c] border border-green-500/20 rounded-xl p-4 text-center">
+          <p className="text-2xl font-bold text-green-400">{readyMatches}</p>
+          <p className="text-xs text-gray-400 mt-1">Ready to Unlock</p>
+        </div>
+        <div className="bg-[#0c0c0c] border border-[#FFD166]/20 rounded-xl p-4 text-center">
+          <p className="text-2xl font-bold text-[#FFD166]">{nearbyPartners.length}</p>
+          <p className="text-xs text-gray-400 mt-1">Nearby Candidates</p>
+        </div>
+      </div>
+
       {matches.length === 0 ? (
 
         <p className="mt-8 text-gray-400">
@@ -758,7 +875,7 @@ export default function DashboardPage() {
 
       ) : (
 
-        <div className="mt-10 space-y-5">
+        <div className="mt-6 space-y-5">
 
           {matches.map(
             (group) => {
@@ -776,6 +893,11 @@ export default function DashboardPage() {
               const isReady = userProfile?.state
                 ? matchingCount >= required
                 : group.membersCount >= group.requiredSize;
+              const isSearching = matchingCount <= 1;
+              const countdown = getCountdown(group.createdAt);
+              const statusColor = getStatusColor(group, matchingCount, required);
+              const statusLabel = getStatusLabel(group, matchingCount, required);
+              const matchBadge = getMatchBadge(matchInfo.matchLevel);
 
               return (
               <div
@@ -828,62 +950,42 @@ export default function DashboardPage() {
                                 <span>
                                   Progress: {Math.min(matchingCount, required)} / {required}
                                 </span>
-                                {matchingCount > 0 && (
+                                {matchingCount > 1 && (
                                   <span className="block text-[10px] mt-1 text-green-400">
                                     ✓ Exact Location Match — Same City
                                   </span>
                                 )}
-                                {matchingCount === 0 && userProfile.state && (
-                                  <span className="block text-[10px] text-yellow-400 mt-1">
-                                    ⏳ Waiting for location-matched partners
+                                {matchingCount <= 1 && userProfile.state && (
+                                  <span className="block text-[10px] text-blue-400 mt-1">
+                                    🔍 Searching for compatible partners in your city...
                                   </span>
                                 )}
                               </>
                             );
                           })()
-                        : `Progress: ${group.membersCount} / ${group.requiredSize}`
+                        : `Progress: ${Math.min(group.membersCount, group.requiredSize)} / ${group.requiredSize}`
                       }
 
                     </p>
 
+                    {/* VISUAL PROGRESS BAR */}
+                    {userProfile?.state ? (
+                      <ProgressBar current={matchingCount} max={required} />
+                    ) : (
+                      <ProgressBar current={group.membersCount} max={group.requiredSize} />
+                    )}
+
+                    {/* COUNTDOWN TIMER */}
+                    {group.createdAt && !isExpired(group.createdAt, group.category) && (
+                      <p className="text-[10px] text-gray-500 mt-2">
+                        ⏱ Match expires in: <span className="text-gray-300 font-medium">{countdown}</span>
+                      </p>
+                    )}
+
                   </div>
 
-                  <div
-                    className={`px-4 py-2 rounded-full text-xs font-bold ${
-                      group.status ===
-                      "completed"
-                        ? "bg-blue-600"
-                        : (() => {
-                            if (!userProfile?.state) {
-                              return group.status === "ready"
-                                ? "bg-green-600"
-                                : "bg-yellow-500 text-black";
-                            }
-                            return matchingCount >= required
-                              ? "bg-green-600"
-                              : isExpired(group.createdAt, group.category)
-                              ? "bg-red-600"
-                              : "bg-yellow-500 text-black";
-                          })()
-                    }`}
-                  >
-
-                    {isExpired(
-                      group.createdAt,
-                      group.category
-                    )
-                      ? "Expired"
-                      : (() => {
-                          if (!userProfile?.state) {
-                            return group.status === "ready"
-                              ? "Ready for payment"
-                              : group.status;
-                          }
-                          return matchingCount >= required
-                            ? "Ready for payment"
-                            : "Waiting";
-                        })()}
-
+                  <div className={`px-4 py-2 rounded-full text-xs font-bold ${statusColor}`}>
+                    {statusLabel}
                   </div>
 
                 </div>
@@ -893,7 +995,7 @@ export default function DashboardPage() {
                 {!group.isPaid && (
                   (() => {
 
-                    if (matchingCount > 0) {
+                    if (matchingCount > 1) {
                       return (
                         <div className="mt-5 rounded-2xl border border-green-500/30 bg-green-500/10 p-5">
                           <p className="text-green-400 text-lg font-bold flex items-center gap-2">
@@ -927,12 +1029,15 @@ export default function DashboardPage() {
                     }
 
                     return (
-                      <div className="mt-5 rounded-2xl border border-yellow-500/30 bg-yellow-500/10 p-5">
-                        <p className="text-yellow-400 text-lg font-bold flex items-center gap-2">
-                          ⏳ Waiting for location-matched partner
+                      <div className="mt-5 rounded-2xl border border-blue-500/30 bg-blue-500/10 p-5">
+                        <p className="text-blue-400 text-lg font-bold flex items-center gap-2">
+                          🔍 Searching for compatible partners in your city...
                         </p>
-                        <p className="mt-2 text-xs text-yellow-300">
-                          No location-matched candidate found yet in your city.
+                        <p className="mt-2 text-xs text-blue-300">
+                          Average matching time: 12–48 hours
+                        </p>
+                        <p className="mt-1 text-[10px] text-blue-200/70">
+                          We will notify you when a compatible partner joins.
                         </p>
                       </div>
                     );
@@ -1052,22 +1157,38 @@ export default function DashboardPage() {
 
                   {!group.isPaid ? (
 
-                    <button
-                      onClick={() =>
-                        window.location.href =
-                          `/payment?groupId=${group.id}`
-                      }
-                      className="
-                        px-5 py-2 rounded-xl
-                        bg-[#FFD166]
-                        text-black
-                        font-bold
-                        hover:scale-105
-                        transition
-                      "
-                    >
-                      🔓 Unlock for ₹29
-                    </button>
+                    isReady ? (
+                      <button
+                        onClick={() =>
+                          window.location.href =
+                            `/payment?groupId=${group.id}`
+                        }
+                        className="
+                          px-5 py-2 rounded-xl
+                          bg-[#FFD166]
+                          text-black
+                          font-bold
+                          hover:scale-105
+                          transition
+                        "
+                      >
+                        🔓 Unlock for ₹29
+                      </button>
+                    ) : (
+                      <button
+                        disabled
+                        className="
+                          px-5 py-2 rounded-xl
+                          bg-gray-700
+                          text-gray-400
+                          font-bold
+                          cursor-not-allowed
+                          transition
+                        "
+                      >
+                        ⏳ Payment unlocks when group is complete
+                      </button>
+                    )
 
                   ) : (
 
@@ -1079,14 +1200,14 @@ export default function DashboardPage() {
                       }
                       className="
                         px-5 py-2 rounded-xl
-                        bg-green-600
+                        bg-purple-600
                         font-bold
                         hover:scale-105
                         transition
                       "
                     >
 
-                      Open Chat
+                      💬 Open Chat
 
                       {(unreadCounts[group.id] || 0) > 0 && (
                         <span className="ml-2 text-xs">
@@ -1141,28 +1262,46 @@ export default function DashboardPage() {
           <div className="space-y-4">
 
             {nearbyPartners.map(
-              (partner, idx) => (
+              (partner, idx) => {
+
+                const badge = getMatchBadge(partner.matchLevel);
+
+                return (
                 <div
                   key={idx}
-                  className="bg-[#0c0c0c] border border-[#FFD166]/20 rounded-2xl p-4 flex items-center justify-between"
+                  className="bg-[#0c0c0c] border border-[#FFD166]/20 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
                 >
 
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-start gap-4">
 
                     {/* NO avatar image shown - privacy preserved */}
 
-                    <div className="w-12 h-12 rounded-full border border-[#FFD166] flex items-center justify-center bg-black/40">
+                    <div className="w-12 h-12 rounded-full border border-[#FFD166] flex items-center justify-center bg-black/40 shrink-0">
                       <span className="text-lg">📍</span>
                     </div>
 
-                    <div>
+                    <div className="min-w-0">
 
-                      {/* NO name shown - privacy preserved */}
-                      <p className="font-bold text-white">
-                        Nearby User
+                      {/* NO real name shown - privacy preserved */}
+                      <p className="font-bold text-white text-base">
+                        Potential Match
                       </p>
 
+                      {partner.category && (
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          Category: <span className="text-[#FFD166]">{partner.category}</span>
+                        </p>
+                      )}
+
+                      {partner.option && (
+                        <p className="text-xs text-gray-400">
+                          Brand: <span className="text-[#FFD166]">{partner.option}</span>
+                        </p>
+                      )}
+
                       <p className="text-xs text-gray-400 mt-0.5">
+                        Location:
+                        {" "}
                         {partner.city}
                         {partner.city && partner.district ? ", " : ""}
                         {partner.district}
@@ -1170,12 +1309,8 @@ export default function DashboardPage() {
                         {partner.state}
                       </p>
 
-                      <p className="text-[10px] text-[#FFD166] mt-0.5">
-                        {partner.matchLevel === "same-city"
-                          ? "⭐ Same City"
-                          : partner.matchLevel === "same-district"
-                          ? "📌 Same District"
-                          : "📍 Same State"}
+                      <p className={`text-[11px] ${badge.color} mt-1`}>
+                        {badge.stars} {badge.label}
                       </p>
 
                     </div>
@@ -1183,7 +1318,7 @@ export default function DashboardPage() {
                   </div>
 
                   <span
-                    className={`text-[10px] px-3 py-1 rounded-full font-bold ${
+                    className={`text-[10px] px-3 py-1 rounded-full font-bold shrink-0 self-start sm:self-center ${
                       partner.matchLevel === "same-city"
                         ? "bg-green-600 text-white"
                         : partner.matchLevel === "same-district"
@@ -1192,14 +1327,14 @@ export default function DashboardPage() {
                     }`}
                   >
                     {partner.matchLevel === "same-city"
-                      ? "Best Match"
+                      ? "★★★★★ Perfect Match"
                       : partner.matchLevel === "same-district"
-                      ? "Good Match"
-                      : "Nearby"}
+                      ? "★★★★ Strong Match"
+                      : "★★ Regional Match"}
                   </span>
 
                 </div>
-              )
+              );}
             )}
 
           </div>

@@ -750,90 +750,6 @@ export default function DashboardPage() {
         </p>
       )}
 
-      {/* ===== NEARBY PARTNERS (LOCATION-BASED) ===== */}
-
-      {userProfile?.state && nearbyPartners.length > 0 && (
-
-        <div className="mt-12">
-
-          <h2 className="text-2xl font-bold text-[#FFD166] mb-2">
-            📍 Nearby Partners
-          </h2>
-
-          <p className="text-gray-400 text-sm mb-6">
-            Potential matches in your area based on location proximity.
-          </p>
-
-          <div className="space-y-4">
-
-            {nearbyPartners.map(
-              (partner, idx) => (
-                <div
-                  key={idx}
-                  className="bg-[#0c0c0c] border border-[#FFD166]/20 rounded-2xl p-4 flex items-center justify-between"
-                >
-                  <div className="flex items-center gap-4">
-
-                    <img
-                      src={
-                        partner.photoURL ||
-                        "https://ui-avatars.com/api/?background=000000&color=FFD166&name=User"
-                      }
-                      alt=""
-                      className="w-12 h-12 rounded-full border border-[#FFD166]"
-                    />
-
-                    <div>
-
-                      <p className="font-bold text-white">
-                        {partner.name}
-                      </p>
-
-                      <p className="text-xs text-gray-400 mt-0.5">
-                        {partner.city}
-                        {partner.city && partner.district ? ", " : ""}
-                        {partner.district}
-                        {" • "}
-                        {partner.state}
-                      </p>
-
-                      <p className="text-[10px] text-[#FFD166] mt-0.5">
-                        {partner.matchLevel === "same-city"
-                          ? "⭐ Same City"
-                          : partner.matchLevel === "same-district"
-                          ? "📌 Same District"
-                          : "📍 Same State"}
-                      </p>
-
-                    </div>
-
-                  </div>
-
-                  <span
-                    className={`text-[10px] px-3 py-1 rounded-full font-bold ${
-                      partner.matchLevel === "same-city"
-                        ? "bg-green-600 text-white"
-                        : partner.matchLevel === "same-district"
-                        ? "bg-yellow-600 text-white"
-                        : "bg-blue-600 text-white"
-                    }`}
-                  >
-                    {partner.matchLevel === "same-city"
-                      ? "Best Match"
-                      : partner.matchLevel === "same-district"
-                      ? "Good Match"
-                      : "Nearby"}
-                  </span>
-
-                </div>
-              )
-            )}
-
-          </div>
-
-        </div>
-      )}
-
       {matches.length === 0 ? (
 
         <p className="mt-8 text-gray-400">
@@ -845,8 +761,23 @@ export default function DashboardPage() {
         <div className="mt-10 space-y-5">
 
           {matches.map(
-            (group) => (
+            (group) => {
 
+              /* Pre-compute match info for this group */
+              const matchInfo = userProfile?.state
+                ? computeGroupMatch(
+                    group.members,
+                    group.category,
+                    group.option
+                  )
+                : { matchingCount: 0, matchLevel: "none" as const };
+              const matchingCount = matchInfo.matchingCount;
+              const required = group.requiredSize;
+              const isReady = userProfile?.state
+                ? matchingCount >= required
+                : group.membersCount >= group.requiredSize;
+
+              return (
               <div
                 key={group.id}
                 className="bg-[#0c0c0c] border border-[#FFD166]/20 rounded-2xl p-5"
@@ -865,7 +796,7 @@ export default function DashboardPage() {
                   </div>
                 )}
 
-                {/* TOP */}
+                {/* ===== SECTION 1: MY ACTIVE MATCH ===== */}
 
                 <div className="flex justify-between items-center flex-wrap gap-3">
 
@@ -885,19 +816,12 @@ export default function DashboardPage() {
 
                     </h2>
 
+                    {/* ===== SECTION 2: MATCH PROGRESS ===== */}
+
                     <p className="mt-2 text-sm text-gray-400">
 
                       {userProfile?.state
                         ? (() => {
-                            const result = computeGroupMatch(
-                              group.members,
-                              group.category,
-                              group.option
-                            );
-                            const matchingCount = result.matchingCount;
-                            const matchLevel = result.matchLevel;
-                            const required = group.requiredSize;
-                            const isReady = matchingCount >= required;
 
                             return (
                               <>
@@ -935,12 +859,7 @@ export default function DashboardPage() {
                                 ? "bg-green-600"
                                 : "bg-yellow-500 text-black";
                             }
-                            const result = computeGroupMatch(
-                              group.members,
-                              group.category,
-                              group.option
-                            );
-                            return result.matchingCount >= group.requiredSize
+                            return matchingCount >= required
                               ? "bg-green-600"
                               : isExpired(group.createdAt, group.category)
                               ? "bg-red-600"
@@ -960,12 +879,7 @@ export default function DashboardPage() {
                               ? "Ready for payment"
                               : group.status;
                           }
-                          const result = computeGroupMatch(
-                            group.members,
-                            group.category,
-                            group.option
-                          );
-                          return result.matchingCount >= group.requiredSize
+                          return matchingCount >= required
                             ? "Ready for payment"
                             : "Waiting";
                         })()}
@@ -974,42 +888,74 @@ export default function DashboardPage() {
 
                 </div>
 
-                {/* LOCKED */}
+                {/* ===== SECTION 3: CANDIDATE STATUS (Before Payment) ===== */}
 
                 {!group.isPaid && (
+                  (() => {
 
-                  <div
-                    className="
-                      mt-5
-                      rounded-2xl
-                      border border-yellow-500/30
-                      bg-yellow-500/10
-                      p-5
-                    "
-                  >
+                    if (matchingCount > 0) {
+                      return (
+                        <div className="mt-5 rounded-2xl border border-green-500/30 bg-green-500/10 p-5">
+                          <p className="text-green-400 text-lg font-bold flex items-center gap-2">
+                            ✅ Possible Candidate Found
+                          </p>
+                          <div className="mt-3 space-y-1.5 text-sm text-gray-300">
+                            <p>
+                              <span className="text-[#FFD166] font-medium">Category:</span>{" "}
+                              {group.category}
+                            </p>
+                            <p>
+                              <span className="text-[#FFD166] font-medium">Brand:</span>{" "}
+                              {group.option}
+                            </p>
+                            <p>
+                              <span className="text-[#FFD166] font-medium">Location Match:</span>{" "}
+                              Same City
+                            </p>
+                            <p>
+                              <span className="text-[#FFD166] font-medium">Status:</span>{" "}
+                              {isReady ? "Ready for Unlock" : "Candidate Ready"}
+                            </p>
+                          </div>
+                          {isReady && (
+                            <p className="mt-3 text-xs text-green-300">
+                              ✓ Location-Matched Candidate Available
+                            </p>
+                          )}
+                        </div>
+                      );
+                    }
 
-                    <p className="text-yellow-400 text-lg font-bold">
-                      🔒 Partner Details Locked
+                    return (
+                      <div className="mt-5 rounded-2xl border border-yellow-500/30 bg-yellow-500/10 p-5">
+                        <p className="text-yellow-400 text-lg font-bold flex items-center gap-2">
+                          ⏳ Waiting for location-matched partner
+                        </p>
+                        <p className="mt-2 text-xs text-yellow-300">
+                          No location-matched candidate found yet in your city.
+                        </p>
+                      </div>
+                    );
+                  })()
+                )}
+
+                {/* ===== SECTION 4: UNLOCK SECTION (Before Payment) ===== */}
+
+                {!group.isPaid && isReady && (
+                  <div className="mt-5 rounded-2xl border border-green-500/30 bg-green-900/20 p-5 text-center">
+                    <p className="text-green-400 text-lg font-bold">
+                      Ready for Unlock
                     </p>
-
-                    <p className="mt-2 text-xs text-yellow-300">
-                      Secure payment required to unlock
-                      members and private coordination.
+                    <p className="mt-1 text-sm text-green-300">
+                      Location-Matched Candidate Available
                     </p>
-
-                    <p className="text-sm text-gray-400 mt-2 leading-relaxed">
-
-                      Complete the ₹29 payment
-                      to unlock partner details,
-                      private chat access,
-                      and full coordination tools.
-
+                    <p className="mt-3 text-xs text-gray-400">
+                      Unlock to reveal partner identity and start chatting.
                     </p>
-
                   </div>
                 )}
 
-                {/* MEMBERS AFTER PAYMENT */}
+                {/* MEMBERS AFTER PAYMENT (Revealed only after payment) */}
 
                 {group.isPaid && (
 
@@ -1172,8 +1118,91 @@ export default function DashboardPage() {
                 </div>
 
               </div>
-            )
+            );}
           )}
+
+        </div>
+      )}
+
+      {/* ===== SECTION 5: NEARBY PARTNERS (at the bottom, secondary information) ===== */}
+
+      {userProfile?.state && nearbyPartners.length > 0 && (
+
+        <div className="mt-12 mb-10">
+
+          <h2 className="text-2xl font-bold text-[#FFD166] mb-2">
+            📍 Nearby Partners
+          </h2>
+
+          <p className="text-gray-400 text-sm mb-6">
+            Other users in your area. Primary focus should be on your active matches above.
+          </p>
+
+          <div className="space-y-4">
+
+            {nearbyPartners.map(
+              (partner, idx) => (
+                <div
+                  key={idx}
+                  className="bg-[#0c0c0c] border border-[#FFD166]/20 rounded-2xl p-4 flex items-center justify-between"
+                >
+
+                  <div className="flex items-center gap-4">
+
+                    {/* NO avatar image shown - privacy preserved */}
+
+                    <div className="w-12 h-12 rounded-full border border-[#FFD166] flex items-center justify-center bg-black/40">
+                      <span className="text-lg">📍</span>
+                    </div>
+
+                    <div>
+
+                      {/* NO name shown - privacy preserved */}
+                      <p className="font-bold text-white">
+                        Nearby User
+                      </p>
+
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        {partner.city}
+                        {partner.city && partner.district ? ", " : ""}
+                        {partner.district}
+                        {" • "}
+                        {partner.state}
+                      </p>
+
+                      <p className="text-[10px] text-[#FFD166] mt-0.5">
+                        {partner.matchLevel === "same-city"
+                          ? "⭐ Same City"
+                          : partner.matchLevel === "same-district"
+                          ? "📌 Same District"
+                          : "📍 Same State"}
+                      </p>
+
+                    </div>
+
+                  </div>
+
+                  <span
+                    className={`text-[10px] px-3 py-1 rounded-full font-bold ${
+                      partner.matchLevel === "same-city"
+                        ? "bg-green-600 text-white"
+                        : partner.matchLevel === "same-district"
+                        ? "bg-yellow-600 text-white"
+                        : "bg-blue-600 text-white"
+                    }`}
+                  >
+                    {partner.matchLevel === "same-city"
+                      ? "Best Match"
+                      : partner.matchLevel === "same-district"
+                      ? "Good Match"
+                      : "Nearby"}
+                  </span>
+
+                </div>
+              )
+            )}
+
+          </div>
 
         </div>
       )}

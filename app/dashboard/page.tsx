@@ -835,10 +835,10 @@ export default function DashboardPage() {
                         )}
                       </div>
 
-                      {/* Active indicator */}
+                      {/* Active indicator - dynamically shows category → option */}
                       <div className="mt-1 flex items-center gap-1 text-[9px] text-orange-400">
                         <span className="w-1.5 h-1.5 rounded-full bg-orange-400 animate-pulse" />
-                        Active in this category
+                        Active in {partner.category || ""}{partner.option ? ` → ${partner.option}` : ""}
                       </div>
                     </div>
 

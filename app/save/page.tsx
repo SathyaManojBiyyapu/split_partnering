@@ -32,6 +32,23 @@ import {
 
 import { partneringInfo } from "@/app/data/partneringInfo";
 import { getExpiryDate, isExpired } from "@/app/data/matchExpiry";
+import { categoryData } from "@/app/data/subcategories";
+
+/* -----------------------------------------
+   SLUG → CATEGORY NAME MAPPING
+------------------------------------------ */
+
+const slugToCategoryName: Record<string, string> = {
+  "gym": "Gym",
+  "fashion": "Fashion",
+  "movies": "Movies",
+  "lenskart": "Lenskart",
+  "local-travel": "Local Travel",
+  "events": "Events",
+  "coupons": "Coupons",
+  "villas": "Villas",
+  "books": "Books"
+};
 
 /* -----------------------------------------
    GROUP SIZE
@@ -112,7 +129,9 @@ const maskPhone = (
 async function createOrJoinGroup(
   category: string,
   option: string,
-  rawPhone: string
+  rawPhone: string,
+  collaboratorId?: string,
+  collaboratorName?: string
 ) {
 
   const cleanPhone =
@@ -466,6 +485,10 @@ async function createOrJoinGroup(
 
       option,
 
+      collaboratorBrand: collaboratorName || "",
+
+      collaboratorId: collaboratorId || "",
+
       members: [
         memberObject,
       ],
@@ -517,6 +540,143 @@ async function createOrJoinGroup(
     groupId:
       newGroupRef.id,
   };
+}
+
+/* -----------------------------------------
+   COLLABORATOR BRANDS COMPONENT
+------------------------------------------ */
+
+function CollaboratorBrandSelector({
+  categorySlug,
+  optionSlug,
+  selectedBrand,
+  onSelect,
+}: {
+  categorySlug: string;
+  optionSlug: string;
+  selectedBrand: string | null;
+  onSelect: (id: string, name: string) => void;
+}) {
+  const [brands, setBrands] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const categoryName = slugToCategoryName[categorySlug] || "";
+  const subcategoryName = getSubcategoryName(categorySlug, optionSlug);
+
+  useEffect(() => {
+    if (!categoryName || !subcategoryName) {
+      setLoading(false);
+      return;
+    }
+
+    const fetchBrands = async () => {
+      try {
+        const q = query(
+          collection(db, "collaborators"),
+          where("category", "==", categoryName),
+          where("subcategory", "==", subcategoryName),
+          where("status", "in", ["approved", "featured"])
+        );
+        const snap = await getDocs(q);
+        const items: any[] = [];
+        snap.forEach((d) => {
+          items.push({ id: d.id, ...d.data() });
+        });
+        setBrands(items);
+      } catch (err) {
+        console.error("Error fetching collaborators:", err);
+      }
+      setLoading(false);
+    };
+
+    fetchBrands();
+  }, [categoryName, subcategoryName]);
+
+  if (loading) {
+    return (
+      <div className="mb-6">
+        <div className="animate-pulse text-gray-500 text-xs">Loading partner brands...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mb-6">
+      <h3 className="text-sm font-semibold text-[#FFD166] mb-3">
+        Available Partner Brands
+      </h3>
+
+      {brands.length === 0 ? (
+        <div className="border border-dashed border-gray-700 rounded-xl p-4 text-center">
+          <p className="text-gray-500 text-xs">
+            No verified partner brands available yet.
+          </p>
+          <p className="text-gray-600 text-[10px] mt-1">
+            You can still proceed with matching without selecting a brand.
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {brands.map((brand) => {
+            const isSelected = selectedBrand === brand.id;
+            return (
+              <button
+                key={brand.id}
+                onClick={() => onSelect(brand.id, brand.option || brand.businessName || brand.id)}
+                className={`text-left p-3 rounded-xl border transition-all ${
+                  isSelected
+                    ? "border-[#FFD166] bg-[#FFD166]/10"
+                    : "border-gray-700 bg-[#0c0c0c] hover:border-[#FFD166]/50"
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#D4AF37]/20 to-[#E6C97A]/10 border border-[#D4AF37]/20 flex items-center justify-center text-sm flex-shrink-0">
+                    🏪
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white font-semibold text-sm">
+                      {brand.option || brand.businessName}
+                    </p>
+                    <div className="flex items-center gap-1 mt-0.5">
+                      <span className="text-[8px] text-green-400 font-medium bg-green-500/10 px-1.5 py-0.5 rounded-full">
+                        ✓ Verified
+                      </span>
+                    </div>
+                    {brand.city && (
+                      <p className="text-[10px] text-gray-500 mt-0.5">
+                        📍 {brand.city}
+                      </p>
+                    )}
+                  </div>
+                  {isSelected && (
+                    <div className="w-5 h-5 rounded-full bg-[#FFD166] flex items-center justify-center">
+                      <span className="text-black text-[10px] font-bold">✓</span>
+                    </div>
+                  )}
+                </div>
+                {brand.description && (
+                  <p className="text-[10px] text-gray-500 mt-2 line-clamp-1">
+                    {brand.description}
+                  </p>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* -----------------------------------------
+   HELPER: Get subcategory name from slug
+------------------------------------------ */
+
+function getSubcategoryName(categorySlug: string, optionSlug: string): string {
+  const cat = categoryData[categorySlug];
+  if (!cat) return "";
+  const sub = cat.subcategories.find((s) => s.slug === optionSlug);
+  return sub?.name || "";
 }
 
 /* -----------------------------------------
@@ -582,6 +742,10 @@ function SaveContent() {
   ] = useState<string | null>(
     null
   );
+
+  /* Collaborator state */
+  const [selectedCollaboratorId, setSelectedCollaboratorId] = useState<string | null>(null);
+  const [selectedCollaboratorName, setSelectedCollaboratorName] = useState<string | null>(null);
 
   const info =
     partneringInfo[
@@ -861,8 +1025,25 @@ function SaveContent() {
           await createOrJoinGroup(
             category,
             option,
-            phone
+            phone,
+            selectedCollaboratorId || undefined,
+            selectedCollaboratorName || undefined
           );
+
+        /* UPDATE USER PROFILE with category & option */
+        if (phone) {
+          try {
+            const userRef = doc(db, "users", phone);
+            await updateDoc(userRef, {
+              category: category.replace("-", " "),
+              option: option,
+              updatedAt: serverTimestamp(),
+            });
+          } catch (err) {
+            // User doc may not exist yet - non-critical
+            console.warn("Could not update user category:", err);
+          }
+        }
 
         /* SAVE SELECTION */
 
@@ -893,6 +1074,10 @@ function SaveContent() {
             category,
 
             option,
+
+            collaboratorId: selectedCollaboratorId || "",
+
+            collaboratorName: selectedCollaboratorName || "",
 
             paid:
               false,
@@ -1065,6 +1250,35 @@ function SaveContent() {
             We do not buy or sell products.
           </p>
 
+        </div>
+      )}
+
+      {/* ===== COLLABORATOR BRAND SELECTION ===== */}
+      <div className="mb-8 max-w-3xl">
+        <CollaboratorBrandSelector
+          categorySlug={category}
+          optionSlug={option}
+          selectedBrand={selectedCollaboratorId}
+          onSelect={(id, name) => {
+            setSelectedCollaboratorId(
+              selectedCollaboratorId === id ? null : id
+            );
+            setSelectedCollaboratorName(
+              selectedCollaboratorId === id ? null : name
+            );
+          }}
+        />
+      </div>
+
+      {/* ===== SELECTED BRAND SUMMARY ===== */}
+      {selectedCollaboratorName && (
+        <div className="mb-6 max-w-3xl border border-green-500/30 bg-green-500/10 rounded-xl p-4">
+          <p className="text-green-400 font-bold text-sm">
+            ✅ Selected Brand: {selectedCollaboratorName}
+          </p>
+          <p className="text-gray-300 text-xs mt-1">
+            Your match will be associated with this partner brand.
+          </p>
         </div>
       )}
 

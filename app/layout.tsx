@@ -5,6 +5,7 @@ import "./globals.css";
 import Navbar from "./components/Navbar";
 import Sidebar from "./components/Sidebar";
 import Footer from "./components/Footer";
+import TrustStrip from "./components/TrustStrip";
 
 import {
   AuthProvider,
@@ -149,6 +150,9 @@ export default function RootLayout({
 
           {/* SIDEBAR */}
           <Sidebar />
+
+          {/* TRUST STRIP */}
+          <TrustStrip />
 
           {/* MAIN CONTENT */}
           <main className="pt-0 bg-black min-h-screen">

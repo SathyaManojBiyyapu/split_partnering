@@ -1,7 +1,7 @@
-// Match expiry: 7 days uniform for all categories (Section 4 - updated)
+// Match expiry: 10 days uniform for all categories
 export const MATCH_EXPIRY_DAYS: Record<string, number> = {};
 
-export const DEFAULT_EXPIRY_DAYS = 7;
+export const DEFAULT_EXPIRY_DAYS = 10;
 
 export function getExpiryDate(createdAt: any): Date | null {
   if (!createdAt?.seconds) return null;
@@ -27,7 +27,7 @@ export function getExpiryStatus(createdAt: any): {
   progress: number;
 } {
   if (!createdAt?.seconds) {
-    return { status: "active", label: "Active", daysLeft: 7, progress: 0 };
+    return { status: "active", label: "Active", daysLeft: 10, progress: 0 };
   }
 
   const created = new Date(createdAt.seconds * 1000);
@@ -57,7 +57,7 @@ export function getExpiryStatus(createdAt: any): {
     label = `${daysLeft} Days Left`;
   } else {
     status = "active";
-    label = `${daysLeft} Days Left`;
+    label = `${daysLeft} Days Left (10 day expiry)`;
   }
 
   return { status, label, daysLeft, progress };

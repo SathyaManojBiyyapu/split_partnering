@@ -2,9 +2,10 @@
 
 import { useState, useEffect } from "react";
 import { db } from "@/firebase/config";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, query, where, getDocs } from "firebase/firestore";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
+import { masterCategories, slugToCategoryName } from "@/app/data/subcategories";
 
 // India states data (same as profile page)
 const indiaStates = [
@@ -17,46 +18,6 @@ const indiaStates = [
   "Andaman and Nicobar Islands", "Chandigarh", "Dadra and Nagar Haveli and Daman and Diu",
   "Delhi", "Jammu and Kashmir", "Ladakh", "Lakshadweep", "Puducherry"
 ];
-
-// 9 PartnerSync categories with specific subcategories
-const partnerCategories: Record<string, { name: string; icon: string; subcategories: string[] }> = {
-  "Gym": {
-    name: "Gym", icon: "💪",
-    subcategories: ["Monthly Membership", "Quarterly Membership", "Yearly Membership", "Personal Training", "Couple Membership"]
-  },
-  "Fashion": {
-    name: "Fashion", icon: "👗",
-    subcategories: ["Group Shopping", "Bulk Orders", "Sneakers", "Beauty Products", "Brand Purchases", "Festival Collections"]
-  },
-  "Movies": {
-    name: "Movies", icon: "🎬",
-    subcategories: ["PVR", "INOX", "Weekend Shows", "Premium Seats", "Movie Passes"]
-  },
-  "Lenskart": {
-    name: "Lenskart", icon: "👓",
-    subcategories: ["Eyeglasses", "Sunglasses", "Contact Lenses", "Premium Frames", "Kids Eyewear"]
-  },
-  "Local Travel": {
-    name: "Local Travel", icon: "🚗",
-    subcategories: ["Cab Sharing", "Bike Sharing", "Commute Partner", "Route Match", "Weekend Trips"]
-  },
-  "Events": {
-    name: "Events", icon: "🎤",
-    subcategories: ["Concerts", "Comedy Shows", "Music Festivals", "Sports Events", "Cultural Events"]
-  },
-  "Coupons": {
-    name: "Coupons", icon: "🎟️",
-    subcategories: ["Zomato", "Swiggy", "Amazon", "Myntra", "Flipkart", "Food Delivery"]
-  },
-  "Villas": {
-    name: "Villas", icon: "🏡",
-    subcategories: ["Weekend Stay", "Group Stay", "Pool Villas", "Beach Villas", "Hill Villas"]
-  },
-  "Books": {
-    name: "Books", icon: "📚",
-    subcategories: ["Book Exchange", "Second-Hand Books", "Competitive Exam Books", "Engineering Books", "Academic Books", "Novel Community"]
-  }
-};
 
 // Districts data from cities.js (simplified for form)
 const districtsByState: Record<string, string[]> = {
@@ -152,7 +113,16 @@ export default function CollaboratorsPage() {
   const [error, setError] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
-  const currentSubcategories = selectedCategory ? partnerCategories[selectedCategory]?.subcategories || [] : [];
+  // Build category list from master source of truth
+  const categoryKeys = Object.keys(masterCategories);
+  const categoryOptions = categoryKeys.map(key => ({
+    key,
+    name: masterCategories[key].name,
+    icon: masterCategories[key].icon,
+    subcategories: masterCategories[key].subcategories
+  }));
+
+  const currentSubcategories = selectedCategory ? masterCategories[selectedCategory]?.subcategories || [] : [];
   const currentDistricts = formData.state ? districtsByState[formData.state] || [] : [];
   const currentCities = (formData.state && formData.district && citiesByDistrict[formData.state]) 
     ? (citiesByDistrict[formData.state][formData.district] || [])
@@ -179,10 +149,27 @@ export default function CollaboratorsPage() {
       return;
     }
 
+    // Get canonical category name from slug
+    const canonicalCategoryName = masterCategories[formData.category]?.name || formData.category;
+
+    // Duplicate protection: check for existing entry with same phone + business + category + subcategory
     setSubmitting(true);
     try {
+      const dupQuery = query(
+        collection(db, "collaborators"),
+        where("phone", "==", formData.phone),
+        where("category", "==", canonicalCategoryName),
+        where("subcategory", "==", formData.subcategory),
+        where("option", "==", formData.option)
+      );
+      const dupSnap = await getDocs(dupQuery);
+      if (!dupSnap.empty) {
+        setError("A collaborator with this phone, business, category, and subcategory already exists. Duplicate entries are not allowed.");
+        setSubmitting(false);
+        return;
+      }
       await addDoc(collection(db, "collaborators"), {
-        category: formData.category,
+        category: canonicalCategoryName,
         subcategory: formData.subcategory,
         option: formData.option,
         businessName: formData.businessName || formData.option,
@@ -214,8 +201,6 @@ export default function CollaboratorsPage() {
     setSubmitting(false);
   };
 
-  const categoryKeys = Object.keys(partnerCategories);
-
   return (
     <main className="min-h-screen bg-black text-white pb-mobile-cta">
       
@@ -246,8 +231,7 @@ export default function CollaboratorsPage() {
         <div className="max-w-5xl mx-auto">
           <h2 className="font-heading text-xl text-[#FFD166] mb-4 text-center">Select Your Category</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {categoryKeys.map((key) => {
-              const cat = partnerCategories[key];
+            {categoryOptions.map(({ key, name, icon, subcategories }) => {
               const isSelected = selectedCategory === key;
               return (
                 <motion.button
@@ -259,10 +243,10 @@ export default function CollaboratorsPage() {
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <span className="text-2xl">{cat.icon}</span>
+                    <span className="text-2xl">{icon}</span>
                     <div>
-                      <h3 className="text-white font-semibold text-sm">{cat.name}</h3>
-                      <p className="text-[10px] text-gray-400">{cat.subcategories.length} subcategories</p>
+                      <h3 className="text-white font-semibold text-sm">{name}</h3>
+                      <p className="text-[10px] text-gray-400">{subcategories.length} subcategories</p>
                     </div>
                     {isSelected && <span className="ml-auto text-[#FFD166] text-xs">✓</span>}
                   </div>
@@ -281,7 +265,7 @@ export default function CollaboratorsPage() {
               <div className="text-4xl mb-4">🎉</div>
               <h2 className="text-xl font-bold text-[#FFD166] mb-2">Partnership Request Submitted!</h2>
               <p className="text-sm text-gray-400 mb-6">
-                Our team will review your application. Once approved, <span className="text-[#FFD166]">{formData.option}</span> will appear under {formData.category} → {formData.subcategory}.
+                Our team will review your application. Once approved, <span className="text-[#FFD166]">{formData.option}</span> will appear under {masterCategories[formData.category]?.name || formData.category} → {formData.subcategory}.
               </p>
               <Link href="/" className="btn-primary text-sm">Back to Home</Link>
             </motion.div>
@@ -301,8 +285,8 @@ export default function CollaboratorsPage() {
                     className="w-full bg-black/50 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-white focus:border-[#FFD166] outline-none"
                   >
                     <option value="">Select Category</option>
-                    {categoryKeys.map(key => (
-                      <option key={key} value={key}>{partnerCategories[key].icon} {key}</option>
+                    {categoryOptions.map(({ key, name, icon }) => (
+                      <option key={key} value={key}>{icon} {name}</option>
                     ))}
                   </select>
                 </div>

@@ -7,7 +7,7 @@ import { useEffect, useState, useRef } from "react";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { db } from "@/firebase/config";
 import { motion } from "framer-motion";
-import { categoryData, Subcategory } from "@/app/data/subcategories";
+import { categoryData, Subcategory, slugToCategoryName } from "@/app/data/subcategories";
 
 /* ---------------- ANIMATED COUNTER ---------------- */
 function AnimatedCounter({ target, suffix = "", prefix = "" }: { target: number; suffix?: string; prefix?: string }) {
@@ -47,153 +47,6 @@ function AnimatedCounter({ target, suffix = "", prefix = "" }: { target: number;
   }, [visible, target]);
 
   return <span ref={ref}>{prefix}{count.toLocaleString()}{suffix}</span>;
-}
-
-/* ---------------- DYNAMIC COLLABORATOR BRANDS ---------------- */
-const slugToCollaboratorCategory: Record<string, string> = {
-  "gym": "Gym",
-  "fashion": "Fashion",
-  "movies": "Movies",
-  "lenskart": "Lenskart",
-  "local-travel": "Local Travel",
-  "events": "Events",
-  "coupons": "Coupons",
-  "villas": "Villas",
-  "books": "Books"
-};
-
-function CollaboratorBrands({ slug }: { slug: string }) {
-  const [brands, setBrands] = useState<any[]>([]);
-  const [search, setSearch] = useState("");
-  const collabCategory = slugToCollaboratorCategory[slug] || "";
-
-  useEffect(() => {
-    if (!collabCategory) return;
-    // Listen for approved AND featured collaborators in this category
-    const q = query(
-      collection(db, "collaborators"),
-      where("category", "==", collabCategory),
-      where("status", "in", ["approved", "featured"])
-    );
-    const unsub = onSnapshot(q, (snapshot) => {
-      const items: any[] = [];
-      snapshot.forEach((d) => {
-        const data = d.data();
-        items.push({ id: d.id, ...data });
-      });
-      setBrands(items);
-    });
-    return () => unsub();
-  }, [slug, collabCategory]);
-
-  // Increment view counter
-  useEffect(() => {
-    if (brands.length > 0 && !sessionStorage.getItem(`viewed-${slug}`)) {
-      sessionStorage.setItem(`viewed-${slug}`, "1");
-    }
-  }, [brands.length, slug]);
-
-  if (brands.length === 0) return null;
-
-  // Filter by search
-  const filtered = search
-    ? brands.filter((b) =>
-        (b.option || "").toLowerCase().includes(search.toLowerCase()) ||
-        (b.businessName || "").toLowerCase().includes(search.toLowerCase())
-      )
-    : brands;
-
-  // Sort: featured first, then by name
-  const sorted = [...filtered].sort((a, b) => {
-    if (a.status === "featured" && b.status !== "featured") return -1;
-    if (a.status !== "featured" && b.status === "featured") return 1;
-    return (a.option || "").localeCompare(b.option || "");
-  });
-
-  // Group by subcategory
-  const grouped: Record<string, any[]> = {};
-  sorted.forEach((b) => {
-    const sub = b.subcategory || "Other";
-    if (!grouped[sub]) grouped[sub] = [];
-    grouped[sub].push(b);
-  });
-
-  return (
-    <div className="mb-8">
-      <div className="flex items-center gap-2 mb-2">
-        <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-        <h2 className="font-heading text-lg sm:text-xl text-green-400">
-          Partner Brands
-        </h2>
-        <span className="text-[10px] text-gray-500">
-          {brands.length} approved
-        </span>
-      </div>
-
-      {/* Search input */}
-      <div className="mb-4">
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search brands..."
-          className="w-full bg-[#0c0c0c] border border-[#FFD166]/20 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-500 focus:border-[#FFD166] outline-none"
-        />
-      </div>
-
-      {Object.entries(grouped).map(([subcategory, items]) => (
-        <div key={subcategory} className="mb-4">
-          <h3 className="text-xs text-gray-400 font-medium mb-2 ml-1">{subcategory}</h3>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
-            {items.map((brand) => (
-              <motion.div
-                key={brand.id}
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                whileHover={{ y: -2 }}
-              >
-                <Link
-                  href={`/save?category=${slug}&option=${brand.option}&subcategory=${brand.subcategory}`}
-                  className="card-glass-premium p-3 flex flex-col items-center text-center h-full relative overflow-hidden"
-                >
-                  {/* Featured badge */}
-                  {brand.status === "featured" && (
-                    <div className="absolute top-0 right-0">
-                      <div className="bg-purple-600 text-white text-[7px] font-bold px-1.5 py-0.5 rounded-bl-lg">
-                        ⭐ FEATURED
-                      </div>
-                    </div>
-                  )}
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#D4AF37]/20 to-[#E6C97A]/10 border border-[#D4AF37]/20 flex items-center justify-center text-sm mb-2">
-                    🏪
-                  </div>
-                  <h4 className="text-white font-semibold text-xs">{brand.option}</h4>
-                  {brand.businessName && brand.businessName !== brand.option && (
-                    <p className="text-[8px] text-gray-500 mt-0.5 truncate w-full">{brand.businessName}</p>
-                  )}
-                  {brand.city && (
-                    <p className="text-[8px] text-gray-600 mt-0.5">📍 {brand.city}</p>
-                  )}
-                  <div className="flex flex-col items-center gap-1 mt-1.5">
-                    {(brand.status === "approved" || brand.status === "featured") && (
-                      <span className="text-[8px] text-green-400 font-medium bg-green-500/10 px-2 py-0.5 rounded-full">
-                        ✓ Verified
-                      </span>
-                    )}
-                    {brand.status === "featured" && (
-                      <span className="text-[8px] text-purple-400 font-medium bg-purple-500/10 px-2 py-0.5 rounded-full">
-                        ⭐ Recommended Partner
-                      </span>
-                    )}
-                  </div>
-                </Link>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
 }
 
 /* ---------------- SUB CATEGORY CARD ---------------- */
@@ -407,13 +260,6 @@ export default function OptionsPage() {
               <SubcategoryCard key={sub.slug} sub={sub} slug={slug} index={i} />
             ))}
           </div>
-        </div>
-      </section>
-
-      {/* ===== 4.5: APPROVED COLLABORATOR BRANDS ===== */}
-      <section className="px-4 pb-8">
-        <div className="max-w-5xl mx-auto">
-          <CollaboratorBrands slug={slug} />
         </div>
       </section>
 

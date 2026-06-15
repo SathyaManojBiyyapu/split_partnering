@@ -31,24 +31,8 @@ import {
 } from "firebase/firestore";
 
 import { partneringInfo } from "@/app/data/partneringInfo";
-import { getExpiryDate, isExpired } from "@/app/data/matchExpiry";
-import { categoryData } from "@/app/data/subcategories";
-
-/* -----------------------------------------
-   SLUG → CATEGORY NAME MAPPING
------------------------------------------- */
-
-const slugToCategoryName: Record<string, string> = {
-  "gym": "Gym",
-  "fashion": "Fashion",
-  "movies": "Movies",
-  "lenskart": "Lenskart",
-  "local-travel": "Local Travel",
-  "events": "Events",
-  "coupons": "Coupons",
-  "villas": "Villas",
-  "books": "Books"
-};
+import { getExpiryDate } from "@/app/data/matchExpiry";
+import { categoryData, slugToCategoryName } from "@/app/data/subcategories";
 
 /* -----------------------------------------
    GROUP SIZE
@@ -559,9 +543,49 @@ function CollaboratorBrandSelector({
 }) {
   const [brands, setBrands] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [userCity, setUserCity] = useState<string>("");
+  const [userDistrict, setUserDistrict] = useState<string>("");
+  const [userState, setUserState] = useState<string>("");
+  const [userName, setUserName] = useState<string>("");
 
   const categoryName = slugToCategoryName[categorySlug] || "";
   const subcategoryName = getSubcategoryName(categorySlug, optionSlug);
+
+  // Verification level badge
+  const getVerificationBadge = (level: string | number | undefined) => {
+    if (!level || level === 1) return { badge: "✓ Verified", color: "text-green-400 bg-green-500/10" };
+    if (level === 2) return { badge: "✓✓ Trusted Partner", color: "text-blue-400 bg-blue-500/10" };
+    if (level === 3) return { badge: "👑 Premium Partner", color: "text-purple-400 bg-purple-500/10" };
+    return { badge: "✓ Verified", color: "text-green-400 bg-green-500/10" };
+  };
+
+  // Get location label
+  const getLocationBadge = (brand: any): { label: string; color: string } => {
+    if (brand.city && brand.city === userCity) return { label: "Same City", color: "🟢" };
+    if (brand.district && brand.district === userDistrict) return { label: "Same District", color: "🟡" };
+    if (brand.state && brand.state === userState) return { label: "Same State", color: "🔵" };
+    return { label: "", color: "" };
+  };
+
+  // Load user location
+  useEffect(() => {
+    const phone = localStorage.getItem("phone");
+    if (!phone) return;
+    const fetchUser = async () => {
+      try {
+        const snap = await getDoc(doc(db, "users", phone));
+        if (snap.exists()) {
+          const d = snap.data();
+          setUserCity(d.city || "");
+          setUserDistrict(d.district || "");
+          setUserState(d.state || "");
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    };
+    fetchUser();
+  }, []);
 
   useEffect(() => {
     if (!categoryName || !subcategoryName) {
@@ -580,8 +604,33 @@ function CollaboratorBrandSelector({
         const snap = await getDocs(q);
         const items: any[] = [];
         snap.forEach((d) => {
-          items.push({ id: d.id, ...d.data() });
+          const data = d.data();
+          items.push({ id: d.id, ...data });
+          // Increment view count (tracking views)
+          if (data.viewCount === undefined) {
+            updateDoc(doc(db, "collaborators", d.id), { viewCount: 1 });
+          } else {
+            updateDoc(doc(db, "collaborators", d.id), { viewCount: (data.viewCount || 0) + 1 });
+          }
         });
+
+        // Sort by location priority: same city > same district > same state > others
+        items.sort((a, b) => {
+          const getPriority = (item: any) => {
+            if (item.city && item.city === userCity) return 0;
+            if (item.district && item.district === userDistrict) return 1;
+            if (item.state && item.state === userState) return 2;
+            return 3;
+          };
+          const aP = getPriority(a);
+          const bP = getPriority(b);
+          if (aP !== bP) return aP - bP;
+          // Within same priority, featured first
+          if (a.status === "featured" && b.status !== "featured") return -1;
+          if (a.status !== "featured" && b.status === "featured") return 1;
+          return 0;
+        });
+
         setBrands(items);
       } catch (err) {
         console.error("Error fetching collaborators:", err);
@@ -590,7 +639,7 @@ function CollaboratorBrandSelector({
     };
 
     fetchBrands();
-  }, [categoryName, subcategoryName]);
+  }, [categoryName, subcategoryName, userCity, userDistrict, userState]);
 
   if (loading) {
     return (
@@ -600,10 +649,101 @@ function CollaboratorBrandSelector({
     );
   }
 
+  // City-based title
+  const getTitle = () => {
+    if (userCity) return `Recommended in ${userCity}`;
+    return "Recommended Near You";
+  };
+
+  // Separate featured and regular brands
+  const featuredBrands = brands.filter(b => b.status === "featured");
+  const regularBrands = brands.filter(b => b.status !== "featured");
+
+  const renderBrandCard = (brand: any, isFeatured: boolean) => {
+    const isSelected = selectedBrand === brand.id;
+    const locBadge = getLocationBadge(brand);
+    const vBadge = getVerificationBadge(brand.verificationLevel);
+    const logoUrl = brand.logoUrl || null;
+    return (
+      <button
+        key={brand.id}
+        onClick={() => {
+          onSelect(brand.id, brand.option || brand.businessName || brand.id);
+          // Track selection
+          const currentSelects = (brand.selectCount || 0) + 1;
+          updateDoc(doc(db, "collaborators", brand.id), { selectCount: currentSelects, updatedAt: new Date() });
+        }}
+        className={`text-left p-3 rounded-xl border transition-all ${
+          isSelected
+            ? "border-[#FFD166] bg-[#FFD166]/10"
+            : isFeatured
+            ? "border-purple-500/40 bg-purple-900/10 hover:border-purple-500/70"
+            : "border-gray-700 bg-[#0c0c0c] hover:border-[#FFD166]/50"
+        } ${isFeatured ? "relative overflow-hidden" : ""}`}
+      >
+        {/* Featured badge */}
+        {isFeatured && (
+          <div className="absolute top-0 right-0">
+            <div className="bg-purple-600 text-white text-[7px] font-bold px-2 py-0.5 rounded-bl-lg">
+              ⭐ FEATURED
+            </div>
+          </div>
+        )}
+        <div className="flex items-center gap-3">
+          {/* Logo or fallback icon */}
+          {logoUrl ? (
+            <div className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0 border border-gray-700">
+              <img src={logoUrl} alt={brand.option || brand.businessName} className="w-full h-full object-cover" />
+            </div>
+          ) : (
+            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#D4AF37]/20 to-[#E6C97A]/10 border border-[#D4AF37]/20 flex items-center justify-center text-sm flex-shrink-0">
+              🏪
+            </div>
+          )}
+          <div className="flex-1 min-w-0">
+            <p className="text-white font-semibold text-sm">
+              {brand.option || brand.businessName}
+            </p>
+            {isFeatured && (
+              <p className="text-[9px] text-purple-400 font-medium">
+                ⭐ Featured Partner
+              </p>
+            )}
+            <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+              <span className={`text-[8px] font-medium px-1.5 py-0.5 rounded-full ${vBadge.color}`}>
+                {vBadge.badge}
+              </span>
+              {locBadge.label && (
+                <span className="text-[8px] text-gray-400 font-medium px-1.5 py-0.5 rounded-full bg-gray-800">
+                  {locBadge.color} {locBadge.label}
+                </span>
+              )}
+            </div>
+            {brand.city && (
+              <p className="text-[10px] text-gray-500 mt-0.5">
+                📍 {brand.city}
+              </p>
+            )}
+          </div>
+          {isSelected && (
+            <div className="w-5 h-5 rounded-full bg-[#FFD166] flex items-center justify-center flex-shrink-0">
+              <span className="text-black text-[10px] font-bold">✓</span>
+            </div>
+          )}
+        </div>
+        {brand.description && (
+          <p className="text-[10px] text-gray-500 mt-2 line-clamp-1">
+            {brand.description}
+          </p>
+        )}
+      </button>
+    );
+  };
+
   return (
     <div className="mb-6">
       <h3 className="text-sm font-semibold text-[#FFD166] mb-3">
-        Available Partner Brands
+        {getTitle()}
       </h3>
 
       {brands.length === 0 ? (
@@ -616,52 +756,28 @@ function CollaboratorBrandSelector({
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          {brands.map((brand) => {
-            const isSelected = selectedBrand === brand.id;
-            return (
-              <button
-                key={brand.id}
-                onClick={() => onSelect(brand.id, brand.option || brand.businessName || brand.id)}
-                className={`text-left p-3 rounded-xl border transition-all ${
-                  isSelected
-                    ? "border-[#FFD166] bg-[#FFD166]/10"
-                    : "border-gray-700 bg-[#0c0c0c] hover:border-[#FFD166]/50"
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#D4AF37]/20 to-[#E6C97A]/10 border border-[#D4AF37]/20 flex items-center justify-center text-sm flex-shrink-0">
-                    🏪
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-white font-semibold text-sm">
-                      {brand.option || brand.businessName}
-                    </p>
-                    <div className="flex items-center gap-1 mt-0.5">
-                      <span className="text-[8px] text-green-400 font-medium bg-green-500/10 px-1.5 py-0.5 rounded-full">
-                        ✓ Verified
-                      </span>
-                    </div>
-                    {brand.city && (
-                      <p className="text-[10px] text-gray-500 mt-0.5">
-                        📍 {brand.city}
-                      </p>
-                    )}
-                  </div>
-                  {isSelected && (
-                    <div className="w-5 h-5 rounded-full bg-[#FFD166] flex items-center justify-center">
-                      <span className="text-black text-[10px] font-bold">✓</span>
-                    </div>
-                  )}
-                </div>
-                {brand.description && (
-                  <p className="text-[10px] text-gray-500 mt-2 line-clamp-1">
-                    {brand.description}
-                  </p>
-                )}
-              </button>
-            );
-          })}
+        <div className="space-y-3">
+          {/* Featured Section */}
+          {featuredBrands.length > 0 && (
+            <div>
+              <p className="text-[10px] text-purple-400 font-medium mb-2">⭐ Featured Partners</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {featuredBrands.map(brand => renderBrandCard(brand, true))}
+              </div>
+            </div>
+          )}
+
+          {/* Regular Brands */}
+          {regularBrands.length > 0 && (
+            <div>
+              {featuredBrands.length > 0 && (
+                <p className="text-[10px] text-gray-500 font-medium mb-2">More Partner Brands</p>
+              )}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {regularBrands.map(brand => renderBrandCard(brand, false))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

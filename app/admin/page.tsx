@@ -752,6 +752,55 @@ export default function AdminPage() {
               </div>
             </div>
 
+            {/* Collaborator Analytics */}
+            <div className="bg-[#0c0c0c] border border-[#FFD166]/20 rounded-xl p-4 mb-6">
+              <h3 className="text-sm font-bold text-[#FFD166] mb-3">🤝 Top Collaborators</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-gray-400 border-b border-gray-800">
+                      <th className="text-left py-2 pr-2">Business</th>
+                      <th className="text-center py-2 px-2">Category/Sub</th>
+                      <th className="text-center py-2 px-2">Status</th>
+                      <th className="text-center py-2 px-2">Views</th>
+                      <th className="text-center py-2 px-2">Selections</th>
+                      <th className="text-center py-2 px-2">Conversion</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {collaborators
+                      .filter(c => c.status === "approved" || c.status === "featured")
+                      .sort((a, b) => (b.selectCount || 0) - (a.selectCount || 0))
+                      .slice(0, 10)
+                      .map((c) => {
+                        const views = c.viewCount || 0;
+                        const selects = c.selectCount || 0;
+                        const conv = views > 0 ? Math.round((selects / views) * 100) : 0;
+                        return (
+                          <tr key={c.id} className="border-b border-gray-800/50">
+                            <td className="py-2 pr-2 text-white font-medium">{c.businessName || c.option || "N/A"}</td>
+                            <td className="text-center py-2 px-2 text-gray-400 text-[9px]">{c.category} → {c.brandName}</td>
+                            <td className="text-center py-2 px-2">
+                              <span className={`${c.status === "featured" ? "text-purple-400" : "text-green-400"}`}>
+                                {c.status}
+                              </span>
+                            </td>
+                            <td className="text-center py-2 px-2 text-blue-400">{views}</td>
+                            <td className="text-center py-2 px-2 text-yellow-400">{selects}</td>
+                            <td className="text-center py-2 px-2 text-emerald-400">{conv}%</td>
+                          </tr>
+                        );
+                      })}
+                    {collaborators.filter(c => c.status === "approved" || c.status === "featured").length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="text-center py-4 text-gray-500">No approved collaborators yet</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
             {/* 5: City Analytics */}
             <div className="bg-[#0c0c0c] border border-[#FFD166]/20 rounded-xl p-4">
               <h3 className="text-sm font-bold text-[#FFD166] mb-3">📍 Top Cities</h3>
@@ -960,6 +1009,7 @@ export default function AdminPage() {
                 <option value="approved">Approved</option>
                 <option value="rejected">Rejected</option>
                 <option value="featured">Featured</option>
+                <option value="inactive">Inactive</option>
                 <option value="hidden">Hidden</option>
               </select>
               <input
@@ -1053,9 +1103,16 @@ export default function AdminPage() {
                         {c.status !== "approved" && (
                           <button
                             onClick={async () => {
-                              await updateDoc(doc(db, "collaborators", c.id), { status: "approved", updatedAt: new Date(), featured: false });
+                              await updateDoc(doc(db, "collaborators", c.id), { 
+                                status: "approved", 
+                                updatedAt: new Date(), 
+                                approvedAt: new Date(),
+                                featured: false 
+                              });
                               // Create approval notification
+                              // Notify waiting users in this category+subcategory
                               try {
+                                // Create approval notification for the collaborator
                                 await addDoc(collection(db, "notifications"), {
                                   uid: c.phone || c.email || "",
                                   title: "Congratulations! Your Business is Approved 🎉",
@@ -1103,15 +1160,17 @@ export default function AdminPage() {
                             Hide
                           </button>
                         )}
-                        <button
-                          onClick={async () => {
-                            if (!confirm("Delete this collaborator?")) return;
-                            await deleteDoc(doc(db, "collaborators", c.id));
-                          }}
-                          className="px-2 py-1 bg-red-700 rounded text-[10px]"
-                        >
-                          Delete
-                        </button>
+                        {c.status !== "inactive" && (
+                          <button
+                            onClick={async () => {
+                              if (!confirm("Hide this collaborator? This will disable future usage without deleting existing matches/chats.")) return;
+                              await updateDoc(doc(db, "collaborators", c.id), { status: "inactive", updatedAt: new Date() });
+                            }}
+                            className="px-2 py-1 bg-red-700 rounded text-[10px]"
+                          >
+                            Deactivate
+                          </button>
+                        )}
                       </div>
                     </div>
                   ))}

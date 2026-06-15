@@ -29,6 +29,33 @@ export interface CategoryData {
   successStories: { name: string; saved: string; icon: string }[];
 }
 
+// Master category mapping for collaborators - ONE SOURCE OF TRUTH
+// This maps category slugs to the canonical category name and its subcategories
+export const masterCategories: Record<string, { name: string; icon: string; subcategories: string[] }> = {
+  gym: { name: "Gym", icon: "💪", subcategories: ["Gym Membership Split", "Supplements Group Buy", "Personal Trainer Split", "Day Pass Sharing", "Fitness Equipment Group Buy"] },
+  books: { name: "Books", icon: "📚", subcategories: ["Book Exchange", "Second-Hand Books", "Competitive Exam Books", "Engineering Books", "Academic Books", "Novel Community", "Group Book Purchases"] },
+  fashion: { name: "Fashion", icon: "👗", subcategories: ["Group Shopping", "Bulk Orders", "Sneakers", "Beauty Products", "Brand Purchases", "Festival Collections"] },
+  movies: { name: "Movies", icon: "🎬", subcategories: ["Save Ticket", "Bulk Ticket"] },
+  "local-travel": { name: "Local Travel", icon: "✈️", subcategories: ["Trip Cost Sharing", "Carpool", "Hotel Sharing", "Travel Groups", "Travel Partner", "Backpacking Groups"] },
+  lenskart: { name: "Lenskart", icon: "👓", subcategories: ["Eyeglasses Split"] },
+  events: { name: "Events", icon: "🎤", subcategories: ["Event Passes"] },
+  coupons: { name: "Coupons", icon: "🎟️", subcategories: ["Discount Coupons"] },
+  villas: { name: "Villas", icon: "🏡", subcategories: ["Weekend Stay"] },
+};
+
+// Slug to canonical category name mapping (for Firestore queries)
+export const slugToCategoryName: Record<string, string> = {
+  "gym": "Gym",
+  "fashion": "Fashion",
+  "movies": "Movies",
+  "lenskart": "Lenskart",
+  "local-travel": "Local Travel",
+  "events": "Events",
+  "coupons": "Coupons",
+  "villas": "Villas",
+  "books": "Books"
+};
+
 export const categoryData: Record<string, CategoryData> = {
   gym: {
     title: "Gym & Fitness",

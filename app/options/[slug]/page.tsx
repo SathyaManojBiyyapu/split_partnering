@@ -50,15 +50,30 @@ function AnimatedCounter({ target, suffix = "", prefix = "" }: { target: number;
 }
 
 /* ---------------- DYNAMIC COLLABORATOR BRANDS ---------------- */
-function CollaboratorBrands({ slug, categoryName }: { slug: string; categoryName: string }) {
+const slugToCollaboratorCategory: Record<string, string> = {
+  "gym": "Gym",
+  "fashion": "Fashion",
+  "movies": "Movies",
+  "lenskart": "Lenskart",
+  "local-travel": "Local Travel",
+  "events": "Events",
+  "coupons": "Coupons",
+  "villas": "Villas",
+  "books": "Books"
+};
+
+function CollaboratorBrands({ slug }: { slug: string }) {
   const [brands, setBrands] = useState<any[]>([]);
+  const [search, setSearch] = useState("");
+  const collabCategory = slugToCollaboratorCategory[slug] || "";
 
   useEffect(() => {
-    // Listen for approved collaborators in this category
+    if (!collabCategory) return;
+    // Listen for approved AND featured collaborators in this category
     const q = query(
       collection(db, "collaborators"),
-      where("category", "==", categoryName),
-      where("status", "==", "approved")
+      where("category", "==", collabCategory),
+      where("status", "in", ["approved", "featured"])
     );
     const unsub = onSnapshot(q, (snapshot) => {
       const items: any[] = [];
@@ -66,23 +81,38 @@ function CollaboratorBrands({ slug, categoryName }: { slug: string; categoryName
         const data = d.data();
         items.push({ id: d.id, ...data });
       });
-      // Group by subcategory
-      const grouped: Record<string, any[]> = {};
-      items.forEach((item) => {
-        const sub = item.subcategory || "Other";
-        if (!grouped[sub]) grouped[sub] = [];
-        grouped[sub].push(item);
-      });
       setBrands(items);
     });
     return () => unsub();
-  }, [slug, categoryName]);
+  }, [slug, collabCategory]);
+
+  // Increment view counter
+  useEffect(() => {
+    if (brands.length > 0 && !sessionStorage.getItem(`viewed-${slug}`)) {
+      sessionStorage.setItem(`viewed-${slug}`, "1");
+    }
+  }, [brands.length, slug]);
 
   if (brands.length === 0) return null;
 
+  // Filter by search
+  const filtered = search
+    ? brands.filter((b) =>
+        (b.option || "").toLowerCase().includes(search.toLowerCase()) ||
+        (b.businessName || "").toLowerCase().includes(search.toLowerCase())
+      )
+    : brands;
+
+  // Sort: featured first, then by name
+  const sorted = [...filtered].sort((a, b) => {
+    if (a.status === "featured" && b.status !== "featured") return -1;
+    if (a.status !== "featured" && b.status === "featured") return 1;
+    return (a.option || "").localeCompare(b.option || "");
+  });
+
   // Group by subcategory
   const grouped: Record<string, any[]> = {};
-  brands.forEach((b) => {
+  sorted.forEach((b) => {
     const sub = b.subcategory || "Other";
     if (!grouped[sub]) grouped[sub] = [];
     grouped[sub].push(b);
@@ -90,14 +120,25 @@ function CollaboratorBrands({ slug, categoryName }: { slug: string; categoryName
 
   return (
     <div className="mb-8">
-      <div className="flex items-center gap-2 mb-4">
+      <div className="flex items-center gap-2 mb-2">
         <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
         <h2 className="font-heading text-lg sm:text-xl text-green-400">
           Partner Brands
         </h2>
         <span className="text-[10px] text-gray-500">
-          {brands.length} approved collaborator{brands.length > 1 ? "s" : ""}
+          {brands.length} approved
         </span>
+      </div>
+
+      {/* Search input */}
+      <div className="mb-4">
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search brands..."
+          className="w-full bg-[#0c0c0c] border border-[#FFD166]/20 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-500 focus:border-[#FFD166] outline-none"
+        />
       </div>
 
       {Object.entries(grouped).map(([subcategory, items]) => (
@@ -113,8 +154,16 @@ function CollaboratorBrands({ slug, categoryName }: { slug: string; categoryName
               >
                 <Link
                   href={`/save?category=${slug}&option=${brand.option}&subcategory=${brand.subcategory}`}
-                  className="card-glass-premium p-3 flex flex-col items-center text-center h-full"
+                  className="card-glass-premium p-3 flex flex-col items-center text-center h-full relative overflow-hidden"
                 >
+                  {/* Featured badge */}
+                  {brand.status === "featured" && (
+                    <div className="absolute top-0 right-0">
+                      <div className="bg-purple-600 text-white text-[7px] font-bold px-1.5 py-0.5 rounded-bl-lg">
+                        ⭐ FEATURED
+                      </div>
+                    </div>
+                  )}
                   <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#D4AF37]/20 to-[#E6C97A]/10 border border-[#D4AF37]/20 flex items-center justify-center text-sm mb-2">
                     🏪
                   </div>
@@ -125,9 +174,18 @@ function CollaboratorBrands({ slug, categoryName }: { slug: string; categoryName
                   {brand.city && (
                     <p className="text-[8px] text-gray-600 mt-0.5">📍 {brand.city}</p>
                   )}
-                  <span className="mt-1.5 text-[9px] text-green-400 font-medium bg-green-500/10 px-2 py-0.5 rounded-full">
-                    Partner
-                  </span>
+                  <div className="flex flex-col items-center gap-1 mt-1.5">
+                    {(brand.status === "approved" || brand.status === "featured") && (
+                      <span className="text-[8px] text-green-400 font-medium bg-green-500/10 px-2 py-0.5 rounded-full">
+                        ✓ Verified
+                      </span>
+                    )}
+                    {brand.status === "featured" && (
+                      <span className="text-[8px] text-purple-400 font-medium bg-purple-500/10 px-2 py-0.5 rounded-full">
+                        ⭐ Recommended Partner
+                      </span>
+                    )}
+                  </div>
                 </Link>
               </motion.div>
             ))}
@@ -355,7 +413,7 @@ export default function OptionsPage() {
       {/* ===== 4.5: APPROVED COLLABORATOR BRANDS ===== */}
       <section className="px-4 pb-8">
         <div className="max-w-5xl mx-auto">
-          <CollaboratorBrands slug={slug} categoryName={data.title} />
+          <CollaboratorBrands slug={slug} />
         </div>
       </section>
 

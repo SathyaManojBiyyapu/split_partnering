@@ -21,6 +21,7 @@ import {
 
 import {
   collection,
+  addDoc,
   getDocs,
   doc,
   updateDoc,
@@ -29,6 +30,7 @@ import {
   query,
   orderBy,
   where,
+  serverTimestamp,
   Timestamp,
 } from "firebase/firestore";
 
@@ -968,7 +970,7 @@ export default function AdminPage() {
               />
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-4">
               <div className="bg-blue-600/10 border border-blue-500/30 rounded-xl p-3 text-center">
                 <p className="text-lg font-bold text-blue-400">{collaborators.length}</p>
                 <p className="text-[9px] text-gray-400">Total</p>
@@ -980,6 +982,10 @@ export default function AdminPage() {
               <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-3 text-center">
                 <p className="text-lg font-bold text-green-400">{collaborators.filter(c => c.status === "approved" || c.status === "featured").length}</p>
                 <p className="text-[9px] text-gray-400">Approved</p>
+              </div>
+              <div className="bg-purple-500/10 border border-purple-500/30 rounded-xl p-3 text-center">
+                <p className="text-lg font-bold text-purple-400">{collaborators.filter(c => c.status === "featured").length}</p>
+                <p className="text-[9px] text-gray-400">Featured</p>
               </div>
               <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 text-center">
                 <p className="text-lg font-bold text-red-400">{collaborators.filter(c => c.status === "rejected").length}</p>
@@ -1047,7 +1053,20 @@ export default function AdminPage() {
                         {c.status !== "approved" && (
                           <button
                             onClick={async () => {
-                              await updateDoc(doc(db, "collaborators", c.id), { status: "approved", updatedAt: new Date() });
+                              await updateDoc(doc(db, "collaborators", c.id), { status: "approved", updatedAt: new Date(), featured: false });
+                              // Create approval notification
+                              try {
+                                await addDoc(collection(db, "notifications"), {
+                                  uid: c.phone || c.email || "",
+                                  title: "Congratulations! Your Business is Approved 🎉",
+                                  body: `Your business "${c.businessName || c.option}" has been approved and is now visible to PartnerSync users across ${c.category}.`,
+                                  type: "collaborator_approved",
+                                  category: c.category,
+                                  collaboratorId: c.id,
+                                  read: false,
+                                  createdAt: serverTimestamp(),
+                                });
+                              } catch (e) { console.error(e); }
                             }}
                             className="px-2 py-1 bg-green-600 rounded text-[10px]"
                           >
@@ -1057,11 +1076,11 @@ export default function AdminPage() {
                         {c.status !== "featured" && c.status === "approved" && (
                           <button
                             onClick={async () => {
-                              await updateDoc(doc(db, "collaborators", c.id), { status: "featured", updatedAt: new Date() });
+                              await updateDoc(doc(db, "collaborators", c.id), { status: "featured", featured: true, updatedAt: new Date() });
                             }}
                             className="px-2 py-1 bg-purple-600 rounded text-[10px]"
                           >
-                            Feature
+                            ⭐ Feature
                           </button>
                         )}
                         {c.status !== "rejected" && (

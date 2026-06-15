@@ -200,7 +200,16 @@ export default function CollaboratorsPage() {
       setSubmitted(true);
     } catch (err: any) {
       console.error("Submission error:", err);
-      setError("Failed to submit. Please try again.");
+      const errorCode = err?.code || "";
+      const errorMsg = err?.message || "";
+      
+      if (errorCode === "permission-denied" || errorMsg.includes("permission_denied")) {
+        setError("Firebase security rules are blocking the write. Please deploy the updated firestore.rules to Firebase Console first (see Settings → Rules).");
+      } else if (errorCode === "unavailable" || errorMsg.includes("unavailable")) {
+        setError("Network error. Please check your internet connection and try again.");
+      } else {
+        setError(`Failed to submit: ${errorMsg.substring(0, 100)}`);
+      }
     }
     setSubmitting(false);
   };

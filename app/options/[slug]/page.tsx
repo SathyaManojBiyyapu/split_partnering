@@ -4,7 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useParams } from "next/navigation";
 import { useEffect, useState, useRef } from "react";
-import { collection, onSnapshot, getDocs, doc, getDoc } from "firebase/firestore";
+import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { db } from "@/firebase/config";
 import { motion } from "framer-motion";
 import { categoryData, Subcategory } from "@/app/data/subcategories";
@@ -49,6 +49,95 @@ function AnimatedCounter({ target, suffix = "", prefix = "" }: { target: number;
   return <span ref={ref}>{prefix}{count.toLocaleString()}{suffix}</span>;
 }
 
+/* ---------------- DYNAMIC COLLABORATOR BRANDS ---------------- */
+function CollaboratorBrands({ slug, categoryName }: { slug: string; categoryName: string }) {
+  const [brands, setBrands] = useState<any[]>([]);
+
+  useEffect(() => {
+    // Listen for approved collaborators in this category
+    const q = query(
+      collection(db, "collaborators"),
+      where("category", "==", categoryName),
+      where("status", "==", "approved")
+    );
+    const unsub = onSnapshot(q, (snapshot) => {
+      const items: any[] = [];
+      snapshot.forEach((d) => {
+        const data = d.data();
+        items.push({ id: d.id, ...data });
+      });
+      // Group by subcategory
+      const grouped: Record<string, any[]> = {};
+      items.forEach((item) => {
+        const sub = item.subcategory || "Other";
+        if (!grouped[sub]) grouped[sub] = [];
+        grouped[sub].push(item);
+      });
+      setBrands(items);
+    });
+    return () => unsub();
+  }, [slug, categoryName]);
+
+  if (brands.length === 0) return null;
+
+  // Group by subcategory
+  const grouped: Record<string, any[]> = {};
+  brands.forEach((b) => {
+    const sub = b.subcategory || "Other";
+    if (!grouped[sub]) grouped[sub] = [];
+    grouped[sub].push(b);
+  });
+
+  return (
+    <div className="mb-8">
+      <div className="flex items-center gap-2 mb-4">
+        <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+        <h2 className="font-heading text-lg sm:text-xl text-green-400">
+          Partner Brands
+        </h2>
+        <span className="text-[10px] text-gray-500">
+          {brands.length} approved collaborator{brands.length > 1 ? "s" : ""}
+        </span>
+      </div>
+
+      {Object.entries(grouped).map(([subcategory, items]) => (
+        <div key={subcategory} className="mb-4">
+          <h3 className="text-xs text-gray-400 font-medium mb-2 ml-1">{subcategory}</h3>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+            {items.map((brand) => (
+              <motion.div
+                key={brand.id}
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                whileHover={{ y: -2 }}
+              >
+                <Link
+                  href={`/save?category=${slug}&option=${brand.option}&subcategory=${brand.subcategory}`}
+                  className="card-glass-premium p-3 flex flex-col items-center text-center h-full"
+                >
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#D4AF37]/20 to-[#E6C97A]/10 border border-[#D4AF37]/20 flex items-center justify-center text-sm mb-2">
+                    🏪
+                  </div>
+                  <h4 className="text-white font-semibold text-xs">{brand.option}</h4>
+                  {brand.businessName && brand.businessName !== brand.option && (
+                    <p className="text-[8px] text-gray-500 mt-0.5 truncate w-full">{brand.businessName}</p>
+                  )}
+                  {brand.city && (
+                    <p className="text-[8px] text-gray-600 mt-0.5">📍 {brand.city}</p>
+                  )}
+                  <span className="mt-1.5 text-[9px] text-green-400 font-medium bg-green-500/10 px-2 py-0.5 rounded-full">
+                    Partner
+                  </span>
+                </Link>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /* ---------------- SUB CATEGORY CARD ---------------- */
 function SubcategoryCard({ sub, slug, index }: { sub: Subcategory; slug: string; index: number }) {
   return (
@@ -63,7 +152,6 @@ function SubcategoryCard({ sub, slug, index }: { sub: Subcategory; slug: string;
         href={`/save?category=${slug}&option=${sub.slug}`}
         className="card-premium block p-5 h-full"
       >
-        {/* Header with icon */}
         <div className="flex items-center gap-3 mb-4">
           <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#D4AF37]/20 to-[#E6C97A]/10 border border-[#D4AF37]/20 flex items-center justify-center text-xl flex-shrink-0">
             {sub.icon}
@@ -72,13 +160,11 @@ function SubcategoryCard({ sub, slug, index }: { sub: Subcategory; slug: string;
             <h3 className="text-white font-semibold text-sm leading-tight">{sub.name}</h3>
             <p className="text-[10px] text-gray-400 mt-0.5 line-clamp-1">{sub.description}</p>
           </div>
-          {/* Savings badge */}
           <div className="bg-green-500/10 border border-green-500/30 rounded-lg px-2.5 py-1.5 flex-shrink-0">
             <p className="text-green-400 text-xs font-bold">-{sub.savings}</p>
           </div>
         </div>
 
-        {/* Statistics grid */}
         <div className="grid grid-cols-2 gap-2 mb-4">
           <div className="bg-black/30 rounded-lg p-2 text-center">
             <p className="text-[#FFD166] text-xs font-bold">{sub.usersSearching}</p>
@@ -98,7 +184,6 @@ function SubcategoryCard({ sub, slug, index }: { sub: Subcategory; slug: string;
           </div>
         </div>
 
-        {/* Progress bar match indicator */}
         <div className="mb-3">
           <div className="flex justify-between text-[10px] text-gray-500 mb-1">
             <span>Match Progress</span>
@@ -112,20 +197,17 @@ function SubcategoryCard({ sub, slug, index }: { sub: Subcategory; slug: string;
           </div>
         </div>
 
-        {/* Groups formed */}
         <div className="flex items-center justify-between text-[10px] text-gray-500 mb-3">
           <span>👥 {sub.groupsFormed} groups formed</span>
           <span>⏱ Avg {sub.avgMatchTimeMinutes} min</span>
         </div>
 
-        {/* CTA */}
         <div className="mt-auto">
           <span className="inline-block w-full text-center py-2.5 rounded-lg text-xs font-bold transition-all duration-300 bg-gradient-to-r from-[#D4AF37]/20 to-[#E6C97A]/10 text-[#FFD166] border border-[#D4AF37]/30 hover:bg-[#D4AF37]/30">
             Find Partners →
           </span>
         </div>
 
-        {/* Options chips */}
         {sub.options && sub.options.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-1">
             {sub.options.map((opt) => (
@@ -150,7 +232,6 @@ export default function OptionsPage() {
   const [activeSearches, setActiveSearches] = useState(0);
 
   useEffect(() => {
-    /* Fetch real group counts */
     const unsub = onSnapshot(collection(db, "groups"), (snapshot) => {
       const counts: Record<string, number> = {};
       snapshot.forEach((docSnap) => {
@@ -161,8 +242,6 @@ export default function OptionsPage() {
         }
       });
       setGroupCounts(counts);
-      
-      // Total active
       const total = Object.values(counts).reduce((a: number, b: number) => a + b, 0);
       setActiveSearches(total);
     });
@@ -270,6 +349,13 @@ export default function OptionsPage() {
               <SubcategoryCard key={sub.slug} sub={sub} slug={slug} index={i} />
             ))}
           </div>
+        </div>
+      </section>
+
+      {/* ===== 4.5: APPROVED COLLABORATOR BRANDS ===== */}
+      <section className="px-4 pb-8">
+        <div className="max-w-5xl mx-auto">
+          <CollaboratorBrands slug={slug} categoryName={data.title} />
         </div>
       </section>
 

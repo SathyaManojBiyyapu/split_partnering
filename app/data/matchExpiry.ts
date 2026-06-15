@@ -1,4 +1,4 @@
-// Match expiry: 7 days uniform for all categories (Section 4)
+// Match expiry: 7 days uniform for all categories (Section 4 - updated)
 export const MATCH_EXPIRY_DAYS: Record<string, number> = {};
 
 export const DEFAULT_EXPIRY_DAYS = 7;
@@ -19,12 +19,12 @@ export function isExpired(createdAt: any, category?: string): boolean {
   return diffDays >= DEFAULT_EXPIRY_DAYS;
 }
 
-// Section 5: Match Expiration Tracking - Returns status and label
+// Section 5: Match Expiration Tracking
 export function getExpiryStatus(createdAt: any): {
   status: "active" | "matching" | "expiring-soon" | "expired";
   label: string;
   daysLeft: number;
-  progress: number; // 0 to 100
+  progress: number;
 } {
   if (!createdAt?.seconds) {
     return { status: "active", label: "Active", daysLeft: 7, progress: 0 };
@@ -63,35 +63,36 @@ export function getExpiryStatus(createdAt: any): {
   return { status, label, daysLeft, progress };
 }
 
-// Section 22: Compatibility Score
+// Generate stable User ID from phone
+export function generateUserId(phone: string): string {
+  if (!phone) return "PS-00000";
+  // Use last 5 digits of phone for a stable ID
+  const digits = phone.replace(/\D/g, "");
+  const id = digits.slice(-5);
+  return `PS-${id}`;
+}
+
+// Section 4 updated: Compatibility based on location match tier
 export function computeCompatibility(
   userProfile: any,
   partnerProfile: any
-): { score: number; reasons: string[] } {
+): { score: number; label: string; reasons: string[] } {
   let score = 0;
   const reasons: string[] = [];
 
   if (userProfile?.city && partnerProfile?.city && userProfile.city === partnerProfile.city) {
-    score += 40;
+    score = 90;
     reasons.push("✓ Same City");
+  } else if (userProfile?.district && partnerProfile?.district && userProfile.district === partnerProfile.district) {
+    score = 75;
+    reasons.push("✓ Same District");
+  } else if (userProfile?.state && partnerProfile?.state && userProfile.state === partnerProfile.state) {
+    score = 50;
+    reasons.push("✓ Same State");
+  } else {
+    score = 25;
+    reasons.push("✓ General Match");
   }
 
-  if (userProfile?.category && partnerProfile?.category && userProfile.category === partnerProfile.category) {
-    score += 25;
-    reasons.push("✓ Same Category");
-  }
-
-  if (userProfile?.budget && partnerProfile?.budget && Math.abs(userProfile.budget - partnerProfile.budget) <= 500) {
-    score += 20;
-    reasons.push("✓ Similar Budget");
-  }
-
-  if (userProfile?.goals && partnerProfile?.goals && userProfile.goals === partnerProfile.goals) {
-    score += 15;
-    reasons.push("✓ Similar Goals");
-  }
-
-  if (score === 0) score = 15; // minimum compatibility
-
-  return { score: Math.min(100, score), reasons };
+  return { score, label: `${score}%`, reasons };
 }

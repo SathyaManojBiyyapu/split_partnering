@@ -10,6 +10,7 @@ const links = [
   { href: "/", label: "Home" },
   { href: "/categories", label: "Explore" },
   { href: "/dashboard", label: "My Matches" },
+  { href: "/collaborators", label: "Collaborators" },
 ];
 
 export default function Navbar() {

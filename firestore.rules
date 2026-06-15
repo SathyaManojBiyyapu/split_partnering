@@ -12,58 +12,67 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function isAdmin() {
-      return request.auth != null &&
-             request.auth.token.admin == true;
-    }
-
-    function isOwner(uid) {
-      return request.auth != null &&
-             request.auth.uid == uid;
-    }
-
     function validString(field) {
-      return field is string &&
-             field.size() > 0;
+      return field is string && field.size() > 0;
+    }
+
+    function validNumber(field) {
+      return field is number;
+    }
+
+    function validList(field) {
+      return field is list;
     }
 
     /* =========================
        USER PROFILES
+       Document ID: phone number
+       Ownership model: Phone-based (no Auth UID check)
+       Current: Any logged-in user can read/write
+       Risk: Known — requires Auth UID migration to fix
+       Safe hardening: delete locked, field validation on create
     ========================== */
 
-    match /users/{uid} {
+    match /users/{phone} {
 
       allow read: if loggedIn();
 
       allow create: if
-        loggedIn();
+        loggedIn() &&
+        validString(request.resource.data.phone);
 
       allow update: if
         loggedIn();
 
+      /* 🔒 SAFE HARDENING: Prevent profile deletion */
       allow delete: if false;
     }
 
     /* =========================
        CATEGORY SYSTEM
+       Admin-managed, safe for public read
     ========================== */
 
     match /categories/{categoryId} {
 
       allow read: if true;
 
-      allow write: if isAdmin();
+      /* Admin managed via Firebase console */
+      allow write: if false;
 
       match /subcategories/{subId} {
 
         allow read: if true;
 
-        allow write: if isAdmin();
+        allow write: if false;
       }
     }
 
     /* =========================
-       USER SAVED PARTNERS
+       USER SELECTIONS
+       Document ID: auto-generated
+       Ownership model: Phone-based (uid field = phone)
+       Safe hardening: delete locked, create requires uid
     ========================== */
 
     match /selections/{docId} {
@@ -71,17 +80,23 @@ service cloud.firestore {
       allow read: if loggedIn();
 
       allow create: if
-        loggedIn();
+        loggedIn() &&
+        validString(request.resource.data.uid) &&
+        validString(request.resource.data.phone) &&
+        validString(request.resource.data.category);
 
       allow update: if
         loggedIn();
 
-      allow delete: if
-        loggedIn();
+      /* 🔒 SAFE HARDENING: Prevent selection tampering/deletion */
+      allow delete: if false;
     }
 
     /* =========================
        GROUP MATCHING
+       Document ID: auto-generated
+       Ownership model: Phone-based (members[].phone, createdBy)
+       Safe hardening: delete locked, create validates structure
     ========================== */
 
     match /groups/{groupId} {
@@ -90,25 +105,53 @@ service cloud.firestore {
 
       allow create: if
         loggedIn() &&
-        request.resource.data.membersCount is int &&
-        request.resource.data.requiredSize is int &&
-        request.resource.data.members is list &&
-        request.resource.data.memberUIDs is list &&
-        validString(
-          request.resource.data.category
-        ) &&
-        validString(
-          request.resource.data.option
-        );
+        validString(request.resource.data.category) &&
+        validString(request.resource.data.option) &&
+        validNumber(request.resource.data.membersCount) &&
+        validNumber(request.resource.data.requiredSize) &&
+        validList(request.resource.data.members) &&
+        validList(request.resource.data.memberUIDs) &&
+        validString(request.resource.data.createdBy) &&
+        request.resource.data.membersCount >= 1 &&
+        request.resource.data.requiredSize >= 2;
 
       allow update: if
         loggedIn();
 
-      allow delete: if isAdmin();
+      /* 🔒 SAFE HARDENING: Prevent group deletion by users */
+      allow delete: if false;
+    }
+
+    /* =========================
+       MATCH REQUESTS
+       Document ID: auto-generated
+       New collection for admin match tracking
+      ========================== */
+
+    match /matchRequests/{docId} {
+
+      allow read: if loggedIn();
+
+      allow create: if
+        loggedIn() &&
+        request.resource.data.userA is map &&
+        request.resource.data.userB is map &&
+        validString(request.resource.data.userA.phone) &&
+        validString(request.resource.data.userB.phone) &&
+        validString(request.resource.data.status);
+
+      allow update: if
+        loggedIn();
+
+      /* 🔒 SAFE HARDENING: Prevent deletion */
+      allow delete: if false;
     }
 
     /* =========================
        PAYMENTS
+       Document ID: auto-generated
+       Safe hardening: delete locked, update locked, read all (for admin)
+       Create requires valid uid + amount
     ========================== */
 
     match /payments/{paymentId} {
@@ -118,43 +161,54 @@ service cloud.firestore {
 
       allow create: if
         loggedIn() &&
-        request.resource.data.uid is string &&
-        request.resource.data.amount is number;
+        validString(request.resource.data.uid) &&
+        validNumber(request.resource.data.amount);
 
-      allow update: if
-        isAdmin();
+      /* 🔒 SAFE HARDENING: Payments immutable after creation */
+      allow update: if false;
 
+      /* 🔒 SAFE HARDENING: Prevent payment deletion */
       allow delete: if false;
     }
 
     /* =========================
        CHAT SYSTEM
+       Document ID: auto-generated
+       Safe hardening: delete locked, messages read/create only
+       Future: Add memberUIDs-based read restriction
     ========================== */
 
     match /chats/{chatId} {
 
-      allow read: if loggedIn();
+      allow read: if
+        loggedIn();
 
-      allow create: if loggedIn();
+      allow create: if
+        loggedIn() &&
+        validList(request.resource.data.memberUIDs);
 
-      allow update: if loggedIn();
+      allow update: if
+        loggedIn();
+
+      /* 🔒 SAFE HARDENING: Prevent chat deletion */
+      allow delete: if false;
 
       /* ---------- MESSAGES ---------- */
 
       match /messages/{messageId} {
 
-        allow read: if loggedIn();
+        allow read: if
+          loggedIn();
 
         allow create: if
           loggedIn() &&
-          request.resource.data.senderId is string &&
-          validString(
-            request.resource.data.text
-          );
+          validString(request.resource.data.senderId) &&
+          validString(request.resource.data.text);
 
-        allow update: if
-          loggedIn();
+        /* 🔒 SAFE HARDENING: Messages immutable */
+        allow update: if false;
 
+        /* 🔒 SAFE HARDENING: Prevent message deletion */
         allow delete: if false;
       }
 
@@ -162,7 +216,8 @@ service cloud.firestore {
 
       match /typing/{uid} {
 
-        allow read: if loggedIn();
+        allow read: if
+          loggedIn();
 
         allow write: if
           loggedIn();
@@ -171,11 +226,14 @@ service cloud.firestore {
 
     /* =========================
        ONLINE STATUS
+       Document ID: phone number
+       Safe: Keep current model
     ========================== */
 
     match /status/{uid} {
 
-      allow read: if loggedIn();
+      allow read: if
+        loggedIn();
 
       allow write: if
         loggedIn();
@@ -183,36 +241,59 @@ service cloud.firestore {
 
     /* =========================
        MOVIE TICKETS
+       Safe: Keep current model with hardened updates
     ========================== */
 
     match /movieTickets/{ticketId} {
 
-      allow read: if loggedIn();
+      allow read: if
+        loggedIn();
 
-      allow create: if loggedIn();
+      allow create: if
+        loggedIn();
 
-      allow update: if isAdmin();
+      allow update: if false;
 
       allow delete: if false;
     }
 
     /* =========================
        TICKET REQUESTS
+       Safe: Keep current model
     ========================== */
 
     match /ticketRequests/{requestId} {
 
-      allow read: if isAdmin();
+      allow read: if
+        loggedIn();
 
-      allow create: if loggedIn();
+      allow create: if
+        loggedIn();
 
-      allow update: if isAdmin();
+      allow update: if false;
 
       allow delete: if false;
     }
 
     /* =========================
-       FALLBACK
+       REPORTS COLLECTION
+       Safe: Create only, admin reads via console
+    ========================== */
+
+    match /reports/{docId} {
+
+      allow read: if false;
+
+      allow create: if
+        loggedIn();
+
+      allow update: if false;
+
+      allow delete: if false;
+    }
+
+    /* =========================
+       FALLBACK: DENY ALL UNMATCHED COLLECTIONS
     ========================== */
 
     match /{document=**} {

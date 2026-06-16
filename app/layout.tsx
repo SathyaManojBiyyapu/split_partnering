@@ -6,6 +6,7 @@ import Navbar from "./components/Navbar";
 import Sidebar from "./components/Sidebar";
 import Footer from "./components/Footer";
 import TrustStrip from "./components/TrustStrip";
+import SupportButton from "./components/SupportButton";
 
 import {
   AuthProvider,
@@ -158,6 +159,9 @@ export default function RootLayout({
           <main className="pt-0 bg-black min-h-screen">
             <AuthGuard>{children}</AuthGuard>
           </main>
+
+          {/* FLOATING SUPPORT BUTTON */}
+          <SupportButton />
 
           {/* FOOTER */}
           <Footer />

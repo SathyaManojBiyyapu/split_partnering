@@ -748,6 +748,20 @@ export default function DashboardPage() {
                 partner.city === userProfile?.city ? "📍 Same City" : `${partner.city}, ${partner.state}`
               ) : partner.state;
 
+              /* "Why this match?" reasons */
+              const whyReasons: string[] = [];
+              if (partner.category && partner.option) {
+                whyReasons.push(`Same category: ${partner.category} → ${partner.option}`);
+              }
+              if (partner.compatReasons.length > 0) {
+                partner.compatReasons.forEach(r => whyReasons.push(r));
+              } else if (partner.matchLabel) {
+                whyReasons.push(`📍 ${partner.matchLabel}`);
+              }
+
+              /* Partner Since */
+              const partnerSince = partner.joinedDate || "Recently";
+
               return (
                 <motion.div
                   key={partner.uid}
@@ -835,14 +849,33 @@ export default function DashboardPage() {
                         )}
                       </div>
 
-                      {/* Active indicator - dynamically shows category → option */}
+                      {/* Active indicator */}
                       <div className="mt-1 flex items-center gap-1 text-[9px] text-orange-400">
                         <span className="w-1.5 h-1.5 rounded-full bg-orange-400 animate-pulse" />
                         Active in {partner.category || ""}{partner.option ? ` → ${partner.option}` : ""}
                       </div>
+
+                      {/* Partner Since */}
+                      <div className="mt-1 text-[9px] text-gray-600">
+                        👤 Partner since {partnerSince}
+                      </div>
+
+                      {/* Why This Match Section */}
+                      {whyReasons.length > 0 && (
+                        <div className="mt-2 border border-green-500/10 bg-green-500/5 rounded-lg p-2">
+                          <p className="text-[9px] text-green-400 font-medium mb-1">🎯 Why this match?</p>
+                          <div className="flex flex-wrap gap-1">
+                            {whyReasons.map((reason, i) => (
+                              <span key={i} className="text-[8px] text-gray-400 bg-gray-800/50 px-1.5 py-0.5 rounded">
+                                {reason}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
 
-                    {/* Section 5+6: Single action button */}
+                    {/* Action buttons */}
                     <div className="flex flex-col gap-2 shrink-0">
                       <button
                         onClick={() => startMatch(partner)}
@@ -850,6 +883,18 @@ export default function DashboardPage() {
                         className="px-4 py-2 rounded-lg text-xs font-bold bg-gradient-to-r from-[#D4AF37] to-[#E6C97A] text-black hover:scale-105 transition disabled:opacity-50"
                       >
                         {startingMatch === partner.uid ? "Sending..." : "Start Match"}
+                      </button>
+                      <button
+                        onClick={() => {
+                          const msg = `Report user ${partner.userId} (${partner.phone})?\n\nReason for report (email to support@partnersync.in):`;
+                          const reason = prompt(msg);
+                          if (reason) {
+                            window.location.href = `mailto:support@partnersync.in?subject=Report User - ${partner.userId}&body=Reported User: ${partner.userId} (${partner.phone})%0D%0ACategory: ${partner.category}%0D%0AReason: ${encodeURIComponent(reason)}`;
+                          }
+                        }}
+                        className="px-3 py-1.5 rounded-lg text-[9px] bg-red-600/10 border border-red-500/20 text-red-400 hover:bg-red-600/20 transition"
+                      >
+                        🚩 Report
                       </button>
                     </div>
                   </div>

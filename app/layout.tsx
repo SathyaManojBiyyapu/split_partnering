@@ -152,6 +152,47 @@ export default function RootLayout({
           {/* SIDEBAR */}
           <Sidebar />
 
+          {/* ORGANIZATION SCHEMA (JSON-LD) */}
+          <script
+            type="application/ld+json"
+            dangerouslySetInnerHTML={{
+              __html: JSON.stringify({
+                "@context": "https://schema.org",
+                "@type": "Organization",
+                name: "PartnerSync",
+                url: "https://partnering.in",
+                logo: "https://partnering.in/logo.png",
+                description: "India's trusted collaboration platform. Connect with verified partners and approved collaborators for cost-sharing and resource pooling.",
+                email: "support@partnersync.in",
+                address: {
+                  "@type": "PostalAddress",
+                  addressLocality: "Vijayawada",
+                  addressRegion: "Andhra Pradesh",
+                  addressCountry: "IN",
+                },
+                sameAs: [],
+                foundingDate: "2024",
+              }),
+            }}
+          />
+          {/* WEBSITE SCHEMA */}
+          <script
+            type="application/ld+json"
+            dangerouslySetInnerHTML={{
+              __html: JSON.stringify({
+                "@context": "https://schema.org",
+                "@type": "WebSite",
+                name: "PartnerSync",
+                url: "https://partnering.in",
+                potentialAction: {
+                  "@type": "SearchAction",
+                  target: "https://partnering.in/categories?q={search_term_string}",
+                  "query-input": "required name=search_term_string",
+                },
+              }),
+            }}
+          />
+
           {/* TRUST STRIP */}
           <TrustStrip />
 

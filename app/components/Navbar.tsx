@@ -13,6 +13,7 @@ const links = [
   { href: "/categories", label: "Explore" },
   { href: "/dashboard", label: "My Matches" },
   { href: "/collaborators", label: "Collaborators" },
+  { href: "/profile", label: "Profile" },
 ];
 
 export default function Navbar() {
@@ -32,26 +33,25 @@ export default function Navbar() {
   };
 
   return (
-    <header className="sticky top-0 z-30 border-b border-[#D4AF37]/10 bg-black/70 backdrop-blur-xl">
-      <nav className="relative mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
+    <header className="sticky top-0 z-30 border-b border-white/5 bg-black/80 backdrop-blur-xl">
+      <nav className="relative mx-auto flex max-w-6xl items-center justify-between px-4 py-2.5">
         {/* LEFT LOGO */}
-        <Link href="/" className="flex items-center gap-2 z-10">
+        <Link href="/" className="flex items-center gap-2 z-10 flex-shrink-0">
           <Image
             src="/logo.png"
             alt="PartnerSync Logo"
-            width={48}
-            height={48}
+            width={36}
+            height={36}
             priority
             className="block"
           />
-
-          <span className="font-heading text-lg sm:text-xl tracking-wide text-white">
+          <span className="font-heading text-base sm:text-lg tracking-wide text-white">
             Partner<span className="text-[#D4AF37]">Sync</span>
           </span>
         </Link>
 
-        {/* RIGHT LINKS */}
-        <div className="hidden md:flex items-center gap-2 text-sm z-10">
+        {/* CENTER LINKS - perfectly centered */}
+        <div className="hidden md:flex absolute left-1/2 -translate-x-1/2 items-center gap-1">
           {links.map((link) => {
             const isActive = pathname === link.href;
 
@@ -59,24 +59,27 @@ export default function Navbar() {
               <Link
                 key={link.href}
                 href={link.href}
-                className={`px-3 py-1.5 rounded-full transition-all duration-200 text-xs
+                className={`px-3 py-1.5 rounded-full transition-all duration-200 text-xs font-medium
                   ${
                     isActive
-                      ? "text-[#D4AF37] border border-[#D4AF37]/30 bg-[#D4AF37]/5"
-                      : "text-gray-400 hover:text-[#D4AF37] hover:border hover:border-[#D4AF37]/20"
+                      ? "text-[#D4AF37] bg-[#D4AF37]/10"
+                      : "text-gray-400 hover:text-white hover:bg-white/5"
                   }`}
               >
                 {link.label}
               </Link>
             );
           })}
+        </div>
 
+        {/* RIGHT - Auth actions */}
+        <div className="flex items-center gap-2 z-10 flex-shrink-0">
           {!loggedIn && !guest && (
             <Link
               href="/login"
-              className="ml-2 rounded-full border border-[#D4AF37]/30 px-3 py-1.5 text-xs
+              className="rounded-full border border-[#D4AF37]/30 px-3 py-1.5 text-xs
                          font-medium text-[#D4AF37]
-                         hover:bg-[#D4AF37]/5
+                         hover:bg-[#D4AF37]/10
                          transition"
             >
               Login
@@ -84,18 +87,12 @@ export default function Navbar() {
           )}
 
           {(loggedIn || guest) && (
-            <div className="flex items-center gap-2 ml-2">
-              <Link
-                href="/profile"
-                className="glass-strong rounded-full px-3 py-1.5 text-xs text-gray-300 hover:text-[#D4AF37] transition"
-              >
-                Profile
-              </Link>
+            <div className="flex items-center gap-2">
               <button
                 onClick={logout}
-                className="rounded-full border border-red-500/20 bg-red-500/5
-                           px-3 py-1.5 text-xs font-medium text-red-400
-                           hover:bg-red-500/10 hover:border-red-500/30 transition"
+                className="rounded-full border border-white/10 bg-white/5
+                           px-3 py-1.5 text-xs font-medium text-gray-400
+                           hover:bg-white/10 hover:text-white transition"
               >
                 Logout
               </button>

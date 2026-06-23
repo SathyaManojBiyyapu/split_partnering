@@ -5,7 +5,6 @@ import "./globals.css";
 import Navbar from "./components/Navbar";
 import Sidebar from "./components/Sidebar";
 import Footer from "./components/Footer";
-import TrustStrip from "./components/TrustStrip";
 import SupportButton from "./components/SupportButton";
 
 import {
@@ -192,9 +191,6 @@ export default function RootLayout({
               }),
             }}
           />
-
-          {/* TRUST STRIP */}
-          <TrustStrip />
 
           {/* MAIN CONTENT */}
           <main className="pt-0 bg-black min-h-screen">

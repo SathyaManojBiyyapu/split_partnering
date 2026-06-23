@@ -179,43 +179,26 @@ export default function HomePage() {
   return (
     <main className="min-h-screen bg-black text-white font-body pb-mobile-cta">
 
-      {/* ================= HERO (Section 1) ================= */}
-      <section className="relative min-h-[70vh] sm:min-h-[75vh] flex items-center justify-center overflow-hidden">
-        {/* Animated grid background */}
-        <div className="hero-grid-bg" />
-        
-        {/* Particles */}
-        <div className="hero-particles">
-          {[...Array(20)].map((_, i) => (
-            <div
-              key={i}
-              className="particle"
-              style={{
-                left: `${Math.random() * 100}%`,
-                top: `${Math.random() * 100}%`,
-                animationDelay: `${Math.random() * 8}s`,
-                animationDuration: `${6 + Math.random() * 6}s`,
-              }}
-            />
-          ))}
-        </div>
+      {/* ================= HERO ================= */}
+      <section className="relative min-h-[60vh] sm:min-h-[65vh] flex items-center justify-center overflow-hidden">
+        {/* Minimal background gradient */}
+        <div className="absolute inset-0 bg-gradient-to-b from-[#D4AF37]/5 via-transparent to-transparent pointer-events-none" />
 
-        <div className="relative z-10 max-w-5xl mx-auto text-center px-4 pt-16 sm:pt-20">
-          {/* Floating category cards (Section 1) */}
+        <div className="relative z-10 max-w-5xl mx-auto text-center px-4 pt-10 sm:pt-14">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8 }}
-            className="mb-6"
+            transition={{ duration: 0.6 }}
           >
-            <div className="flex flex-wrap justify-center gap-2 mb-8">
-              {["🎓 Education", "💪 Gym", "🎬 Movies", "✈️ Travel", "🛍️ Fashion"].map((item, i) => (
+            {/* Category pills */}
+            <div className="flex flex-wrap justify-center gap-2 mb-6">
+              {["🎓 Education", "💪 Gym", "🎬 Movies", "✈️ Travel", "🛍️ Shopping"].map((item, i) => (
                 <motion.span
                   key={item}
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.3 + i * 0.1 }}
-                  className="glass px-4 py-2 rounded-full text-sm text-[#FFD166]"
+                  transition={{ delay: 0.2 + i * 0.08 }}
+                  className="inline-block px-3 py-1.5 rounded-full text-xs bg-white/5 border border-white/10 text-gray-300"
                 >
                   {item}
                 </motion.span>
@@ -227,132 +210,218 @@ export default function HomePage() {
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
-            className="font-heading text-4xl sm:text-5xl md:text-6xl lg:text-7xl tracking-tight text-[#FFD166] mb-4 leading-tight"
+            className="font-heading text-4xl sm:text-5xl md:text-6xl lg:text-7xl tracking-tight text-white mb-4 leading-tight"
           >
-            Sync. Split.
+            Save Money
             <br />
-            <span className="text-white/90">Save Together.</span>
+            <span className="text-[#D4AF37]">Together.</span>
           </motion.h1>
 
           <motion.p
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.2 }}
-            className="text-gray-400 text-sm sm:text-base max-w-xl mx-auto mb-8"
+            transition={{ duration: 0.6, delay: 0.15 }}
+            className="text-gray-400 text-sm sm:text-base max-w-2xl mx-auto mb-3"
           >
-            PartnerSync helps people collaborate intelligently
-            to reduce everyday expenses. Find partners near you.
+            Find trusted people nearby to split memberships, travel costs, shopping deals, tickets, and more.
+          </motion.p>
+
+          <motion.p
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.25 }}
+            className="text-gray-500 text-xs sm:text-sm max-w-xl mx-auto mb-8"
+          >
+            Join existing groups or create your own. Reduce costs by sharing expenses with verified local partners.
           </motion.p>
 
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.4 }}
-            className="flex justify-center gap-4 flex-wrap"
+            transition={{ duration: 0.6, delay: 0.35 }}
+            className="flex justify-center gap-3 flex-wrap"
           >
-            <Link href="/categories" className="btn-primary text-sm sm:text-base">
-              Explore Partnerships
+            <Link
+              href="/categories"
+              className="inline-flex items-center px-6 py-3 rounded-lg font-semibold text-sm bg-[#D4AF37] text-black hover:bg-[#E6C97A] transition-colors"
+            >
+              Explore Groups
             </Link>
-            <a href="#stats" className="btn-outline text-sm sm:text-base">
-              See Impact →
-            </a>
+            <Link
+              href="/categories"
+              className="inline-flex items-center px-6 py-3 rounded-lg font-medium text-sm border border-white/20 text-gray-300 hover:bg-white/5 hover:text-white transition-colors"
+            >
+              Create Group
+            </Link>
           </motion.div>
 
-          {/* Animated Statistics (Section 1) */}
+          {/* Social proof stat */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ duration: 0.6, delay: 0.8 }}
-            className="mt-12 grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-3xl mx-auto"
-            id="stats"
+            transition={{ duration: 0.6, delay: 0.6 }}
+            className="mt-12 flex items-center justify-center gap-6 text-sm text-gray-500"
           >
+            <div className="flex -space-x-2">
+              {["R", "P", "A", "N"].map((initial, i) => (
+                <div
+                  key={i}
+                  className="w-8 h-8 rounded-full bg-gray-700 border-2 border-black flex items-center justify-center text-xs font-medium text-white"
+                >
+                  {initial}
+                </div>
+              ))}
+            </div>
+            <span><strong className="text-white">10,000+</strong> people saving together</span>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* ================= CATEGORY CARDS (above fold) ================= */}
+      <section className="py-10 px-4">
+        <div className="max-w-5xl mx-auto">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="font-heading text-xl sm:text-2xl text-white">
+              Start Saving Now
+            </h2>
+            <div className="flex gap-1">
+              {["All", "Popular", "Trending", "Almost Full"].map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setFilter(tab)}
+                  className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${
+                    filter === tab
+                      ? "bg-[#D4AF37] text-black"
+                      : "text-gray-400 hover:text-white hover:bg-white/5"
+                  }`}
+                >
+                  {tab}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {filteredCategories.slice(0, 6).map((cat, i) => (
+              <motion.div
+                key={cat.slug}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.05 }}
+              >
+                <Link
+                  href={`/options/${cat.slug}`}
+                  className="block p-4 rounded-xl bg-white/[0.03] border border-white/10 hover:border-[#D4AF37]/30 hover:bg-white/[0.06] transition-all h-full"
+                >
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-10 h-10 rounded-full overflow-hidden bg-gray-800 flex-shrink-0">
+                      <img src={cat.icon} alt={cat.label} className="w-full h-full object-cover" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-white font-medium text-sm truncate">{cat.label}</h3>
+                      <span className="text-[10px] text-green-400">Save up to {cat.savings}</span>
+                    </div>
+                    {cat.trending && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-400 border border-orange-500/20 flex-shrink-0">
+                        Trending
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="space-y-1.5 text-xs text-gray-400">
+                    <div className="flex justify-between">
+                      <span>👥 {cat.members}/{cat.required} Joined</span>
+                      <span>⏳ {cat.timeLeft}</span>
+                    </div>
+                    <div className="w-full h-1 bg-gray-800 rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-[#D4AF37] transition-all duration-500"
+                        style={{ width: `${(cat.members / cat.required) * 100}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="mt-3">
+                    <span className="inline-block w-full text-center py-2 rounded-lg text-xs font-medium bg-[#D4AF37]/10 text-[#D4AF37] border border-[#D4AF37]/20 hover:bg-[#D4AF37]/20 transition-all">
+                      {cat.members >= cat.required ? "🔓 Ready to Unlock" : "Join Group →"}
+                    </span>
+                  </div>
+                </Link>
+              </motion.div>
+            ))}
+          </div>
+
+          {filteredCategories.length > 6 && (
+            <div className="text-center mt-6">
+              <Link href="/categories" className="text-xs text-gray-400 hover:text-[#D4AF37] transition-colors">
+                View all {filteredCategories.length} categories →
+              </Link>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* ================= TRUST INDICATORS (moved below categories) ================= */}
+      <section className="py-12 px-4">
+        <div className="max-w-5xl mx-auto">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            {[
+              { icon: "✓", title: "Verified Users", desc: "OTP-authenticated real people" },
+              { icon: "🔒", title: "Privacy Protected", desc: "Your data stays secure" },
+              { icon: "💳", title: "Secure Payments", desc: "Encrypted transactions" },
+              { icon: "📍", title: "Location Matching", desc: "Find partners near you" },
+            ].map((item, i) => (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, y: 15 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: i * 0.08 }}
+                className="flex items-center gap-3 p-4 rounded-xl bg-white/[0.02] border border-white/5"
+              >
+                <div className="w-10 h-10 rounded-full bg-[#D4AF37]/10 flex items-center justify-center flex-shrink-0">
+                  <span className="text-base">{item.icon}</span>
+                </div>
+                <div>
+                  <h3 className="text-sm font-medium text-white">{item.title}</h3>
+                  <p className="text-[10px] text-gray-500">{item.desc}</p>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ================= SOCIAL PROOF STATS ================= */}
+      <section className="py-10 px-4">
+        <div className="max-w-4xl mx-auto">
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
             {[
               { value: 1247, label: "Active Groups", suffix: "" },
               { value: 1240000, label: "Saved This Month", prefix: "₹", suffix: "" },
               { value: 84, label: "Match Success Rate", suffix: "%" },
+              { value: 10000, label: "Happy Users", suffix: "+" },
             ].map((stat, i) => (
-              <div key={i} className="glass-strong rounded-xl p-4 text-center">
-                <p className="text-2xl sm:text-3xl font-heading text-[#FFD166]">
+              <div key={i} className="text-center p-4 rounded-xl bg-white/[0.02] border border-white/5">
+                <p className="text-xl sm:text-2xl font-heading text-[#D4AF37]">
                   {stat.prefix || ""}
                   <AnimatedCounter target={stat.value} suffix={stat.suffix} />
                 </p>
                 <p className="text-xs text-gray-400 mt-1">{stat.label}</p>
               </div>
             ))}
-          </motion.div>
-        </div>
-      </section>
-
-      {/* ================= TRUST SECTION (Section 7) ================= */}
-      <section className="py-16 px-4">
-        <div className="max-w-5xl mx-auto">
-          <h2 className="font-heading text-2xl sm:text-3xl text-center text-[#FFD166] mb-3">
-            Built on Trust
-          </h2>
-          <p className="text-gray-400 text-sm text-center mb-10 max-w-xl mx-auto">
-            Every feature designed with security and transparency in mind
-          </p>
-
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-            {[
-              { icon: "🔒", title: "Secure Payments", desc: "Protected transactions" },
-              { icon: "💯", title: "Verified Members", desc: "Real people, real profiles" },
-              { icon: "⚡", title: "Smart Matching", desc: "AI-powered partner finder" },
-              { icon: "🛡️", title: "Privacy First", desc: "Your data stays safe" },
-            ].map((item, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: i * 0.1 }}
-                className="trust-card text-center"
-              >
-                <div className="text-2xl mb-2">{item.icon}</div>
-                <h3 className="text-sm font-semibold text-white mb-1">{item.title}</h3>
-                <p className="text-[10px] text-gray-500">{item.desc}</p>
-              </motion.div>
-            ))}
           </div>
         </div>
       </section>
 
-      {/* ================= SOCIAL PROOF (Section 8) ================= */}
-      <section className="py-12 px-4">
+      {/* ================= LIVE ACTIVITY FEED ================= */}
+      <section className="py-10 px-4">
         <div className="max-w-4xl mx-auto">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
-            {[
-              { icon: "⭐", value: 4.9, label: "Rating", suffix: "" },
-              { icon: "👥", value: 10000, label: "Users", suffix: "+" },
-              { icon: "💰", value: 1000000, label: "Saved", prefix: "₹", suffix: "+" },
-            ].map((item, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, scale: 0.9 }}
-                whileInView={{ opacity: 1, scale: 1 }}
-                viewport={{ once: true }}
-                transition={{ delay: i * 0.15 }}
-                className="card-glass-premium p-5"
-              >
-                <div className="text-3xl mb-2">{item.icon}</div>
-                <p className="text-2xl sm:text-3xl font-heading text-[#FFD166]">
-                  {item.prefix || ""}{item.value}{item.suffix}
-                </p>
-                <p className="text-xs text-gray-400 mt-1">{item.label}</p>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ================= LIVE ACTIVITY FEED (Section 9) ================= */}
-      <section className="py-12 px-4">
-        <div className="max-w-4xl mx-auto">
-          <h2 className="font-heading text-xl sm:text-2xl text-[#FFD166] mb-6 text-center">
+          <h2 className="font-heading text-lg sm:text-xl text-white mb-4 text-center">
             Live Activity
           </h2>
 
-          <div className="glass-strong rounded-2xl p-5 max-w-xl mx-auto overflow-hidden">
+          <div className="max-w-xl mx-auto rounded-xl bg-white/[0.02] border border-white/10 p-4 overflow-hidden">
             <AnimatePresence mode="wait">
               <motion.div
                 key={currentActivity}
@@ -368,13 +437,12 @@ export default function HomePage() {
               </motion.div>
             </AnimatePresence>
 
-            {/* Activity dots */}
             <div className="flex justify-center gap-1.5 mt-3">
               {liveActivities.map((_, i) => (
                 <div
                   key={i}
                   className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${
-                    i === currentActivity ? "bg-[#FFD166] w-3" : "bg-gray-600"
+                    i === currentActivity ? "bg-[#D4AF37] w-3" : "bg-gray-600"
                   }`}
                 />
               ))}
@@ -383,34 +451,34 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ================= REAL CATEGORY EXAMPLES (Section 10) ================= */}
-      <section className="py-16 px-4">
+      {/* ================= REAL SAVINGS EXAMPLES ================= */}
+      <section className="py-12 px-4">
         <div className="max-w-5xl mx-auto">
-          <h2 className="font-heading text-2xl sm:text-3xl text-center text-[#FFD166] mb-3">
+          <h2 className="font-heading text-xl sm:text-2xl text-white mb-2 text-center">
             Real Savings Examples
           </h2>
-          <p className="text-gray-400 text-sm text-center mb-8">
+          <p className="text-gray-400 text-sm text-center mb-6">
             See how much people are saving right now
           </p>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {realExamples.map((example, i) => (
               <motion.div
                 key={i}
-                initial={{ opacity: 0, y: 20 }}
+                initial={{ opacity: 0, y: 15 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
-                transition={{ delay: i * 0.1 }}
-                className="card-premium p-5"
+                transition={{ delay: i * 0.08 }}
+                className="p-4 rounded-xl bg-white/[0.02] border border-white/10 hover:border-[#D4AF37]/20 transition-all"
               >
                 <div className="flex items-center gap-3 mb-3">
                   <span className="text-2xl">{example.icon}</span>
-                  <h3 className="text-white font-semibold text-sm">{example.name}</h3>
+                  <h3 className="text-white font-medium text-sm">{example.name}</h3>
                 </div>
                 <div className="space-y-1.5 text-xs text-gray-400">
                   <p>Save: <span className="text-green-400 font-bold">{example.savings}</span></p>
-                  <p>Members: <span className="text-[#FFD166]">{example.members}</span></p>
-                  <div className="w-full h-1.5 bg-gray-800 rounded-full overflow-hidden mt-2">
+                  <p>Members: <span className="text-[#D4AF37]">{example.members}</span></p>
+                  <div className="w-full h-1 bg-gray-800 rounded-full overflow-hidden mt-2">
                     <div
                       className="h-full bg-green-500 rounded-full"
                       style={{ width: `${(parseInt(example.members) / 6) * 100}%` }}
@@ -419,7 +487,7 @@ export default function HomePage() {
                 </div>
                 <Link
                   href="/categories"
-                  className="mt-3 inline-block text-[10px] text-[#FFD166] hover:underline"
+                  className="mt-3 inline-block text-[10px] text-[#D4AF37] hover:underline"
                 >
                   Join Group →
                 </Link>
@@ -429,122 +497,41 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ================= URGENCY SYSTEM (Section 11) ================= */}
-      <section className="py-8 px-4">
-        <div className="max-w-4xl mx-auto flex flex-wrap gap-3 justify-center">
-          <span className="badge-urgent">
+      {/* ================= URGENCY BADGES ================= */}
+      <section className="py-6 px-4">
+        <div className="max-w-4xl mx-auto flex flex-wrap gap-2 justify-center">
+          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-medium bg-red-500/10 text-red-400 border border-red-500/20">
             🔥 Last Member Needed — Education Group
           </span>
-          <span className="badge-urgent">
+          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-medium bg-red-500/10 text-red-400 border border-red-500/20">
             ⏳ Closing In 3 Hours — Movies Group
           </span>
-          <span className="badge-urgent">
+          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-medium bg-red-500/10 text-red-400 border border-red-500/20">
             🔥 Almost Full — Gym Partnership
           </span>
         </div>
       </section>
 
-      {/* ================= CATEGORY FILTERING (Section 14) ================= */}
+      {/* ================= CATEGORY LEADERBOARD ================= */}
       <section className="py-12 px-4">
-        <div className="max-w-5xl mx-auto">
-          <h2 className="font-heading text-2xl sm:text-3xl text-center text-[#FFD166] mb-3">
-            Partnership Categories
-          </h2>
-          <p className="text-gray-400 text-sm text-center mb-6">
-            Find your perfect savings match
-          </p>
-
-          {/* Filter tabs */}
-          <div className="flex flex-wrap justify-center gap-2 mb-8">
-            {["All", "Popular", "Trending", "Almost Full"].map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setFilter(tab)}
-                className={`filter-tab ${filter === tab ? "active" : ""}`}
-              >
-                {tab}
-              </button>
-            ))}
-          </div>
-
-          {/* Category Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredCategories.map((cat, i) => (
-              <motion.div
-                key={cat.slug}
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: i * 0.05 }}
-                whileHover={{ y: -4 }}
-              >
-                <Link
-                  href={`/options/${cat.slug}`}
-                  className="card-premium block p-5 h-full"
-                >
-                  {/* Category Icon + Name */}
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="w-10 h-10 rounded-full overflow-hidden bg-gray-800 flex-shrink-0">
-                      <img src={cat.icon} alt={cat.label} className="w-full h-full object-cover" />
-                    </div>
-                    <div>
-                      <h3 className="text-white font-semibold text-sm">{cat.label}</h3>
-                      <span className="text-[10px] text-green-400">Save up to {cat.savings}</span>
-                    </div>
-                  </div>
-
-                  {/* Progress */}
-                  <div className="space-y-1.5 text-xs text-gray-400">
-                    <div className="flex justify-between">
-                      <span>👥 {cat.members}/{cat.required} Joined</span>
-                      <span>⏳ {cat.timeLeft}</span>
-                    </div>
-                    <div className="w-full h-1.5 bg-gray-800 rounded-full overflow-hidden">
-                      <div
-                        className="h-full rounded-full transition-all duration-500"
-                        style={{
-                          width: `${(cat.members / cat.required) * 100}%`,
-                          background: cat.members / cat.required >= 0.75
-                            ? "linear-gradient(90deg, #f59e0b, #ef4444)"
-                            : "linear-gradient(90deg, #D4AF37, #E6C97A)",
-                        }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* CTA */}
-                  <div className="mt-4">
-                    <span className="inline-block w-full text-center py-2 rounded-lg text-xs font-bold bg-[#D4AF37]/20 text-[#FFD166] border border-[#D4AF37]/30 hover:bg-[#D4AF37]/30 transition-all">
-                      {cat.members >= cat.required ? "🔓 Ready to Unlock" : "Join Group"}
-                    </span>
-                  </div>
-                </Link>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ================= CATEGORY LEADERBOARD (Section 15) ================= */}
-      <section className="py-16 px-4">
         <div className="max-w-3xl mx-auto">
-          <h2 className="font-heading text-2xl sm:text-3xl text-center text-[#FFD166] mb-3">
+          <h2 className="font-heading text-xl sm:text-2xl text-white mb-2 text-center">
             Top Savings This Month
           </h2>
-          <p className="text-gray-400 text-sm text-center mb-8">
+          <p className="text-gray-400 text-sm text-center mb-6">
             Categories generating the most savings
           </p>
 
-          <div className="glass-strong rounded-2xl overflow-hidden">
+          <div className="rounded-xl bg-white/[0.02] border border-white/10 overflow-hidden">
             {leaderboard.map((entry, i) => (
               <div
                 key={i}
-                className={`flex items-center gap-4 px-5 py-4 ${
-                  i < leaderboard.length - 1 ? "border-b border-gray-800" : ""
+                className={`flex items-center gap-4 px-5 py-3.5 ${
+                  i < leaderboard.length - 1 ? "border-b border-white/5" : ""
                 }`}
               >
                 <span className={`w-6 text-center font-bold text-sm ${
-                  entry.rank === 1 ? "text-[#FFD166]" : entry.rank === 2 ? "text-gray-300" : entry.rank === 3 ? "text-amber-600" : "text-gray-500"
+                  entry.rank === 1 ? "text-[#D4AF37]" : entry.rank === 2 ? "text-gray-300" : entry.rank === 3 ? "text-amber-600" : "text-gray-500"
                 }`}>
                   #{entry.rank}
                 </span>
@@ -557,24 +544,23 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ================= SAVINGS CALCULATOR (Section 16) ================= */}
-      <section className="py-16 px-4">
+      {/* ================= SAVINGS CALCULATOR ================= */}
+      <section className="py-12 px-4">
         <div className="max-w-lg mx-auto">
-          <h2 className="font-heading text-2xl sm:text-3xl text-center text-[#FFD166] mb-3">
+          <h2 className="font-heading text-xl sm:text-2xl text-white mb-2 text-center">
             Calculate Your Savings
           </h2>
-          <p className="text-gray-400 text-sm text-center mb-8">
+          <p className="text-gray-400 text-sm text-center mb-6">
             See how much you can save by splitting costs
           </p>
 
-          <div className="card-premium p-6">
-            {/* Category Select */}
+          <div className="p-6 rounded-xl bg-white/[0.02] border border-white/10">
             <div className="mb-4">
               <label className="text-xs text-gray-400 mb-1 block">What are you buying?</label>
               <select
                 value={calcCategory}
                 onChange={(e) => setCalcCategory(e.target.value)}
-                className="w-full bg-black/50 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-[#FFD166] outline-none"
+                className="w-full bg-black/50 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-[#D4AF37] outline-none"
               >
                 {Object.keys(savingsMap).map((cat) => (
                   <option key={cat} value={cat}>{cat}</option>
@@ -582,10 +568,9 @@ export default function HomePage() {
               </select>
             </div>
 
-            {/* Members Slider */}
             <div className="mb-6">
               <label className="text-xs text-gray-400 mb-1 block">
-                Members: <span className="text-[#FFD166]">{calcMembers}</span>
+                Members: <span className="text-[#D4AF37]">{calcMembers}</span>
               </label>
               <input
                 type="range"
@@ -593,7 +578,7 @@ export default function HomePage() {
                 max={10}
                 value={calcMembers}
                 onChange={(e) => setCalcMembers(parseInt(e.target.value))}
-                className="w-full accent-[#FFD166]"
+                className="w-full accent-[#D4AF37]"
               />
               <div className="flex justify-between text-[10px] text-gray-500">
                 <span>2</span>
@@ -601,7 +586,6 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* Result */}
             <div className="bg-black/40 rounded-xl p-4 text-center">
               <p className="text-xs text-gray-400 mb-1">You Save</p>
               <p className="text-3xl font-heading text-green-400">₹{yourSavings.toLocaleString()}/month</p>
@@ -613,47 +597,13 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ================= SUCCESS STORIES (Section 17) ================= */}
-      <section className="py-16 px-4">
+      {/* ================= HOW IT WORKS ================= */}
+      <section className="py-12 px-4">
         <div className="max-w-5xl mx-auto">
-          <h2 className="font-heading text-2xl sm:text-3xl text-center text-[#FFD166] mb-3">
-            Success Stories
-          </h2>
-          <p className="text-gray-400 text-sm text-center mb-8">
-            Real people saving real money
-          </p>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {successStories.map((story, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, x: -20 }}
-                whileInView={{ opacity: 1, x: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: i * 0.1 }}
-                className="card-glass-premium p-5 flex items-center gap-4"
-              >
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#D4AF37] to-[#E6C97A] flex items-center justify-center text-black font-bold text-sm flex-shrink-0">
-                  {story.avatar}
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-white">{story.name}</p>
-                  <p className="text-[10px] text-gray-400">{story.category}</p>
-                  <p className="text-xs font-bold text-green-400 mt-0.5">Saved {story.saved}</p>
-                </div>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ================= HOW IT WORKS (Section 18) ================= */}
-      <section className="py-16 px-4">
-        <div className="max-w-5xl mx-auto">
-          <h2 className="font-heading text-2xl sm:text-3xl text-center text-[#FFD166] mb-3">
+          <h2 className="font-heading text-xl sm:text-2xl text-white mb-2 text-center">
             How It Works
           </h2>
-          <p className="text-gray-400 text-sm text-center mb-10">
+          <p className="text-gray-400 text-sm text-center mb-8">
             Four simple steps to start saving
           </p>
 
@@ -661,42 +611,24 @@ export default function HomePage() {
             {howItWorks.map((step, i) => (
               <motion.div
                 key={i}
-                initial={{ opacity: 0, y: 30 }}
+                initial={{ opacity: 0, y: 20 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
-                transition={{ delay: i * 0.15 }}
+                transition={{ delay: i * 0.1 }}
                 className="text-center relative"
               >
-                {/* Connecting line */}
                 {i < howItWorks.length - 1 && (
-                  <div className="hidden lg:block absolute top-8 left-[60%] w-[80%] h-0.5 bg-gradient-to-r from-[#D4AF37]/50 to-transparent" />
+                  <div className="hidden lg:block absolute top-8 left-[60%] w-[80%] h-px bg-gradient-to-r from-[#D4AF37]/30 to-transparent" />
                 )}
 
-                <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#D4AF37]/20 to-[#E6C97A]/10 border border-[#D4AF37]/30 flex items-center justify-center mx-auto mb-4">
-                  <span className="text-2xl">{step.icon}</span>
+                <div className="w-14 h-14 rounded-full bg-[#D4AF37]/10 border border-[#D4AF37]/20 flex items-center justify-center mx-auto mb-3">
+                  <span className="text-xl">{step.icon}</span>
                 </div>
-                <div className="text-xs text-[#FFD166] font-bold mb-1">Step {step.step}</div>
-                <h3 className="text-white font-semibold text-sm mb-1">{step.title}</h3>
+                <div className="text-[10px] text-[#D4AF37] font-semibold mb-1">Step {step.step}</div>
+                <h3 className="text-white font-medium text-sm mb-1">{step.title}</h3>
                 <p className="text-[10px] text-gray-400">{step.desc}</p>
               </motion.div>
             ))}
-          </div>
-
-          {/* Animated timeline */}
-          <div className="mt-8 max-w-md mx-auto">
-            <div className="flex justify-between items-center">
-              {[1, 2, 3, 4].map((s) => (
-                <div key={s} className="flex flex-col items-center">
-                  <div className={`w-3 h-3 rounded-full ${
-                    s <= 2 ? "bg-[#FFD166]" : "bg-gray-700"
-                  }`} />
-                  <span className={`text-[8px] mt-1 ${
-                    s <= 2 ? "text-[#FFD166]" : "text-gray-600"
-                  }`}>Step {s}</span>
-                </div>
-              ))}
-            </div>
-            <div className="mt-1 h-0.5 bg-gradient-to-r from-[#FFD166] via-[#FFD166]/50 to-gray-700 rounded-full" />
           </div>
         </div>
       </section>
@@ -704,23 +636,26 @@ export default function HomePage() {
       {/* ================= CTA SECTION ================= */}
       <section className="py-16 px-4">
         <div className="max-w-2xl mx-auto text-center">
-          <h2 className="font-heading text-2xl sm:text-3xl text-[#FFD166] mb-4">
+          <h2 className="font-heading text-2xl sm:text-3xl text-white mb-3">
             Ready to Start Saving?
           </h2>
-          <p className="text-gray-400 text-sm mb-8">
+          <p className="text-gray-400 text-sm mb-6">
             Join thousands of people already saving money through smart partnerships.
           </p>
-          <Link href="/categories" className="btn-primary text-base">
-            Explore Partnerships →
+          <Link
+            href="/categories"
+            className="inline-flex items-center px-6 py-3 rounded-lg font-semibold text-sm bg-[#D4AF37] text-black hover:bg-[#E6C97A] transition-colors"
+          >
+            Explore Groups
           </Link>
         </div>
       </section>
 
-      {/* ================= STICKY BOTTOM CTA (Section 24) ================= */}
+      {/* ================= STICKY BOTTOM CTA ================= */}
       <div className="sticky-bottom-cta">
         <Link
           href="/categories"
-          className="block w-full text-center py-3 rounded-xl font-bold bg-gradient-to-r from-[#D4AF37] to-[#E6C97A] text-black text-sm"
+          className="block w-full text-center py-3 rounded-xl font-bold bg-[#D4AF37] text-black text-sm"
         >
           Explore Categories
         </Link>

@@ -1253,195 +1253,174 @@ function SaveContent() {
   /* -------- UI -------- */
 
   return (
+    <div className="min-h-screen pt-28 pb-16 px-4 sm:px-6 bg-black text-[#F5F5F5]">
+      <div className="max-w-4xl mx-auto">
 
-    <div className="min-h-screen pt-32 px-6 bg-black text-[#F5F5F5]">
-
-      <h1 className="text-3xl font-semibold text-[#FFD166] tracking-wide mb-4">
-        Make Your Match
-      </h1>
-
-      <p className="text-gray-400 mb-8">
-
-        You selected{" "}
-
-        <span className="text-[#FFD166] font-medium">
-          {option}
-        </span>{" "}
-
-        under{" "}
-
-        <span className="text-[#FFD166] font-medium">
-          {category.replace(
-            "-",
-            " "
-          )}
-        </span>
-
-      </p>
-
-      {duplicateCategory && (
-
-        <div className="mb-6 border border-yellow-500/30 bg-yellow-500/10 rounded-xl p-4">
-
-          <p className="text-yellow-400 font-bold">
-            ⚠️ Already Active in {category.replace("-", " ")}
-          </p>
-
-          <p className="text-gray-300 text-xs mt-1">
-            You already have an active request in this category.
-            Joining again will update your existing request.
-          </p>
-
-        </div>
-      )}
-
-      {existingGroup && (
-
-        <div className="mb-6 border border-green-500/30 bg-green-500/10 rounded-xl p-4">
-
-          <p className="text-green-400 font-bold">
-            ✅ You already joined this match
-          </p>
-
-        </div>
-      )}
-
-      {info && (
-
-        <div
-          className="
-            mb-8 max-w-3xl
-            border border-[#FFD166]/20
-            p-6 rounded-2xl
-            bg-gradient-to-br
-            from-[#0e0e0e]
-            to-black
-          "
-        >
-
-          <h2 className="text-lg font-semibold text-[#FFD166] mb-2">
-            {info.title}
-          </h2>
-
-          {info.topLine && (
-
-            <p className="text-gray-400 mb-4">
-              {info.topLine}
+        {/* ===== TOP ROW: Heading + CTA (Desktop) ===== */}
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
+          <div className="flex-1">
+            <h1 className="text-2xl sm:text-3xl font-heading text-white tracking-tight">
+              Make Your Match
+            </h1>
+            <p className="text-gray-400 text-sm mt-1">
+              You selected{" "}
+              <span className="text-[#D4AF37] font-medium">{option}</span>{" "}
+              under{" "}
+              <span className="text-[#D4AF37] font-medium">
+                {category.replace("-", " ")}
+              </span>
             </p>
-          )}
+          </div>
 
-          <ul className="space-y-4 text-sm">
+          {/* Desktop CTA */}
+          <div className="hidden sm:block flex-shrink-0">
+            <button
+              onClick={savePartner}
+              disabled={loading}
+              className="
+                px-8 py-3.5 rounded-xl
+                font-semibold text-sm
+                bg-[#D4AF37] text-black
+                hover:bg-[#E6C97A]
+                hover:-translate-y-0.5
+                transition-all duration-200
+                disabled:opacity-50 disabled:cursor-not-allowed
+              "
+            >
+              {loading ? "Saving..." : "Make Partner"}
+            </button>
+          </div>
+        </div>
 
-            {info.sections.map(
-              (
-                sec: any,
-                i: number
-              ) => (
+        {/* Mobile CTA - directly below heading */}
+        <div className="sm:hidden mb-6">
+          <button
+            onClick={savePartner}
+            disabled={loading}
+            className="
+              w-full py-3.5 rounded-xl
+              font-semibold text-sm
+              bg-[#D4AF37] text-black
+              hover:bg-[#E6C97A]
+              transition-all duration-200
+              disabled:opacity-50 disabled:cursor-not-allowed
+            "
+          >
+            {loading ? "Saving..." : "Make Partner"}
+          </button>
+        </div>
 
-                <li key={i}>
+        {/* ===== STATUS MESSAGES ===== */}
+        {duplicateCategory && (
+          <div className="mb-4 border border-yellow-500/30 bg-yellow-500/10 rounded-xl p-4">
+            <p className="text-yellow-400 font-bold text-sm">
+              ⚠️ Already Active in {category.replace("-", " ")}
+            </p>
+            <p className="text-gray-300 text-xs mt-1">
+              You already have an active request in this category.
+              Joining again will update your existing request.
+            </p>
+          </div>
+        )}
 
-                  <span className="font-medium text-[#FFD166]">
-                    {sec.title}
-                  </span>
+        {existingGroup && (
+          <div className="mb-4 border border-green-500/30 bg-green-500/10 rounded-xl p-4">
+            <p className="text-green-400 font-bold text-sm">
+              ✅ You already joined this match
+            </p>
+          </div>
+        )}
 
-                  <div className="text-gray-400">
-                    {sec.text}
-                  </div>
-
-                  {sec.example && (
-
-                    <div className="text-gray-500 mt-1">
-                      {sec.example}
-                    </div>
-                  )}
-
-                </li>
-              )
+        {/* ===== HOW IT WORKS INFO ===== */}
+        {info && (
+          <div className="mb-8 border border-white/10 p-5 sm:p-6 rounded-xl bg-white/[0.02]">
+            <h2 className="text-base font-semibold text-[#D4AF37] mb-2">
+              {info.title}
+            </h2>
+            {info.topLine && (
+              <p className="text-gray-400 text-sm mb-4">
+                {info.topLine}
+              </p>
             )}
+            <ul className="space-y-3 text-sm">
+              {info.sections.map(
+                (
+                  sec: any,
+                  i: number
+                ) => (
+                  <li key={i}>
+                    <span className="font-medium text-[#D4AF37]">
+                      {sec.title}
+                    </span>
+                    <div className="text-gray-400">
+                      {sec.text}
+                    </div>
+                    {sec.example && (
+                      <div className="text-gray-500 text-xs mt-1">
+                        {sec.example}
+                      </div>
+                    )}
+                  </li>
+                )
+              )}
+            </ul>
+            <p className="text-[10px] text-gray-500 mt-4 italic">
+              SplitPartnering is a partnering service.
+              We do not buy or sell products.
+            </p>
+          </div>
+        )}
 
-          </ul>
-
-          <p className="text-[11px] text-gray-500 mt-5 italic">
-            SplitPartnering is a partnering service.
-            We do not buy or sell products.
-          </p>
-
+        {/* ===== COLLABORATOR BRAND SELECTION ===== */}
+        <div className="mb-8">
+          <CollaboratorBrandSelector
+            categorySlug={category}
+            optionSlug={option}
+            selectedBrand={selectedCollaboratorId}
+            onSelect={(id, name) => {
+              setSelectedCollaboratorId(
+                selectedCollaboratorId === id ? null : id
+              );
+              setSelectedCollaboratorName(
+                selectedCollaboratorId === id ? null : name
+              );
+            }}
+          />
         </div>
-      )}
 
-      {/* ===== COLLABORATOR BRAND SELECTION ===== */}
-      <div className="mb-8 max-w-3xl">
-        <CollaboratorBrandSelector
-          categorySlug={category}
-          optionSlug={option}
-          selectedBrand={selectedCollaboratorId}
-          onSelect={(id, name) => {
-            setSelectedCollaboratorId(
-              selectedCollaboratorId === id ? null : id
-            );
-            setSelectedCollaboratorName(
-              selectedCollaboratorId === id ? null : name
-            );
-          }}
-        />
+        {/* ===== SELECTED BRAND SUMMARY ===== */}
+        {selectedCollaboratorName && (
+          <div className="mb-6 border border-green-500/30 bg-green-500/10 rounded-xl p-4">
+            <p className="text-green-400 font-bold text-sm">
+              ✅ Selected Brand: {selectedCollaboratorName}
+            </p>
+            <p className="text-gray-300 text-xs mt-1">
+              Your match will be associated with this partner brand.
+            </p>
+          </div>
+        )}
+
+        {/* ===== BOTTOM CTA (Desktop secondary) ===== */}
+        <div className="hidden sm:flex items-center justify-between gap-4 mt-8 pt-6 border-t border-white/5">
+          <button
+            onClick={() => router.push("/categories")}
+            className="text-sm text-gray-400 hover:text-[#D4AF37] transition-colors"
+          >
+            ← Back to Categories
+          </button>
+        </div>
+
+        {/* ===== BOTTOM CTA (Mobile) ===== */}
+        <div className="sm:hidden mt-8 pt-6 border-t border-white/5 text-center">
+          <button
+            onClick={() => router.push("/categories")}
+            className="text-sm text-gray-400 hover:text-[#D4AF37] transition-colors"
+          >
+            ← Back to Categories
+          </button>
+        </div>
+
       </div>
-
-      {/* ===== SELECTED BRAND SUMMARY ===== */}
-      {selectedCollaboratorName && (
-        <div className="mb-6 max-w-3xl border border-green-500/30 bg-green-500/10 rounded-xl p-4">
-          <p className="text-green-400 font-bold text-sm">
-            ✅ Selected Brand: {selectedCollaboratorName}
-          </p>
-          <p className="text-gray-300 text-xs mt-1">
-            Your match will be associated with this partner brand.
-          </p>
-        </div>
-      )}
-
-      <button
-        onClick={
-          savePartner
-        }
-        disabled={
-          loading
-        }
-        className="
-          px-8 py-3 rounded-xl
-          font-semibold
-          bg-black
-          text-[#E6C972]
-          border border-[#E6C972]
-          shadow-[0_0_18px_rgba(230,201,114,0.75)]
-          hover:bg-[#F3DC8A]
-          hover:text-black
-          hover:shadow-[0_0_36px_rgba(230,201,114,1)]
-          transition-all duration-200
-          disabled:opacity-50
-        "
-      >
-
-        {loading
-          ? "Saving..."
-          : "Make Partner"}
-
-      </button>
-
-      <button
-        onClick={() =>
-          router.push(
-            "/categories"
-          )
-        }
-        className="
-          block mt-8
-          text-[#FFD166]
-          hover:underline
-          text-sm tracking-wide
-        "
-      >
-        ← Back to Categories
-      </button>
-
     </div>
   );
 }

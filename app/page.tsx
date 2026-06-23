@@ -181,7 +181,6 @@ export default function HomePage() {
 
       {/* ================= HERO ================= */}
       <section className="relative min-h-[60vh] sm:min-h-[65vh] flex items-center justify-center overflow-hidden">
-        {/* Minimal background gradient */}
         <div className="absolute inset-0 bg-gradient-to-b from-[#D4AF37]/5 via-transparent to-transparent pointer-events-none" />
 
         <div className="relative z-10 max-w-5xl mx-auto text-center px-4 pt-10 sm:pt-14">
@@ -190,7 +189,6 @@ export default function HomePage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
           >
-            {/* Category pills */}
             <div className="flex flex-wrap justify-center gap-2 mb-6">
               {["🎓 Education", "💪 Gym", "🎬 Movies", "✈️ Travel", "🛍️ Shopping"].map((item, i) => (
                 <motion.span
@@ -221,41 +219,31 @@ export default function HomePage() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.15 }}
-            className="text-gray-400 text-sm sm:text-base max-w-2xl mx-auto mb-3"
+            className="text-gray-400 text-sm sm:text-base max-w-2xl mx-auto mb-8"
           >
-            Find trusted people nearby to split memberships, travel costs, shopping deals, tickets, and more.
-          </motion.p>
-
-          <motion.p
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.25 }}
-            className="text-gray-500 text-xs sm:text-sm max-w-xl mx-auto mb-8"
-          >
-            Join existing groups or create your own. Reduce costs by sharing expenses with verified local partners.
+            Find trusted people nearby to split memberships, shopping deals, travel costs, movie tickets, eyewear purchases and more.
           </motion.p>
 
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.35 }}
-            className="flex justify-center gap-3 flex-wrap"
+            className="flex justify-center gap-4 flex-wrap"
           >
             <Link
               href="/categories"
-              className="inline-flex items-center px-6 py-3 rounded-lg font-semibold text-sm bg-[#D4AF37] text-black hover:bg-[#E6C97A] transition-colors"
+              className="inline-flex items-center px-8 py-3.5 rounded-xl font-semibold text-base bg-[#D4AF37] text-black hover:bg-[#E6C97A] transition-all hover:-translate-y-0.5"
             >
-              Explore Groups
+              Explore Categories
             </Link>
             <Link
               href="/categories"
-              className="inline-flex items-center px-6 py-3 rounded-lg font-medium text-sm border border-white/20 text-gray-300 hover:bg-white/5 hover:text-white transition-colors"
+              className="inline-flex items-center px-8 py-3.5 rounded-xl font-semibold text-base border-2 border-white/20 text-white hover:bg-white/5 hover:border-white/40 transition-all hover:-translate-y-0.5"
             >
-              Create Group
+              Find Partners
             </Link>
           </motion.div>
 
-          {/* Social proof stat */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -277,7 +265,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ================= CATEGORY CARDS (above fold) ================= */}
+      {/* ================= CATEGORY CARDS ================= */}
       <section className="py-10 px-4">
         <div className="max-w-5xl mx-auto">
           <div className="flex items-center justify-between mb-6">
@@ -361,7 +349,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ================= TRUST INDICATORS (moved below categories) ================= */}
+      {/* ================= TRUST INDICATORS ================= */}
       <section className="py-12 px-4">
         <div className="max-w-5xl mx-auto">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -392,7 +380,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ================= SOCIAL PROOF STATS ================= */}
+      {/* ================= STATS ================= */}
       <section className="py-10 px-4">
         <div className="max-w-4xl mx-auto">
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
@@ -414,13 +402,10 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ================= LIVE ACTIVITY FEED ================= */}
+      {/* ================= LIVE ACTIVITY ================= */}
       <section className="py-10 px-4">
         <div className="max-w-4xl mx-auto">
-          <h2 className="font-heading text-lg sm:text-xl text-white mb-4 text-center">
-            Live Activity
-          </h2>
-
+          <h2 className="font-heading text-lg sm:text-xl text-white mb-4 text-center">Live Activity</h2>
           <div className="max-w-xl mx-auto rounded-xl bg-white/[0.02] border border-white/10 p-4 overflow-hidden">
             <AnimatePresence mode="wait">
               <motion.div
@@ -436,7 +421,6 @@ export default function HomePage() {
                 <span className="text-[10px] text-gray-500">{liveActivities[currentActivity].time}</span>
               </motion.div>
             </AnimatePresence>
-
             <div className="flex justify-center gap-1.5 mt-3">
               {liveActivities.map((_, i) => (
                 <div
@@ -451,16 +435,11 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ================= REAL SAVINGS EXAMPLES ================= */}
+      {/* ================= SAVINGS EXAMPLES ================= */}
       <section className="py-12 px-4">
         <div className="max-w-5xl mx-auto">
-          <h2 className="font-heading text-xl sm:text-2xl text-white mb-2 text-center">
-            Real Savings Examples
-          </h2>
-          <p className="text-gray-400 text-sm text-center mb-6">
-            See how much people are saving right now
-          </p>
-
+          <h2 className="font-heading text-xl sm:text-2xl text-white mb-2 text-center">Real Savings Examples</h2>
+          <p className="text-gray-400 text-sm text-center mb-6">See how much people are saving right now</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {realExamples.map((example, i) => (
               <motion.div
@@ -479,62 +458,34 @@ export default function HomePage() {
                   <p>Save: <span className="text-green-400 font-bold">{example.savings}</span></p>
                   <p>Members: <span className="text-[#D4AF37]">{example.members}</span></p>
                   <div className="w-full h-1 bg-gray-800 rounded-full overflow-hidden mt-2">
-                    <div
-                      className="h-full bg-green-500 rounded-full"
-                      style={{ width: `${(parseInt(example.members) / 6) * 100}%` }}
-                    />
+                    <div className="h-full bg-green-500 rounded-full" style={{ width: `${(parseInt(example.members) / 6) * 100}%` }} />
                   </div>
                 </div>
-                <Link
-                  href="/categories"
-                  className="mt-3 inline-block text-[10px] text-[#D4AF37] hover:underline"
-                >
-                  Join Group →
-                </Link>
+                <Link href="/categories" className="mt-3 inline-block text-[10px] text-[#D4AF37] hover:underline">Join Group →</Link>
               </motion.div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ================= URGENCY BADGES ================= */}
+      {/* ================= URGENCY ================= */}
       <section className="py-6 px-4">
         <div className="max-w-4xl mx-auto flex flex-wrap gap-2 justify-center">
-          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-medium bg-red-500/10 text-red-400 border border-red-500/20">
-            🔥 Last Member Needed — Education Group
-          </span>
-          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-medium bg-red-500/10 text-red-400 border border-red-500/20">
-            ⏳ Closing In 3 Hours — Movies Group
-          </span>
-          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-medium bg-red-500/10 text-red-400 border border-red-500/20">
-            🔥 Almost Full — Gym Partnership
-          </span>
+          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-medium bg-red-500/10 text-red-400 border border-red-500/20">🔥 Last Member Needed — Education Group</span>
+          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-medium bg-red-500/10 text-red-400 border border-red-500/20">⏳ Closing In 3 Hours — Movies Group</span>
+          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-medium bg-red-500/10 text-red-400 border border-red-500/20">🔥 Almost Full — Gym Partnership</span>
         </div>
       </section>
 
-      {/* ================= CATEGORY LEADERBOARD ================= */}
+      {/* ================= LEADERBOARD ================= */}
       <section className="py-12 px-4">
         <div className="max-w-3xl mx-auto">
-          <h2 className="font-heading text-xl sm:text-2xl text-white mb-2 text-center">
-            Top Savings This Month
-          </h2>
-          <p className="text-gray-400 text-sm text-center mb-6">
-            Categories generating the most savings
-          </p>
-
+          <h2 className="font-heading text-xl sm:text-2xl text-white mb-2 text-center">Top Savings This Month</h2>
+          <p className="text-gray-400 text-sm text-center mb-6">Categories generating the most savings</p>
           <div className="rounded-xl bg-white/[0.02] border border-white/10 overflow-hidden">
             {leaderboard.map((entry, i) => (
-              <div
-                key={i}
-                className={`flex items-center gap-4 px-5 py-3.5 ${
-                  i < leaderboard.length - 1 ? "border-b border-white/5" : ""
-                }`}
-              >
-                <span className={`w-6 text-center font-bold text-sm ${
-                  entry.rank === 1 ? "text-[#D4AF37]" : entry.rank === 2 ? "text-gray-300" : entry.rank === 3 ? "text-amber-600" : "text-gray-500"
-                }`}>
-                  #{entry.rank}
-                </span>
+              <div key={i} className={`flex items-center gap-4 px-5 py-3.5 ${i < leaderboard.length - 1 ? "border-b border-white/5" : ""}`}>
+                <span className={`w-6 text-center font-bold text-sm ${entry.rank === 1 ? "text-[#D4AF37]" : entry.rank === 2 ? "text-gray-300" : entry.rank === 3 ? "text-amber-600" : "text-gray-500"}`}>#{entry.rank}</span>
                 <span className="text-lg">{entry.icon}</span>
                 <span className="flex-1 text-sm text-white">{entry.category}</span>
                 <span className="text-sm font-bold text-green-400">{entry.saved}</span>
@@ -547,51 +498,24 @@ export default function HomePage() {
       {/* ================= SAVINGS CALCULATOR ================= */}
       <section className="py-12 px-4">
         <div className="max-w-lg mx-auto">
-          <h2 className="font-heading text-xl sm:text-2xl text-white mb-2 text-center">
-            Calculate Your Savings
-          </h2>
-          <p className="text-gray-400 text-sm text-center mb-6">
-            See how much you can save by splitting costs
-          </p>
-
+          <h2 className="font-heading text-xl sm:text-2xl text-white mb-2 text-center">Calculate Your Savings</h2>
+          <p className="text-gray-400 text-sm text-center mb-6">See how much you can save by splitting costs</p>
           <div className="p-6 rounded-xl bg-white/[0.02] border border-white/10">
             <div className="mb-4">
               <label className="text-xs text-gray-400 mb-1 block">What are you buying?</label>
-              <select
-                value={calcCategory}
-                onChange={(e) => setCalcCategory(e.target.value)}
-                className="w-full bg-black/50 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-[#D4AF37] outline-none"
-              >
-                {Object.keys(savingsMap).map((cat) => (
-                  <option key={cat} value={cat}>{cat}</option>
-                ))}
+              <select value={calcCategory} onChange={(e) => setCalcCategory(e.target.value)} className="w-full bg-black/50 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-[#D4AF37] outline-none">
+                {Object.keys(savingsMap).map((cat) => (<option key={cat} value={cat}>{cat}</option>))}
               </select>
             </div>
-
             <div className="mb-6">
-              <label className="text-xs text-gray-400 mb-1 block">
-                Members: <span className="text-[#D4AF37]">{calcMembers}</span>
-              </label>
-              <input
-                type="range"
-                min={2}
-                max={10}
-                value={calcMembers}
-                onChange={(e) => setCalcMembers(parseInt(e.target.value))}
-                className="w-full accent-[#D4AF37]"
-              />
-              <div className="flex justify-between text-[10px] text-gray-500">
-                <span>2</span>
-                <span>10</span>
-              </div>
+              <label className="text-xs text-gray-400 mb-1 block">Members: <span className="text-[#D4AF37]">{calcMembers}</span></label>
+              <input type="range" min={2} max={10} value={calcMembers} onChange={(e) => setCalcMembers(parseInt(e.target.value))} className="w-full accent-[#D4AF37]" />
+              <div className="flex justify-between text-[10px] text-gray-500"><span>2</span><span>10</span></div>
             </div>
-
             <div className="bg-black/40 rounded-xl p-4 text-center">
               <p className="text-xs text-gray-400 mb-1">You Save</p>
               <p className="text-3xl font-heading text-green-400">₹{yourSavings.toLocaleString()}/month</p>
-              <p className="text-[10px] text-gray-500 mt-2">
-                Split ₹{calcSavings.monthly} among {calcMembers} members
-              </p>
+              <p className="text-[10px] text-gray-500 mt-2">Split ₹{calcSavings.monthly} among {calcMembers} members</p>
             </div>
           </div>
         </div>
@@ -600,30 +524,13 @@ export default function HomePage() {
       {/* ================= HOW IT WORKS ================= */}
       <section className="py-12 px-4">
         <div className="max-w-5xl mx-auto">
-          <h2 className="font-heading text-xl sm:text-2xl text-white mb-2 text-center">
-            How It Works
-          </h2>
-          <p className="text-gray-400 text-sm text-center mb-8">
-            Four simple steps to start saving
-          </p>
-
+          <h2 className="font-heading text-xl sm:text-2xl text-white mb-2 text-center">How It Works</h2>
+          <p className="text-gray-400 text-sm text-center mb-8">Four simple steps to start saving</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {howItWorks.map((step, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: i * 0.1 }}
-                className="text-center relative"
-              >
-                {i < howItWorks.length - 1 && (
-                  <div className="hidden lg:block absolute top-8 left-[60%] w-[80%] h-px bg-gradient-to-r from-[#D4AF37]/30 to-transparent" />
-                )}
-
-                <div className="w-14 h-14 rounded-full bg-[#D4AF37]/10 border border-[#D4AF37]/20 flex items-center justify-center mx-auto mb-3">
-                  <span className="text-xl">{step.icon}</span>
-                </div>
+              <motion.div key={i} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.1 }} className="text-center relative">
+                {i < howItWorks.length - 1 && (<div className="hidden lg:block absolute top-8 left-[60%] w-[80%] h-px bg-gradient-to-r from-[#D4AF37]/30 to-transparent" />)}
+                <div className="w-14 h-14 rounded-full bg-[#D4AF37]/10 border border-[#D4AF37]/20 flex items-center justify-center mx-auto mb-3"><span className="text-xl">{step.icon}</span></div>
                 <div className="text-[10px] text-[#D4AF37] font-semibold mb-1">Step {step.step}</div>
                 <h3 className="text-white font-medium text-sm mb-1">{step.title}</h3>
                 <p className="text-[10px] text-gray-400">{step.desc}</p>
@@ -633,32 +540,18 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ================= CTA SECTION ================= */}
+      {/* ================= CTA ================= */}
       <section className="py-16 px-4">
         <div className="max-w-2xl mx-auto text-center">
-          <h2 className="font-heading text-2xl sm:text-3xl text-white mb-3">
-            Ready to Start Saving?
-          </h2>
-          <p className="text-gray-400 text-sm mb-6">
-            Join thousands of people already saving money through smart partnerships.
-          </p>
-          <Link
-            href="/categories"
-            className="inline-flex items-center px-6 py-3 rounded-lg font-semibold text-sm bg-[#D4AF37] text-black hover:bg-[#E6C97A] transition-colors"
-          >
-            Explore Groups
-          </Link>
+          <h2 className="font-heading text-2xl sm:text-3xl text-white mb-3">Ready to Start Saving?</h2>
+          <p className="text-gray-400 text-sm mb-6">Join thousands of people already saving money through smart partnerships.</p>
+          <Link href="/categories" className="inline-flex items-center px-6 py-3 rounded-lg font-semibold text-sm bg-[#D4AF37] text-black hover:bg-[#E6C97A] transition-colors">Explore Categories</Link>
         </div>
       </section>
 
       {/* ================= STICKY BOTTOM CTA ================= */}
       <div className="sticky-bottom-cta">
-        <Link
-          href="/categories"
-          className="block w-full text-center py-3 rounded-xl font-bold bg-[#D4AF37] text-black text-sm"
-        >
-          Explore Categories
-        </Link>
+        <Link href="/categories" className="block w-full text-center py-3 rounded-xl font-bold bg-[#D4AF37] text-black text-sm">Explore Categories</Link>
       </div>
 
     </main>

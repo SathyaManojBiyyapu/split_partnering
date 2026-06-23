@@ -72,7 +72,7 @@ export function generateUserId(phone: string): string {
   return `PS-${id}`;
 }
 
-// Section 4 updated: Compatibility based on location + category/subcategory match
+// Section 4 updated: Additive compatibility scoring
 export function computeCompatibility(
   userProfile: any,
   partnerProfile: any
@@ -86,57 +86,16 @@ export function computeCompatibility(
   const sameCategory = userProfile?.category && partnerProfile?.category && userProfile.category === partnerProfile.category;
   const sameSubcategory = userProfile?.option && partnerProfile?.option && userProfile.option === partnerProfile.option;
 
-  // Highest priority: Same state + same city + same category + same subcategory
-  if (sameState && sameCity && sameCategory && sameSubcategory) {
-    score = 98;
-    if (sameState) reasons.push("✓ Same State");
-    if (sameCity) reasons.push("✓ Same City");
-    if (sameCategory) reasons.push("✓ Same Category");
-    if (sameSubcategory) reasons.push("✓ Same Subcategory");
-  }
-  // Same state + same city + same category (different subcategory)
-  else if (sameState && sameCity && sameCategory) {
-    score = 90;
-    if (sameState) reasons.push("✓ Same State");
-    if (sameCity) reasons.push("✓ Same City");
-    if (sameCategory) reasons.push("✓ Same Category");
-  }
-  // Same state + same city (different category)
-  else if (sameState && sameCity) {
-    score = 85;
-    reasons.push("✓ Same State");
-    reasons.push("✓ Same City");
-  }
-  // Same state + same district
-  else if (sameState && sameDistrict) {
-    score = 75;
-    reasons.push("✓ Same State");
-    reasons.push("✓ Same District");
-  }
-  // Same state only
-  else if (sameState) {
-    score = 60;
-    reasons.push("✓ Same State");
-  }
-  // Different states but same category
-  else if (sameCategory) {
-    score = 40;
-    reasons.push("✓ Same Category");
-  }
-  // No matches
-  else {
-    score = 25;
-    reasons.push("✓ General Match");
-  }
+  // Additive scoring
+  if (sameCity) { score += 40; reasons.push("✓ Same City"); }
+  else if (sameDistrict) { score += 20; reasons.push("✓ Same District"); }
+  else if (sameState) { score += 10; reasons.push("✓ Same State"); }
 
-  // Bonus for category match even if already scored higher
-  if (sameCategory && !reasons.includes("✓ Same Category")) {
-    reasons.push("✓ Same Category");
-  }
-  // Bonus for subcategory match even if already scored higher
-  if (sameSubcategory && !reasons.includes("✓ Same Subcategory")) {
-    reasons.push("✓ Same Subcategory");
-  }
+  if (sameCategory) { score += 20; reasons.push("✓ Same Category"); }
+  if (sameSubcategory) { score += 10; reasons.push("✓ Same Subcategory"); }
+
+  // Ensure minimum score
+  if (score === 0) score = 5;
 
   return { score, label: `${score}%`, reasons };
 }

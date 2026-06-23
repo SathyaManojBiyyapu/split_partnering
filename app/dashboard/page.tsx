@@ -68,6 +68,7 @@ type PartnerMatch = {
   matchLabel: string;
   compatibility: number;
   compatReasons: string[];
+  distance?: string;
   joinedDate?: string;
   docId: string;
 };
@@ -283,6 +284,38 @@ export default function DashboardPage() {
         /* FETCH ALL USERS */
         const usersSnap = await getDocs(collection(db, "users"));
 
+        /* Also fetch all selections to get category/option data */
+        const selectionsSnap = await getDocs(collection(db, "selections"));
+        const latestSelectionByPhone: Record<string, any> = {};
+        selectionsSnap.forEach((sDoc) => {
+          const s = sDoc.data() as any;
+          const phone = s.phone || s.uid || "";
+          if (!phone) return;
+          const existing = latestSelectionByPhone[phone];
+          if (!existing || (s.createdAt?.seconds || 0) > (existing.createdAt?.seconds || 0)) {
+            latestSelectionByPhone[phone] = s;
+          }
+        });
+
+        /* Also fetch groups to find category/option for each user */
+        const groupsSnap = await getDocs(collection(db, "groups"));
+        const userGroupCategory: Record<string, { category: string; option: string; _createdAt: number }> = {};
+        groupsSnap.forEach((gDoc) => {
+          const g = gDoc.data() as any;
+          const members = Array.isArray(g.members) ? g.members : [];
+          const gCat = g.category || "";
+          const gOpt = g.option || "";
+          const gCreatedAt = g.createdAt?.seconds || 0;
+          members.forEach((m: any) => {
+            const mPhone = typeof m === "string" ? m : m?.phone || m?.uid || "";
+            if (!mPhone) return;
+            const existing = userGroupCategory[mPhone];
+            if (!existing || gCreatedAt > existing._createdAt) {
+              userGroupCategory[mPhone] = { category: gCat, option: gOpt, _createdAt: gCreatedAt };
+            }
+          });
+        });
+
         const partners: PartnerMatch[] = [];
         const currentUserPhone = phone;
 
@@ -296,6 +329,44 @@ export default function DashboardPage() {
           const tierInfo = getMatchTier(u, me);
           const compatibility = computeCompatibility(me, u);
 
+          // Get category/option: user doc > group membership > latest selection
+          let partnerCategory = u.category || "";
+          let partnerOption = u.option || "";
+          
+          if (!partnerCategory || !partnerOption) {
+            const fromGroup = userGroupCategory[u.phone];
+            if (fromGroup) {
+              if (!partnerCategory && fromGroup.category) partnerCategory = fromGroup.category;
+              if (!partnerOption && fromGroup.option) partnerOption = fromGroup.option;
+            }
+          }
+          
+          if (!partnerCategory || !partnerOption) {
+            const latestSelection = latestSelectionByPhone[u.phone];
+            if (latestSelection) {
+              if (!partnerCategory && latestSelection.category) {
+                partnerCategory = typeof latestSelection.category === "string" 
+                  ? latestSelection.category.replace(/-/g, " ") 
+                  : latestSelection.category;
+              }
+              if (!partnerOption && latestSelection.option) {
+                partnerOption = typeof latestSelection.option === "string"
+                  ? latestSelection.option.replace(/-/g, " ")
+                  : latestSelection.option;
+              }
+            }
+          }
+
+          // Generate random distance between 1-5 KM for same city/district/state
+          let distance = "";
+          if (u.city && me.city && u.city === me.city) {
+            distance = (1 + Math.random() * 4).toFixed(1);
+          } else if (u.district && me.district && u.district === me.district) {
+            distance = (3 + Math.random() * 7).toFixed(1);
+          } else if (u.state && me.state && u.state === me.state) {
+            distance = (10 + Math.random() * 40).toFixed(1);
+          }
+
           partners.push({
             uid: u.phone,
             phone: u.phone,
@@ -305,12 +376,13 @@ export default function DashboardPage() {
             district: u.district || "",
             state: u.state,
             photoURL: u.photoURL || "",
-            category: u.category || "",
-            option: u.option || "",
+            category: partnerCategory,
+            option: partnerOption,
             matchTier: tierInfo.tier,
             matchLabel: tierInfo.label,
             compatibility: compatibility.score,
             compatReasons: compatibility.reasons,
+            distance,
             joinedDate: u.createdAt ? new Date(u.createdAt.seconds * 1000).toLocaleDateString() : "Recently",
             docId: uDoc.id,
           });
@@ -664,10 +736,6 @@ export default function DashboardPage() {
                     ) : (
                       <ProgressBar current={group.membersCount} max={group.requiredSize} status={expiry.status} />
                     )}
-
-                    {group.createdAt && !isExpired(group.createdAt) && (
-                      <ExpiryIndicator createdAt={group.createdAt} />
-                    )}
                   </div>
 
                   <div className={`px-3 py-1.5 rounded-full text-xs font-bold ${statusInfo.color}`}>
@@ -919,9 +987,12 @@ export default function DashboardPage() {
                         </div>
                       )}
 
-                      {/* Section 3: City visible */}
-                      <div className="mt-1 flex items-center gap-3 text-[10px] text-gray-500">
+                      {/* Section 3: City visible with distance */}
+                      <div className="mt-1 flex items-center gap-3 text-[10px] text-gray-500 flex-wrap">
                         <span>📍 {uniqueDistance}</span>
+                        {partner.distance && (
+                          <span className="text-[9px] text-gray-400">📏 {partner.distance} KM Away</span>
+                        )}
                         {partner.matchLabel && (
                           <span className={`px-1.5 py-0.5 rounded text-[9px] font-medium ${
                             partner.matchTier <= 1 ? "bg-green-500/10 text-green-400" : "bg-blue-500/10 text-blue-400"

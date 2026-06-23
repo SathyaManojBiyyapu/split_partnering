@@ -18,6 +18,7 @@ import {
   ReactNode,
 } from "react";
 
+import Link from "next/link";
 import {
   useRouter,
   usePathname,
@@ -200,6 +201,14 @@ export default function RootLayout({
           {/* FLOATING SUPPORT BUTTON */}
           <SupportButton />
 
+          {/* FLOATING GLOBAL CTA - Find Partners */}
+          <Link
+            href="/categories"
+            className="floating-cta"
+          >
+            Find Partners
+          </Link>
+
           {/* FOOTER */}
           <Footer />
 
@@ -214,7 +223,7 @@ export default function RootLayout({
                 border:
                   "1px solid #FFD166",
                 boxShadow:
-                  "0 0 18px rgba(255,209,102,0.6)",
+                  "none",
               },
             }}
           />

@@ -1,7 +1,7 @@
 // Match expiry: 10 days uniform for all categories
 export const MATCH_EXPIRY_DAYS: Record<string, number> = {};
 
-export const DEFAULT_EXPIRY_DAYS = 10;
+export const DEFAULT_EXPIRY_DAYS = 90;
 
 export function getExpiryDate(createdAt: any): Date | null {
   if (!createdAt?.seconds) return null;
@@ -27,7 +27,7 @@ export function getExpiryStatus(createdAt: any): {
   progress: number;
 } {
   if (!createdAt?.seconds) {
-    return { status: "active", label: "Active", daysLeft: 10, progress: 0 };
+    return { status: "active", label: "Active", daysLeft: 90, progress: 0 };
   }
 
   const created = new Date(createdAt.seconds * 1000);
@@ -52,12 +52,12 @@ export function getExpiryStatus(createdAt: any): {
   } else if (daysLeft <= 1) {
     status = "expiring-soon";
     label = "Expiring Today";
-  } else if (daysLeft <= 3) {
+  } else if (daysLeft <= 7) {
     status = "expiring-soon";
     label = `${daysLeft} Days Left`;
   } else {
     status = "active";
-    label = `${daysLeft} Days Left (10 day expiry)`;
+    label = `${daysLeft} Days Left (90 day expiry)`;
   }
 
   return { status, label, daysLeft, progress };
@@ -72,7 +72,7 @@ export function generateUserId(phone: string): string {
   return `PS-${id}`;
 }
 
-// Section 4 updated: Compatibility based on location match tier
+// Section 4 updated: Compatibility based on location + category/subcategory match
 export function computeCompatibility(
   userProfile: any,
   partnerProfile: any
@@ -80,18 +80,62 @@ export function computeCompatibility(
   let score = 0;
   const reasons: string[] = [];
 
-  if (userProfile?.city && partnerProfile?.city && userProfile.city === partnerProfile.city) {
+  const sameState = userProfile?.state && partnerProfile?.state && userProfile.state === partnerProfile.state;
+  const sameDistrict = userProfile?.district && partnerProfile?.district && userProfile.district === partnerProfile.district;
+  const sameCity = userProfile?.city && partnerProfile?.city && userProfile.city === partnerProfile.city;
+  const sameCategory = userProfile?.category && partnerProfile?.category && userProfile.category === partnerProfile.category;
+  const sameSubcategory = userProfile?.option && partnerProfile?.option && userProfile.option === partnerProfile.option;
+
+  // Highest priority: Same state + same city + same category + same subcategory
+  if (sameState && sameCity && sameCategory && sameSubcategory) {
+    score = 98;
+    if (sameState) reasons.push("✓ Same State");
+    if (sameCity) reasons.push("✓ Same City");
+    if (sameCategory) reasons.push("✓ Same Category");
+    if (sameSubcategory) reasons.push("✓ Same Subcategory");
+  }
+  // Same state + same city + same category (different subcategory)
+  else if (sameState && sameCity && sameCategory) {
     score = 90;
-    reasons.push("✓ Same City");
-  } else if (userProfile?.district && partnerProfile?.district && userProfile.district === partnerProfile.district) {
-    score = 75;
-    reasons.push("✓ Same District");
-  } else if (userProfile?.state && partnerProfile?.state && userProfile.state === partnerProfile.state) {
-    score = 50;
+    if (sameState) reasons.push("✓ Same State");
+    if (sameCity) reasons.push("✓ Same City");
+    if (sameCategory) reasons.push("✓ Same Category");
+  }
+  // Same state + same city (different category)
+  else if (sameState && sameCity) {
+    score = 85;
     reasons.push("✓ Same State");
-  } else {
+    reasons.push("✓ Same City");
+  }
+  // Same state + same district
+  else if (sameState && sameDistrict) {
+    score = 75;
+    reasons.push("✓ Same State");
+    reasons.push("✓ Same District");
+  }
+  // Same state only
+  else if (sameState) {
+    score = 60;
+    reasons.push("✓ Same State");
+  }
+  // Different states but same category
+  else if (sameCategory) {
+    score = 40;
+    reasons.push("✓ Same Category");
+  }
+  // No matches
+  else {
     score = 25;
     reasons.push("✓ General Match");
+  }
+
+  // Bonus for category match even if already scored higher
+  if (sameCategory && !reasons.includes("✓ Same Category")) {
+    reasons.push("✓ Same Category");
+  }
+  // Bonus for subcategory match even if already scored higher
+  if (sameSubcategory && !reasons.includes("✓ Same Subcategory")) {
+    reasons.push("✓ Same Subcategory");
   }
 
   return { score, label: `${score}%`, reasons };

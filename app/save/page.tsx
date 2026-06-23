@@ -1287,7 +1287,7 @@ function SaveContent() {
                 disabled:opacity-50 disabled:cursor-not-allowed
               "
             >
-              {loading ? "Saving..." : "Make Partner"}
+              {loading ? "Saving..." : existingGroup ? "Partner Already Saved ✓" : "Make Partner"}
             </button>
           </div>
         </div>
@@ -1296,22 +1296,49 @@ function SaveContent() {
         <div className="sm:hidden mb-6">
           <button
             onClick={savePartner}
-            disabled={loading}
-            className="
+            disabled={loading || !!existingGroup}
+            className={`
               w-full py-3.5 rounded-xl
               font-semibold text-sm
-              bg-[#D4AF37] text-black
-              hover:bg-[#E6C97A]
               transition-all duration-200
-              disabled:opacity-50 disabled:cursor-not-allowed
-            "
+              disabled:cursor-not-allowed
+              ${existingGroup 
+                ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                : "bg-[#D4AF37] text-black hover:bg-[#E6C97A] disabled:opacity-50"}
+            `}
           >
-            {loading ? "Saving..." : "Make Partner"}
+            {loading ? "Saving..." : existingGroup ? "Partner Already Saved ✓" : "Make Partner"}
           </button>
         </div>
 
         {/* ===== STATUS MESSAGES ===== */}
-        {duplicateCategory && (
+        {existingGroup && (
+          <div className="mb-4 border border-emerald-500/30 bg-emerald-500/10 rounded-xl p-4">
+            <p className="text-emerald-400 font-bold text-base flex items-center gap-2">
+              ✅ Partner Already Saved
+            </p>
+            <p className="text-gray-300 text-xs mt-1">
+              You have already saved a partner match for this option.
+              Head to your dashboard to view or manage your match.
+            </p>
+            <div className="mt-3 flex gap-2">
+              <button
+                onClick={() => router.push("/dashboard")}
+                className="px-4 py-2 rounded-lg text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition"
+              >
+                View My Dashboard →
+              </button>
+              <button
+                onClick={() => router.push("/categories")}
+                className="px-4 py-2 rounded-lg text-xs font-bold bg-gray-700 text-gray-300 hover:bg-gray-600 transition"
+              >
+                Browse Other Categories
+              </button>
+            </div>
+          </div>
+        )}
+
+        {duplicateCategory && !existingGroup && (
           <div className="mb-4 border border-yellow-500/30 bg-yellow-500/10 rounded-xl p-4">
             <p className="text-yellow-400 font-bold text-sm">
               ⚠️ Already Active in {category.replace("-", " ")}
@@ -1319,14 +1346,6 @@ function SaveContent() {
             <p className="text-gray-300 text-xs mt-1">
               You already have an active request in this category.
               Joining again will update your existing request.
-            </p>
-          </div>
-        )}
-
-        {existingGroup && (
-          <div className="mb-4 border border-green-500/30 bg-green-500/10 rounded-xl p-4">
-            <p className="text-green-400 font-bold text-sm">
-              ✅ You already joined this match
             </p>
           </div>
         )}

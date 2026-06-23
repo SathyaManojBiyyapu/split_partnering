@@ -138,11 +138,11 @@ export default function DashboardPage() {
   }
 
   /* Progress bar component */
-  function ProgressBar({ current, max, status }: { current: number; max: number; status?: string }) {
+  function ProgressBar({ current, max, status, isComplete }: { current: number; max: number; status?: string; isComplete?: boolean }) {
     const percent = Math.min((current / max) * 100, 100);
     let barClass = "progress-active";
     if (status === "expiring-soon") barClass = "progress-expiring";
-    if (status === "expired" || percent >= 100) barClass = "progress-complete";
+    if (status === "expired" || percent >= 100 || isComplete) barClass = "progress-complete";
 
     return (
       <div className="mt-2">
@@ -152,7 +152,13 @@ export default function DashboardPage() {
             style={{ width: `${percent}%` }}
           ></div>
         </div>
-        <p className="text-[10px] text-gray-500 mt-0.5">{Math.round(percent)}% complete</p>
+        <p className="text-[10px] text-gray-500 mt-0.5">
+          {isComplete || current >= max ? (
+            <span className="text-green-400">{current} of {max} members joined — 100% complete</span>
+          ) : (
+            <span>{current} of {max} members joined — {Math.round(percent)}% complete</span>
+          )}
+        </p>
       </div>
     );
   }
@@ -373,7 +379,29 @@ export default function DashboardPage() {
           });
         });
 
-        groups.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+        // Sort: 1) Active non-expired (most recent first), 2) Expiring soon, 3) Expired last
+        groups.sort((a, b) => {
+          const aExpired = isExpired(a.createdAt);
+          const bExpired = isExpired(b.createdAt);
+          
+          // Expired groups always last
+          if (aExpired && !bExpired) return 1;
+          if (!aExpired && bExpired) return -1;
+          
+          // Both active: check expiring soon
+          const aExpiring = getExpiryStatus(a.createdAt).status === "expiring-soon";
+          const bExpiring = getExpiryStatus(b.createdAt).status === "expiring-soon";
+          
+          // Non-expiring active groups first (most recent)
+          if (!aExpiring && !bExpiring) return (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0);
+          
+          // Expiring soon after active
+          if (aExpiring && !bExpiring) return 1;
+          if (!aExpiring && bExpiring) return -1;
+          
+          // Both expiring: by days left
+          return (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0);
+        });
         setMatches(groups);
 
       } catch (err) {
@@ -487,17 +515,41 @@ export default function DashboardPage() {
         My Partners
       </motion.h1>
 
-      {latestSelection && (
-        <motion.p
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="mt-2 text-gray-400 text-sm"
-        >
-          <span className="text-gray-500">Your ID: {myUserId}</span>
-          <span className="mx-2">·</span>
-          Latest: <span className="text-[#FFD166] font-medium">{latestSelection.category} → {latestSelection.option}</span>
-        </motion.p>
-      )}
+      {/* Current Active Match Header */}
+      {(() => {
+        const activeNonExpired = matches.filter(g => !isExpired(g.createdAt) && !g.isPaid);
+        const latestActive = activeNonExpired.length > 0 ? activeNonExpired.reduce((a, b) => {
+          return (a.createdAt?.seconds || 0) > (b.createdAt?.seconds || 0) ? a : b;
+        }) : null;
+        
+        return (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="mt-2"
+          >
+            <p className="text-gray-400 text-sm">
+              <span className="text-gray-500">Your ID: {myUserId}</span>
+            </p>
+            {latestActive && (
+              <div className="mt-2 bg-gradient-to-r from-[#FFD166]/10 to-transparent rounded-xl p-3 border border-[#FFD166]/20">
+                <p className="text-xs text-gray-400">Current Active Match</p>
+                <p className="text-[#FFD166] font-bold text-sm mt-0.5">
+                  {latestActive.category} → {latestActive.option}
+                </p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {(() => {
+                    const ld = (latestActive.createdAt?.seconds) 
+                      ? new Date(latestActive.createdAt.seconds * 1000).toLocaleDateString() 
+                      : "Just now";
+                    return `Started: ${ld}`;
+                  })()}
+                </p>
+              </div>
+            )}
+          </motion.div>
+        );
+      })()}
 
       {/* DASHBOARD SUMMARY CARDS */}
       <motion.div
@@ -593,7 +645,7 @@ export default function DashboardPage() {
                         {isSearching ? (
                           <div className="flex items-center gap-2 text-blue-400 text-xs">
                             <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
-                            <span>🔍 Finding Compatible Members</span>
+                            <span>🔍 Waiting for {required - matchingCount} more member{(required - matchingCount) > 1 ? "s" : ""}</span>
                           </div>
                         ) : isReady ? (
                           <div className="flex items-center gap-2 text-green-400 text-xs">
@@ -601,7 +653,7 @@ export default function DashboardPage() {
                           </div>
                         ) : (
                           <div className="flex items-center gap-2 text-yellow-400 text-xs">
-                            <span>👥 Building group — {matchingCount}/{required} matched</span>
+                            <span>👥 Building group — Waiting for {required - matchingCount} more member{(required - matchingCount) > 1 ? "s" : ""}</span>
                           </div>
                         )}
                       </div>
@@ -625,18 +677,29 @@ export default function DashboardPage() {
 
                 {!group.isPaid && (
                   <div className="mt-4">
-                    {matchingCount > 1 ? (
+                    {isReady ? (
+                      <div className="rounded-xl border border-green-500/30 bg-green-900/15 p-4">
+                        <p className="text-green-400 text-sm font-bold flex items-center gap-2">
+                          🎉 Match Complete
+                        </p>
+                        <p className="text-xs text-green-300 mt-1">All required members joined.</p>
+                        <div className="mt-2 space-y-1 text-xs text-gray-400">
+                          <p><span className="text-[#FFD166]">Category:</span> {group.category}</p>
+                          <p><span className="text-[#FFD166]">Subcategory:</span> {group.option}</p>
+                          <p><span className="text-[#FFD166]">Members:</span> {matchingCount}/{required}</p>
+                          <p className="text-green-400 mt-1">✅ Ready for Unlock</p>
+                        </div>
+                      </div>
+                    ) : matchingCount > 1 ? (
                       <div className="rounded-xl border border-green-500/20 bg-green-500/5 p-4">
                         <p className="text-green-400 text-sm font-bold flex items-center gap-2">
                           ✅ Candidate Found
                         </p>
                         <div className="mt-2 space-y-1 text-xs text-gray-400">
                           <p><span className="text-[#FFD166]">Category:</span> {group.category}</p>
-                          <p><span className="text-[#FFD166]">Brand:</span> {group.option}</p>
+                          <p><span className="text-[#FFD166]">Subcategory:</span> {group.option}</p>
                           <p><span className="text-[#FFD166]">Match:</span> Same City ✓</p>
-                          {isReady && (
-                            <p className="text-green-400 mt-1">✓ Ready for Unlock</p>
-                          )}
+                          <p><span className="text-[#FFD166]">Needed:</span> {required - matchingCount} more member{(required - matchingCount) > 1 ? "s" : ""}</p>
                         </div>
                       </div>
                     ) : (
@@ -645,19 +708,13 @@ export default function DashboardPage() {
                           <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
                           🔍 Searching for compatible partners...
                         </p>
-                        <p className="mt-1 text-xs text-blue-300">Expected match: 2-6 hours</p>
+                        <p className="mt-1 text-xs text-blue-300">Waiting for {required - matchingCount} more member{(required - matchingCount) > 1 ? "s" : ""}</p>
                       </div>
                     )}
                   </div>
                 )}
 
-                {!group.isPaid && isReady && (
-                  <div className="mt-4 rounded-xl border border-green-500/30 bg-green-900/10 p-4 text-center">
-                    <p className="text-green-400 font-bold text-sm">🎉 Ready for Unlock</p>
-                    <p className="text-xs text-green-300 mt-1">Location-matched candidate available</p>
-                    <p className="text-[10px] text-gray-400 mt-1">Unlock to reveal partner details</p>
-                  </div>
-                )}
+                {/* Ready state now handled above in "Match Complete" section */}
 
                 {group.isPaid && (
                   <div className="mt-4 space-y-2">
@@ -748,15 +805,40 @@ export default function DashboardPage() {
                 partner.city === userProfile?.city ? "📍 Same City" : `${partner.city}, ${partner.state}`
               ) : partner.state;
 
-              /* "Why this match?" reasons */
+              /* Determine match badges */
+              const isSameCity = partner.city && userProfile?.city && partner.city === userProfile.city;
+              const isSameState = partner.state && userProfile?.state && partner.state === userProfile.state;
+              const isSameCategory = partner.category && userProfile?.category && partner.category === userProfile.category;
+              const isSameSubcategory = partner.option && userProfile?.option && partner.option === userProfile.option;
+              const isPerfectMatch = isSameState && isSameCity && isSameCategory && isSameSubcategory;
+
+              const matchBadges: { icon: string; label: string; color: string }[] = [];
+              if (isPerfectMatch) matchBadges.push({ icon: "🏆", label: "Perfect Match", color: "text-yellow-400 bg-yellow-500/10" });
+              if (isSameCity) matchBadges.push({ icon: "📍", label: "Same City", color: "text-green-400 bg-green-500/10" });
+              if (isSameCategory) matchBadges.push({ icon: "🎯", label: "Same Category", color: "text-blue-400 bg-blue-500/10" });
+              if (isSameSubcategory) matchBadges.push({ icon: "🤝", label: "Same Subcategory", color: "text-purple-400 bg-purple-500/10" });
+
+              /* "Why this match?" reasons - enhanced with values */
               const whyReasons: string[] = [];
-              if (partner.category && partner.option) {
-                whyReasons.push(`Same category: ${partner.category} → ${partner.option}`);
+              if (isSameState && partner.state) {
+                whyReasons.push(`✓ Same State (${partner.state})`);
               }
-              if (partner.compatReasons.length > 0) {
-                partner.compatReasons.forEach(r => whyReasons.push(r));
-              } else if (partner.matchLabel) {
-                whyReasons.push(`📍 ${partner.matchLabel}`);
+              if (isSameCity && partner.city) {
+                whyReasons.push(`✓ Same City (${partner.city})`);
+              }
+              if (isSameCategory && partner.category) {
+                whyReasons.push(`✓ Same Category (${partner.category})`);
+              }
+              if (isSameSubcategory && partner.option) {
+                whyReasons.push(`✓ Same Subcategory (${partner.option})`);
+              }
+              // Fallback: add compatibility reasons if no specific match reasons
+              if (whyReasons.length === 0) {
+                if (partner.compatReasons.length > 0) {
+                  partner.compatReasons.forEach(r => whyReasons.push(r));
+                } else if (partner.matchLabel) {
+                  whyReasons.push(`📍 ${partner.matchLabel}`);
+                }
               }
 
               /* Partner Since */

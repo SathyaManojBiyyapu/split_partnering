@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import {
   RecaptchaVerifier,
@@ -26,9 +26,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [otpSent, setOtpSent] = useState(false);
 
-  /* ------------------------------------------
-     SETUP RECAPTCHA
-  ------------------------------------------ */
+  /* Setup reCAPTCHA */
   const setupRecaptcha = (): Promise<any> => {
     return new Promise<any>((resolve, reject) => {
       try {
@@ -39,8 +37,6 @@ export default function LoginPage() {
           window.recaptchaVerifier = null;
         }
 
-        // Use 'normal' (visible checkbox) — the verifier is ready immediately after construction.
-        // The Promise resolves right away; Firebase will auto-trigger reCAPTCHA when signInWithPhoneNumber is called.
         window.recaptchaVerifier = new RecaptchaVerifier(
           auth,
           "recaptcha-container",
@@ -57,7 +53,6 @@ export default function LoginPage() {
           }
         );
 
-        // Resolve immediately — the RecaptchaVerifier is constructed and ready
         resolve(window.recaptchaVerifier);
       } catch (err) {
         reject(err);
@@ -65,9 +60,7 @@ export default function LoginPage() {
     });
   };
 
-  /* ------------------------------------------
-     LOGIN WITH OTP
-  ------------------------------------------ */
+  /* Login with OTP */
   const handleLoginWithOTP = async () => {
     if (!phone || phone.length !== 10) {
       toast.error("Enter valid 10-digit mobile number");
@@ -79,7 +72,6 @@ export default function LoginPage() {
 
       if (!otpSent) {
         const verifier = await setupRecaptcha();
-        // Verifier is already rendered when using "normal" size via callback
         const confirmation = await signInWithPhoneNumber(
           auth,
           "+91" + phone,
@@ -105,14 +97,13 @@ export default function LoginPage() {
 
       toast.success("Login successful 🎉");
 
-      /* POST-LOGIN REDIRECTION */
+      /* Post-login redirection */
       const cleanPhone = phone.trim();
       const userRef = doc(db, "users", cleanPhone);
       const userSnap = await getDoc(userRef);
       const profileCompleted = userSnap.exists() && (userSnap.data() as any)?.profileCompleted === true;
       window.location.href = profileCompleted ? "/" : "/profile";
     } catch (err: any) {
-      // If reCAPTCHA fails, reset it so user can try again
       if (window.recaptchaVerifier) {
         try {
           window.recaptchaVerifier.reset();
@@ -121,7 +112,6 @@ export default function LoginPage() {
       const code = err?.code || "";
       const message = err?.message || err?.toString() || "Unknown error";
 
-      // Provide clear user-facing messages
       if (code === "auth/internal-error" || code === "auth/network-request-failed") {
         toast.error("Phone login unavailable. Please use Google login instead.");
       } else if (code === "auth/invalid-phone-number") {
@@ -136,9 +126,7 @@ export default function LoginPage() {
     }
   };
 
-  /* ------------------------------------------
-     LOGIN WITH GOOGLE
-  ------------------------------------------ */
+  /* Login with Google */
   const handleGoogleLogin = async () => {
     try {
       setLoading(true);
@@ -158,21 +146,16 @@ export default function LoginPage() {
 
       localStorage.removeItem("guest");
 
-      alert("Google login successful!");
-      toast.success("Google login successful 🎉"); // ✅ ADDED
+      toast.success("Google login successful 🎉");
 
-      /* POST-LOGIN REDIRECTION */
+      /* Post-login redirection */
       const gUserRef = doc(db, "users", auth.currentUser?.uid || user.uid);
       const gUserSnap = await getDoc(gUserRef);
       const gProfileCompleted = gUserSnap.exists() && (gUserSnap.data() as any)?.profileCompleted === true;
       window.location.href = gProfileCompleted ? "/" : "/profile";
     } catch (err) {
       console.error("Firebase Auth Error:", err);
-      console.error("Code:", (err as any)?.code);
-      console.error("Message:", (err as any)?.message);
-      console.error("Full JSON:", JSON.stringify(err, Object.getOwnPropertyNames(err)));
-      alert(`${(err as any)?.code} : ${(err as any)?.message}`);
-      toast.error("Google login failed ❌"); // ✅ ADDED
+      toast.error("Google login failed ❌");
     } finally {
       setLoading(false);
     }
@@ -180,75 +163,69 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen pt-28 flex flex-col items-center text-white">
-      <h1 className="text-3xl font-bold text-gold-primary mb-8">
+      <h1 className="text-3xl font-bold text-[#D4AF37] mb-8">
         Login / Signup
       </h1>
 
-      {/* PHONE INPUT */}
-      <input
-        type="tel"
-        placeholder="Enter Mobile Number"
-        value={phone}
-        onChange={(e) => setPhone(e.target.value)}
-        className="neon-input w-64"
-        disabled={otpSent}
-      />
-
-      {/* OTP INPUT */}
-      {otpSent && (
+      <div className="max-w-sm w-full space-y-4 px-4">
+        {/* PHONE INPUT */}
         <input
-          type="number"
-          placeholder="Enter OTP"
-          value={otp}
-          onChange={(e) => setOtp(e.target.value)}
-          className="neon-input w-64 mt-4"
+          type="tel"
+          placeholder="Enter Mobile Number"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          className="input w-full"
+          disabled={otpSent}
         />
-      )}
 
-      {/* OTP BUTTON */}
-      <button
-        onClick={handleLoginWithOTP}
-        disabled={loading}
-        className="
-          mt-6 px-8 py-3 rounded-xl font-bold
-          bg-black
-          text-[#E6C972]
-          border border-[#E6C972]
-          shadow-[0_0_18px_rgba(230,201,114,0.75)]
-          hover:bg-[#F3DC8A]
-          hover:text-black
-          hover:shadow-[0_0_36px_rgba(230,201,114,1)]
-          transition-all duration-200
-        "
-      >
-        {loading
-          ? "Please wait..."
-          : otpSent
-          ? "Verify OTP"
-          : "Login with OTP"}
-      </button>
+        {/* OTP INPUT */}
+        {otpSent && (
+          <input
+            type="number"
+            placeholder="Enter OTP"
+            value={otp}
+            onChange={(e) => setOtp(e.target.value)}
+            className="input w-full"
+          />
+        )}
 
-      {/* GOOGLE LOGIN */}
-      <button
-        onClick={handleGoogleLogin}
-        disabled={loading}
-        className="
-          mt-4 px-8 py-3 rounded-xl font-semibold
-          border border-gray-500
-          hover:bg-white/10
-          transition
-        "
-      >
-        Continue with Google
-      </button>
+        {/* OTP BUTTON */}
+        <button
+          onClick={handleLoginWithOTP}
+          disabled={loading}
+          className="btn-primary w-full text-center"
+        >
+          {loading
+            ? "Please wait..."
+            : otpSent
+            ? "Verify OTP"
+            : "Login with OTP"}
+        </button>
 
-      {/* ADMIN */}
-      <button
-        onClick={() => (window.location.href = "/admin")}
-        className="text-[10px] opacity-30 mt-8 hover:opacity-60 transition"
-      >
-        admin
-      </button>
+        {/* Divider */}
+        <div className="flex items-center gap-3 text-gray-500 text-xs">
+          <div className="flex-1 h-px bg-gray-800" />
+          <span>or</span>
+          <div className="flex-1 h-px bg-gray-800" />
+        </div>
+
+        {/* GOOGLE LOGIN */}
+        <button
+          onClick={handleGoogleLogin}
+          disabled={loading}
+          className="btn-outline w-full text-center"
+        >
+          Continue with Google
+        </button>
+
+        {/* ADMIN LINK */}
+        <button
+          onClick={() => (window.location.href = "/admin")}
+          className="text-[10px] opacity-30 mt-8 hover:opacity-60 transition block mx-auto"
+        >
+          admin
+        </button>
+      </div>
 
       <div id="recaptcha-container"></div>
     </div>

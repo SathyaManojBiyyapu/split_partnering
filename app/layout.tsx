@@ -30,6 +30,7 @@ import {
 } from "next/font/google";
 
 import { Toaster } from "react-hot-toast";
+import { cn } from "@/lib/utils";
 
 /* ---------------- FONTS ---------------- */
 
@@ -57,10 +58,7 @@ function AuthGuard({
   const router = useRouter();
   const pathname = usePathname();
 
-  const [mounted, setMounted] =
-    useState(false);
-
-  /* -------- CLIENT MOUNT -------- */
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -76,10 +74,7 @@ function AuthGuard({
   useEffect(() => {
     if (!mounted || loading) return;
 
-    const guest =
-      localStorage.getItem("guest") === "true";
-
-    /* -------- PUBLIC PAGES -------- */
+    const guest = localStorage.getItem("guest") === "true";
 
     const publicPage =
       pathname === "/" ||
@@ -93,35 +88,21 @@ function AuthGuard({
 
     if (publicPage) return;
 
-    /* -------- CHECK PROTECTED -------- */
-
     const isProtected = protectedPages.some(
       (page) => pathname.startsWith(page)
     );
 
     if (!isProtected) return;
 
-    /* -------- GUEST CHECK -------- */
-
     if (guest) {
       router.push("/login");
       return;
     }
 
-    /* -------- USER CHECK -------- */
-
     if (!user) {
       router.push("/login");
     }
-  }, [
-    mounted,
-    user,
-    loading,
-    pathname,
-    router,
-  ]);
-
-  /* -------- PREVENT HYDRATION MISMATCH -------- */
+  }, [mounted, user, loading, pathname, router]);
 
   if (!mounted) return null;
 
@@ -139,7 +120,11 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${inter.variable} ${playfair.variable}`}
+      className={cn(
+        inter.variable,
+        playfair.variable,
+        "font-sans"
+      )}
     >
       <body
         suppressHydrationWarning
@@ -162,7 +147,8 @@ export default function RootLayout({
                 name: "PartnerSync",
                 url: "https://partnering.in",
                 logo: "https://partnering.in/logo.png",
-                description: "India's trusted collaboration platform. Connect with verified partners and approved collaborators for cost-sharing and resource pooling.",
+                description:
+                  "India's trusted collaboration platform. Connect with verified partners and approved collaborators for cost-sharing and resource pooling.",
                 email: "support@partnersync.in",
                 address: {
                   "@type": "PostalAddress",
@@ -186,7 +172,8 @@ export default function RootLayout({
                 url: "https://partnering.in",
                 potentialAction: {
                   "@type": "SearchAction",
-                  target: "https://partnering.in/categories?q={search_term_string}",
+                  target:
+                    "https://partnering.in/categories?q={search_term_string}",
                   "query-input": "required name=search_term_string",
                 },
               }),
@@ -194,7 +181,7 @@ export default function RootLayout({
           />
 
           {/* MAIN CONTENT */}
-          <main className="pt-0 bg-black min-h-screen">
+          <main className="bg-black min-h-screen">
             <AuthGuard>{children}</AuthGuard>
           </main>
 
@@ -220,10 +207,8 @@ export default function RootLayout({
               style: {
                 background: "#000",
                 color: "#FFD166",
-                border:
-                  "1px solid #FFD166",
-                boxShadow:
-                  "none",
+                border: "1px solid #FFD166",
+                boxShadow: "none",
               },
             }}
           />

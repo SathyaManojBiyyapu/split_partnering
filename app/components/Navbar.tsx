@@ -4,9 +4,6 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { motion } from "framer-motion";
-import { db } from "@/firebase/config";
-import { collection, query, where, onSnapshot, doc, getDoc } from "firebase/firestore";
 
 const links = [
   { href: "/", label: "Home" },

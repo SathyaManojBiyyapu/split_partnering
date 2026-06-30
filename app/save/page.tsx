@@ -33,6 +33,7 @@ import {
 import { partneringInfo } from "@/app/data/partneringInfo";
 import { getExpiryDate } from "@/app/data/matchExpiry";
 import { categoryData, slugToCategoryName } from "@/app/data/subcategories";
+import toast from "react-hot-toast";
 
 /* -----------------------------------------
    GROUP SIZE
@@ -368,7 +369,7 @@ async function createOrJoinGroup(
           "undefined"
         ) {
 
-          alert(
+          toast.success(
             "🎉 Your group is now ready!"
           );
         }
@@ -906,7 +907,7 @@ function SaveContent() {
       !phone
     ) {
 
-      alert(
+      toast.error(
         "Please login to continue."
       );
 
@@ -1113,9 +1114,7 @@ function SaveContent() {
 
       if (!phone) {
 
-        alert(
-          "Phone missing"
-        );
+        toast.error("Please login first");
 
         return;
       }
@@ -1124,9 +1123,7 @@ function SaveContent() {
         !auth.currentUser
       ) {
 
-        alert(
-          "User not logged in"
-        );
+        toast.error("User not logged in");
 
         return;
       }
@@ -1206,10 +1203,8 @@ function SaveContent() {
           }
         );
 
-        alert(
-          `Partner saved!\n\nStatus: ${result.status}\nMembers: ${result.membersCount}/${getRequiredSize(
-            option
-          )}`
+        toast.success(
+          `Partner saved! Status: ${result.status}`
         );
 
         router.push(
@@ -1225,7 +1220,7 @@ function SaveContent() {
           error
         );
 
-        alert(
+        toast.error(
           error?.message ||
             error?.code ||
             "Saving failed."

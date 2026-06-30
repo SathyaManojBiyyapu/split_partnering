@@ -1,0 +1,160 @@
+---
+description: Split Partnering UI design system rules, component patterns, and design tokens
+globs: 
+---
+# UI Design System Rules
+
+## Core Principles (Stripe-Level)
+
+### Immutable Boundaries
+- **Never change business logic** — do not modify backend/firebase logic, auth flows, or data processing
+- **Never change Firebase collections** — no schema changes, no new collections, no field renames
+- **Never change authentication** — preserve all sign-in/sign-up flows, auth guards, and session logic
+- **Only improve UI** — all changes must be purely presentational (styles, layout, animations, accessibility, micro-interactions)
+- **Maintain existing functionality** — every button, link, form, and interaction must work exactly as before, just look/feel better
+
+### Tech Stack (Must Use)
+| Technology | Purpose |
+|------------|---------|
+| **Framer Motion** | Animations, page transitions, micro-interactions, layout animations |
+| **shadcn/ui** | Dialog, Sheet, Toast, Tooltip, Dropdown, Popover, etc. (dark theme) |
+| **Tailwind CSS** | All styling — utility-first, no custom CSS unless absolutely needed |
+| **Mobile First** | Every component starts at 375px viewport, then scales up |
+| **Accessibility (a11y)** | WCAG 2.1 AA minimum — focus rings, aria, keyboard nav, contrast |
+
+## Design Philosophy
+This project uses a **dark-luxury** aesthetic with gold accents. Every UI decision should reinforce: **premium, trustworthy, sophisticated, and warm** — think Stripe's polish with a warmer, gold-toned palette.
+
+## Brand Colors
+
+| Token | Hex | Usage |
+|-------|-----|-------|
+| `--gold-primary` | `#D4AF37` | Primary actions, active states, key highlights |
+| `--gold-soft` | `#E6C97A` | Hover states, secondary gold elements |
+| `--bg-main` | `#000000` | Page background |
+| `--bg-section` | `#000000` | Section backgrounds |
+| `--bg-card` | `#0A0A0A` | Card backgrounds |
+| `--text-heading` | `#FFFFFF` | All headings (h1-h5) |
+| `--text-body` | `#E5E5E5` | Body text, paragraphs |
+| `--text-muted` | `#9A9A9A` | Secondary text, placeholders, timestamps |
+
+## Typography
+
+### Font Families
+- **Headings (h1-h5)**: `"Playfair Display", Georgia, serif` — weight 600, letter-spacing -0.02em
+- **Body**: `"Inter", system-ui, sans-serif`
+
+### Heading Hierarchy
+- Headings use `var(--text-heading)` (white)
+- Body text uses `var(--text-body)` (light gray)
+- Muted/small text uses `var(--text-muted)` (mid gray)
+
+### Tailwind Aliases
+- `font-heading` → Playfair Display (serif)
+- `font-body` → Inter / system-ui (sans-serif)
+
+## Background Pattern
+The body has a subtle radial gradient:
+```css
+background: #000000;
+background-image: 
+  radial-gradient(ellipse at 20% 50%, rgba(212, 175, 55, 0.02) 0%, transparent 50%),
+  radial-gradient(ellipse at 80% 50%, rgba(212, 175, 55, 0.02) 0%, transparent 50%);
+background-attachment: fixed;
+```
+
+## Component Classes
+
+### Cards
+| Class | When to Use |
+|-------|-------------|
+| `card-premium` | Elevated content cards (hover lifts, gold border on hover) |
+| `card-glass-premium` | Cards over dynamic backgrounds (blur, hover lift) |
+| `card-glass` | Simple glass overlay panels |
+| `card-transparent` | Category/list cards (subtle hover) |
+
+### Buttons
+| Class | When to Use |
+|-------|-------------|
+| `btn-primary` | Primary CTA — gold gradient on black background |
+| `btn-outline` | Secondary actions — white border, gold border on hover |
+| `btn-ghost` | Tertiary/icon buttons — muted text, gold on hover |
+
+### Glassmorphism
+| Class | When to Use |
+|-------|-------------|
+| `glass` | Light glass overlay (blur-12, border-white/08) |
+| `glass-strong` | Strong glass (blur-16, border-white/10) |
+
+### Navigation (Mobile-specific)
+- Use `sticky-bottom-cta` for fixed bottom action bars on mobile
+- Add `pb-mobile-cta` as padding-bottom on pages with sticky CTAs
+- Use `floating-cta` for a fixed circular CTA button (bottom 80px, right 20px)
+- Always set `padding-bottom: 80px` on mobile pages that use sticky bottom elements
+
+### Badges
+| Class | When to Use |
+|-------|-------------|
+| `badge-verified` | Verified/badge indicators — green pill style |
+
+### Filter Tabs
+| Class | When to Use |
+|-------|-------------|
+| `filter-tab` | Filter/pill buttons — gold gradient when `.active` |
+
+### Progress Bars
+| Class | When to Use |
+|-------|-------------|
+| `progress-active` | In-progress state (blue gradient) |
+| `progress-expiring` | Expiring soon (amber gradient) |
+| `progress-complete` | Completed (green gradient) |
+
+### Inputs
+| Class | When to Use |
+|-------|-------------|
+| `input` | Text inputs — transparent bg, gold border on focus |
+
+### Touch Feedback
+- Add `touch-feedback` class on interactive elements for a subtle press effect (scale 0.97)
+
+## Layout Guidelines
+
+1. **Page Structure**: Standard pages use a centered layout with `max-w-7xl mx-auto px-4 sm:px-6 lg:px-8`
+2. **Sections**: Content sections use `py-8` to `py-16` depending on importance
+3. **Responsive**: Mobile-first approach. Mobile breakpoint at 640px.
+4. **Spacing**: Use consistent spacing — gap-4/gap-6 for grids, p-4/p-6 for cards
+5. **Borders**: All borders use `rgba(255, 255, 255, 0.08)` neutral, or gold tinted for interactive states
+
+## Firestore UI Patterns
+
+### Active/Expired Match States
+When displaying time-sensitive data from Firestore:
+- **Active**: Show green progress bar (`progress-active`) or gold indicator
+- **Expiring Soon** (< 2h): Show amber warning (`progress-expiring`)
+- **Expired**: Show completed state (`progress-complete`) or strikethrough text
+
+### Loading States
+- Use skeleton shimmer animation for card/row loading
+- Center spinner within the container
+- For Firestore data, always show a loading state while fetching, then a fallback message if none found
+
+## Animation Principles
+- Default transition: `all 0.3s cubic-bezier(0.4, 0, 0.2, 1)`
+- Touch feedback: `transform 0.15s cubic-bezier(0.4, 0, 0.2, 1)`
+- Hover lift: `translateY(-2px)` on cards
+- Avoid heavy animations on page load — prefer subtle micro-interactions
+- Only apply scale transforms on hover-capable devices (`@media (hover: hover)`)
+
+## Accessibility & UX
+- All interactive elements need `cursor: pointer`
+- Use `aria-current="page"` for active navigation items
+- Provide `alt` text on all images
+- Maintain minimum contrast ratios: white (#FFFFFF) on dark backgrounds passes AAA
+- Gold (#D4AF37) should not be used as the only color indicator — pair with text/icons
+- `btn-primary` (gold on black) provides sufficient contrast for CTAs
+
+## Scrollbar
+Custom thin scrollbar:
+- Track: `#0A0A0A`
+- Thumb: `#2A2A2A` (hover: `#3A3A3A`)
+- Width: 6px

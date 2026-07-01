@@ -28,6 +28,11 @@ import {
   getExpiryStatus,
   computeCompatibility,
   generateUserId,
+  formatDate,
+  getExpiryDateString,
+  getDaysRemaining,
+  getDaysSinceExpired,
+  isGroupExpired,
 } from "@/app/data/matchExpiry";
 
 type Group = {
@@ -599,6 +604,25 @@ export default function DashboardPage() {
                     )}
                   </div>
                   <div className={`px-3 py-1.5 rounded-full text-xs font-bold ${statusInfo.color}`}>{statusInfo.label}</div>
+                </div>
+
+                {/* Date & Expiry Info */}
+                <div className="mt-3 flex items-center justify-between text-[10px] text-gray-500">
+                  <div className="flex gap-3">
+                    {group.createdAt?.seconds && (
+                      <>
+                        <span>Created: {formatDate(group.createdAt)}</span>
+                        <span>Expires: {getExpiryDateString(group.createdAt)}</span>
+                      </>
+                    )}
+                  </div>
+                  <div>
+                    {isExpired(group.createdAt) ? (
+                      <span className="text-red-400 font-medium">⚠ Expired {getDaysSinceExpired(group.createdAt)}d ago</span>
+                    ) : group.createdAt?.seconds ? (
+                      <span className="text-gray-400">{getDaysRemaining(group.createdAt)}d remaining</span>
+                    ) : null}
+                  </div>
                 </div>
 
                 {!group.isPaid && (

@@ -108,6 +108,13 @@ const maskPhone = (
 };
 
 /* -----------------------------------------
+   NORMALIZE CITY
+------------------------------------------ */
+
+const normalize = (value: string | null | undefined): string =>
+  value?.trim().toLowerCase() || "";
+
+/* -----------------------------------------
    CREATE OR JOIN GROUP
 ------------------------------------------ */
 
@@ -562,9 +569,9 @@ function CollaboratorBrandSelector({
 
   // Get location label
   const getLocationBadge = (brand: any): { label: string; color: string } => {
-    if (brand.city && brand.city === userCity) return { label: "Same City", color: "🟢" };
-    if (brand.district && brand.district === userDistrict) return { label: "Same District", color: "🟡" };
-    if (brand.state && brand.state === userState) return { label: "Same State", color: "🔵" };
+    if (brand.city && normalize(brand.city) === normalize(userCity)) return { label: "Same City", color: "🟢" };
+    if (brand.district && normalize(brand.district) === normalize(userDistrict)) return { label: "Same District", color: "🟡" };
+    if (brand.state && normalize(brand.state) === normalize(userState)) return { label: "Same State", color: "🔵" };
     return { label: "", color: "" };
   };
 
@@ -618,9 +625,9 @@ function CollaboratorBrandSelector({
         // Sort by location priority: same city > same district > same state > others
         items.sort((a, b) => {
           const getPriority = (item: any) => {
-            if (item.city && item.city === userCity) return 0;
-            if (item.district && item.district === userDistrict) return 1;
-            if (item.state && item.state === userState) return 2;
+            if (item.city && normalize(item.city) === normalize(userCity)) return 0;
+            if (item.district && normalize(item.district) === normalize(userDistrict)) return 1;
+            if (item.state && normalize(item.state) === normalize(userState)) return 2;
             return 3;
           };
           const aP = getPriority(a);
@@ -656,9 +663,23 @@ function CollaboratorBrandSelector({
     return "Recommended Near You";
   };
 
-  // Separate featured and regular brands
-  const featuredBrands = brands.filter(b => b.status === "featured");
-  const regularBrands = brands.filter(b => b.status !== "featured");
+  // Filter brands by city
+  const currentCityBrands = brands.filter(
+    (b) => normalize(b.city) === normalize(userCity)
+  );
+  const otherCityBrands = brands.filter(
+    (b) => normalize(b.city) !== normalize(userCity)
+  );
+  // Brands with no city go to "Other Cities"
+  const noCityBrands = brands.filter(
+    (b) => !b.city || normalize(b.city) === ""
+  );
+
+  // Separate featured and regular brands within each group
+  const featuredCurrentCity = currentCityBrands.filter(b => b.status === "featured");
+  const regularCurrentCity = currentCityBrands.filter(b => b.status !== "featured");
+  const featuredOtherCity = otherCityBrands.filter(b => b.status === "featured");
+  const regularOtherCity = otherCityBrands.filter(b => b.status !== "featured");
 
   const renderBrandCard = (brand: any, isFeatured: boolean) => {
     const isSelected = selectedBrand === brand.id;
@@ -741,13 +762,68 @@ function CollaboratorBrandSelector({
     );
   };
 
+  const renderBrandSection = (brandList: any[], title: string, showTitle: boolean) => {
+    const featured = brandList.filter(b => b.status === "featured");
+    const regular = brandList.filter(b => b.status !== "featured");
+
+    if (brandList.length === 0) return null;
+
+    return (
+      <div className="mb-4">
+        {showTitle && (
+          <h3 className="text-sm font-semibold text-[#FFD166] mb-3">
+            {title}
+          </h3>
+        )}
+        <div className="space-y-3">
+          {featured.length > 0 && (
+            <div>
+              <p className="text-[10px] text-purple-400 font-medium mb-2">⭐ Featured Partners</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {featured.map(brand => renderBrandCard(brand, true))}
+              </div>
+            </div>
+          )}
+          {regular.length > 0 && (
+            <div>
+              {featured.length > 0 && (
+                <p className="text-[10px] text-gray-500 font-medium mb-2">More Partner Brands</p>
+              )}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {regular.map(brand => renderBrandCard(brand, false))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const hasCurrentCity = currentCityBrands.length > 0;
+  const hasOtherCity = otherCityBrands.length > 0 || noCityBrands.length > 0;
+
   return (
     <div className="mb-6">
-      <h3 className="text-sm font-semibold text-[#FFD166] mb-3">
-        {getTitle()}
-      </h3>
+      {/* Current City Section */}
+      {hasCurrentCity && (
+        renderBrandSection(currentCityBrands, getTitle(), true)
+      )}
 
-      {brands.length === 0 ? (
+      {/* Other Cities Section */}
+      {hasOtherCity && (
+        <div>
+          <h3 className="text-sm font-semibold text-[#FFD166] mb-3">
+            Recommended in Other Cities
+          </h3>
+          <div className="space-y-3">
+            {otherCityBrands.length > 0 && renderBrandSection(otherCityBrands, "", false)}
+            {noCityBrands.length > 0 && renderBrandSection(noCityBrands, "", false)}
+          </div>
+        </div>
+      )}
+
+      {/* Empty State */}
+      {!hasCurrentCity && !hasOtherCity && (
         <div className="border border-dashed border-gray-700 rounded-xl p-4 text-center">
           <p className="text-gray-500 text-xs">
             No verified partner brands available yet.
@@ -755,30 +831,6 @@ function CollaboratorBrandSelector({
           <p className="text-gray-600 text-[10px] mt-1">
             You can still proceed with matching without selecting a brand.
           </p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {/* Featured Section */}
-          {featuredBrands.length > 0 && (
-            <div>
-              <p className="text-[10px] text-purple-400 font-medium mb-2">⭐ Featured Partners</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {featuredBrands.map(brand => renderBrandCard(brand, true))}
-              </div>
-            </div>
-          )}
-
-          {/* Regular Brands */}
-          {regularBrands.length > 0 && (
-            <div>
-              {featuredBrands.length > 0 && (
-                <p className="text-[10px] text-gray-500 font-medium mb-2">More Partner Brands</p>
-              )}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {regularBrands.map(brand => renderBrandCard(brand, false))}
-              </div>
-            </div>
-          )}
         </div>
       )}
     </div>
@@ -859,6 +911,9 @@ function SaveContent() {
   ] = useState<string | null>(
     null
   );
+
+  /* Active subcategories state */
+  const [activeSubcategories, setActiveSubcategories] = useState<string[]>([]);
 
   /* Collaborator state */
   const [selectedCollaboratorId, setSelectedCollaboratorId] = useState<string | null>(null);
@@ -973,6 +1028,43 @@ function SaveContent() {
     fetchUser();
 
   }, [phone]);
+
+  /* -------- FETCH ACTIVE SUBCATEGORIES -------- */
+
+  useEffect(() => {
+    if (!phone || !category) return;
+
+    const fetchActiveSubcategories = async () => {
+      try {
+        const q = query(
+          collection(db, "groups"),
+          where("category", "==", category)
+        );
+        const snap = await getDocs(q);
+        const activeOptions: string[] = [];
+
+        snap.forEach((docSnap) => {
+          const data = docSnap.data() as any;
+          const members = Array.isArray(data.members) ? data.members : [];
+          const isMember = members.some((m: any) => {
+            if (typeof m === "string") return m.trim() === phone;
+            return m?.phone?.trim() === phone;
+          });
+          if (isMember && data.option) {
+            if (!activeOptions.includes(data.option)) {
+              activeOptions.push(data.option);
+            }
+          }
+        });
+
+        setActiveSubcategories(activeOptions);
+      } catch (err) {
+        console.error("Error fetching active subcategories:", err);
+      }
+    };
+
+    fetchActiveSubcategories();
+  }, [phone, category]);
 
   /* -------- CHECK EXISTING -------- */
 
@@ -1333,14 +1425,26 @@ function SaveContent() {
           </div>
         )}
 
-        {duplicateCategory && !existingGroup && (
+        {duplicateCategory && !existingGroup && activeSubcategories.length > 0 && (
           <div className="mb-4 border border-yellow-500/30 bg-yellow-500/10 rounded-xl p-4">
-            <p className="text-yellow-400 font-bold text-sm">
-              ⚠️ Already Active in {category.replace("-", " ")}
+            <p className="text-yellow-400 font-bold text-sm flex items-center gap-2">
+              ✅ Already Active in {category.replace("-", " ")}
             </p>
             <p className="text-gray-300 text-xs mt-1">
-              You already have an active request in this category.
-              Joining again will update your existing request.
+              You already have active requests in:
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {activeSubcategories.map((sub) => (
+                <span
+                  key={sub}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium bg-[#D4AF37]/10 border border-[#D4AF37]/30 text-[#FFD166]"
+                >
+                  • {sub}
+                </span>
+              ))}
+            </div>
+            <p className="text-gray-500 text-[10px] mt-2">
+              Joining one of these again will update the existing request instead of creating a new one.
             </p>
           </div>
         )}

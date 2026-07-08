@@ -34,7 +34,8 @@ import {
 import { partneringInfo } from "@/app/data/partneringInfo";
 import { getExpiryDate } from "@/app/data/matchExpiry";
 import { categoryData, slugToCategoryName } from "@/app/data/subcategories";
-import { searchGyms, getAvailableCities, getGymsByCity, GymData } from "@/app/data/gyms";
+import { getAvailableCities, GymData, getGymsByCity as getSeedGymsByCity } from "@/app/data/gyms";
+import { getBusinessesForCity, subscribeToBusinesses, MarketplaceBusiness } from "@/app/lib/marketplace";
 import GymCard from "@/app/components/gym/GymCard";
 import AddGymPlusCard from "@/app/components/gym/AddGymPlusCard";
 import AddGymModal from "@/app/components/gym/AddGymModal";
@@ -681,6 +682,83 @@ function SaveContent() {
   /* -------- COMPUTED VALUES -------- */
   const availableCities = getAvailableCities();
   const effectiveCity = selectedCity || userCityFromProfile || "";
+
+  /* -------- MARKETPLACE GYMS (dynamic from Firestore) -------- */
+  const [marketplaceGyms, setMarketplaceGyms] = useState<any[]>([]);
+  const [marketplaceLoading, setMarketplaceLoading] = useState(false);
+  const [userState, setUserState] = useState("");
+  const [userDistrict, setUserDistrict] = useState("");
+
+  // Fetch user location for marketplace queries
+  useEffect(() => {
+    if (!phone) return;
+    const fetchLocation = async () => {
+      try {
+        const snap = await getDoc(doc(db, "users", phone));
+        if (snap.exists()) {
+          const d = snap.data();
+          setUserState(d.state || "");
+          setUserDistrict(d.district || "");
+        }
+      } catch (e) { console.error(e); }
+    };
+    fetchLocation();
+  }, [phone]);
+
+  // Subscribe to marketplace gyms for the selected city
+  useEffect(() => {
+    if (!effectiveCity || !userState || !userDistrict) return;
+    setMarketplaceLoading(true);
+    
+    const unsub = subscribeToBusinesses(
+      "gym",
+      userState,
+      userDistrict,
+      effectiveCity,
+      (businesses) => {
+        // Convert marketplace businesses to gym format
+        const gyms = businesses.map((b: any) => ({
+          id: b.id,
+          name: b.businessName,
+          city: b.city,
+          verified: b.verified,
+          image: b.defaultImage || b.image || "/gym.webp",
+          waitingUsers: b.waitingUsers || 0,
+        }));
+        setMarketplaceGyms(gyms);
+        setMarketplaceLoading(false);
+      }
+    );
+    
+    return () => {
+      if (typeof unsub === "function") unsub();
+    };
+  }, [effectiveCity, userState, userDistrict]);
+
+  // Merge seed gyms with marketplace gyms (seed acts as fallback)
+  const getGymsByCity = (city: string) => {
+    const seed = getSeedGymsByCity(city);
+    const market = marketplaceGyms.filter(g => 
+      g.city?.toLowerCase() === city.toLowerCase()
+    );
+    // Merge: marketplace gyms take precedence, add seed gyms if not already in marketplace
+    const marketNames = new Set(market.map(g => g.name.toLowerCase()));
+    const merged = [...market];
+    seed.forEach(sg => {
+      if (!marketNames.has(sg.name.toLowerCase())) {
+        merged.push(sg as any);
+      }
+    });
+    return merged;
+  };
+
+  const searchGyms = (query: string, city: string) => {
+    const all = getGymsByCity(city);
+    const q = query.toLowerCase().trim();
+    if (!q) return all;
+    return all.filter(g => g.name.toLowerCase().includes(q));
+  };
+
   const filteredGyms = effectiveCity
     ? searchQuery ? searchGyms(searchQuery, effectiveCity) : getGymsByCity(effectiveCity)
     : [];

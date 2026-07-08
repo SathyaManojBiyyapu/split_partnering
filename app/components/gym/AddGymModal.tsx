@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { db } from "@/firebase/config";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { submitUserCollaboration } from "@/app/lib/userCollaborations";
+import { useUserLocation } from "@/app/lib/useUserLocation";
 import toast from "react-hot-toast";
 
 interface AddGymModalProps {
@@ -14,6 +14,7 @@ interface AddGymModalProps {
 }
 
 export default function AddGymModal({ open, onClose, city, userPhone }: AddGymModalProps) {
+  const location = useUserLocation();
   const [gymName, setGymName] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -26,14 +27,21 @@ export default function AddGymModal({ open, onClose, city, userPhone }: AddGymMo
     }
     setSubmitting(true);
     try {
-      await addDoc(collection(db, "gymSubmissions"), {
-        name,
-        city,
-        submittedBy: userPhone || "anonymous",
-        status: "pending",
-        createdAt: serverTimestamp(),
+      await submitUserCollaboration({
+        businessName: name,
+        category: "Gym",
+        categorySlug: "gym",
+        subCategory: "Gym Membership Split",
+        state: location.state || "",
+        district: location.district || "",
+        city: city || location.city || "",
+        createdBy: userPhone || location.phone || "anonymous",
+        createdByName: location.userName || "Anonymous",
+        createdByEmail: location.userEmail || "",
+        createdByPhone: userPhone || location.phone || "anonymous",
       });
-      toast.success(`"${name}" submitted for review!`);
+      
+      toast.success(`✅ Submitted Successfully!\nYour request has been sent to PartnerSync Admin. After approval it will automatically become available to users from your city.`);
       setGymName("");
       onClose();
     } catch (err) {

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { submitBusiness } from "@/app/lib/marketplace";
+import { submitUserCollaboration } from "@/app/lib/userCollaborations";
 import { useUserLocation } from "@/app/lib/useUserLocation";
 import { getCategoryName } from "@/app/data/categoryConfig";
 import toast from "react-hot-toast";
@@ -56,29 +56,23 @@ export default function AddBusinessModal({
 
     setSubmitting(true);
     try {
-      await submitBusiness({
+      await submitUserCollaboration({
         businessName: name,
-        categorySlug,
         category: categoryName,
-        subcategory: subcategory || "",
+        categorySlug,
+        subCategory: subcategory || "",
         state: location.state,
         district: location.district,
         city: location.city,
-        userId: location.phone,
-        userName: location.userName || "Anonymous",
-        userEmail: location.userEmail || "",
-        userPhone: location.phone,
-        type,
-        offerName: offerName.trim() || undefined,
-        phone: phone.trim() || undefined,
-        email: email.trim() || undefined,
-        website: website.trim() || undefined,
-        description: description.trim() || undefined,
+        createdBy: location.phone,
+        createdByName: location.userName || "Anonymous",
+        createdByEmail: location.userEmail || "",
+        createdByPhone: location.phone,
       });
 
       toast.success(
         type === "business"
-          ? `"${name}" submitted for review!`
+          ? `✅ Submitted Successfully!\nYour request has been sent to PartnerSync Admin. After approval it will automatically become available to users from your city.`
           : `"${name}" submitted as collaborator!`
       );
       setBusinessName("");

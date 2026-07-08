@@ -34,6 +34,8 @@ import {
   Timestamp,
 } from "firebase/firestore";
 
+import UserCollaborationsPanel from "@/app/components/admin/UserCollaborationsPanel";
+
 /* ---------------------------------------
    HELPERS
 ---------------------------------------- */
@@ -94,7 +96,7 @@ export default function AdminPage() {
 
   // View states
   const [viewingUser, setViewingUser] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<"matches" | "groups" | "analytics" | "users" | "fraud" | "collaborators" | "gyms" | "pending">("matches");
+  const [activeTab, setActiveTab] = useState<"matches" | "groups" | "analytics" | "users" | "fraud" | "collaborators" | "gyms" | "pending" | "user-collaborations">("matches");
   const [collaborators, setCollaborators] = useState<any[]>([]);
   const [collaboratorSearch, setCollaboratorSearch] = useState("");
   const [collaboratorFilterStatus, setCollaboratorFilterStatus] = useState("all");
@@ -416,7 +418,7 @@ export default function AdminPage() {
         </div>
         {/* Tab nav */}
         <div className="max-w-7xl mx-auto flex gap-2 mt-2 overflow-x-auto text-xs pb-1">
-          {(["matches", "groups", "analytics", "users", "fraud", "collaborators", "gyms", "pending"] as const).map(tab => (
+          {(["matches", "groups", "analytics", "users", "fraud", "collaborators", "gyms", "pending", "user-collaborations"] as const).map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -424,7 +426,7 @@ export default function AdminPage() {
                 activeTab === tab ? "bg-[#D4AF37] text-black font-bold" : "text-gray-400 hover:text-white"
               }`}
             >
-              {tab === "matches" ? "🔄 Matches" : tab === "groups" ? "📦 Groups" : tab === "analytics" ? "📊 Analytics" : tab === "users" ? "👥 Users" : tab === "fraud" ? "🚩 Fraud" : tab === "collaborators" ? "🤝 Collaborators" : tab === "gyms" ? "🏋 Gyms" : "⏳ Pending"}
+              {tab === "matches" ? "🔄 Matches" : tab === "groups" ? "📦 Groups" : tab === "analytics" ? "📊 Analytics" : tab === "users" ? "👥 Users" : tab === "fraud" ? "🚩 Fraud" : tab === "collaborators" ? "🤝 Collaborators" : tab === "gyms" ? "🏋 Gyms" : tab === "pending" ? "⏳ Pending" : "👤 User Collabs"}
             </button>
           ))}
         </div>
@@ -1422,6 +1424,21 @@ export default function AdminPage() {
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {/* ==========================================
+            TAB: USER COLLABORATIONS
+        ========================================== */}
+        {activeTab === "user-collaborations" && (
+          <div>
+            <div className="mb-4">
+              <h2 className="text-lg font-heading text-[#FFD166] mb-1">👤 User Collaborations</h2>
+              <p className="text-xs text-gray-400">
+                User-generated business requests pending admin approval. Approve to create marketplace entries.
+              </p>
+            </div>
+            <UserCollaborationsPanel />
           </div>
         )}
 

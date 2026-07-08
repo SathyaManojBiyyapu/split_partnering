@@ -94,10 +94,12 @@ export default function AdminPage() {
 
   // View states
   const [viewingUser, setViewingUser] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<"matches" | "groups" | "analytics" | "users" | "fraud" | "collaborators">("matches");
+  const [activeTab, setActiveTab] = useState<"matches" | "groups" | "analytics" | "users" | "fraud" | "collaborators" | "gyms" | "pending">("matches");
   const [collaborators, setCollaborators] = useState<any[]>([]);
   const [collaboratorSearch, setCollaboratorSearch] = useState("");
   const [collaboratorFilterStatus, setCollaboratorFilterStatus] = useState("all");
+  const [gymSubmissions, setGymSubmissions] = useState<any[]>([]);
+  const [pendingBusinesses, setPendingBusinesses] = useState<any[]>([]);
 
   /* ---------------------------------------
      ADMIN AUTH
@@ -186,6 +188,26 @@ export default function AdminPage() {
       }
     );
 
+    // Gym Submissions
+    const unsubGymSubmissions = onSnapshot(
+      query(collection(db, "gymSubmissions"), orderBy("createdAt", "desc")),
+      (snapshot) => {
+        const subs: any[] = [];
+        snapshot.forEach((d) => subs.push({ id: d.id, ...d.data() }));
+        setGymSubmissions(subs);
+      }
+    );
+
+    // Pending Businesses (from marketplace)
+    const unsubPending = onSnapshot(
+      query(collection(db, "pendingBusinesses"), orderBy("submittedAt", "desc")),
+      (snapshot) => {
+        const pends: any[] = [];
+        snapshot.forEach((d) => pends.push({ id: d.id, ...d.data() }));
+        setPendingBusinesses(pends);
+      }
+    );
+
     setTimeout(() => setRefreshing(false), 2000);
 
     return () => {
@@ -194,6 +216,8 @@ export default function AdminPage() {
       unsubPayments();
       unsubUsers();
       unsubCollaborators();
+      unsubGymSubmissions();
+      unsubPending();
     };
   }, [authorized]);
 
@@ -392,7 +416,7 @@ export default function AdminPage() {
         </div>
         {/* Tab nav */}
         <div className="max-w-7xl mx-auto flex gap-2 mt-2 overflow-x-auto text-xs pb-1">
-          {(["matches", "groups", "analytics", "users", "fraud", "collaborators"] as const).map(tab => (
+          {(["matches", "groups", "analytics", "users", "fraud", "collaborators", "gyms", "pending"] as const).map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -400,7 +424,7 @@ export default function AdminPage() {
                 activeTab === tab ? "bg-[#D4AF37] text-black font-bold" : "text-gray-400 hover:text-white"
               }`}
             >
-              {tab === "matches" ? "🔄 Matches" : tab === "groups" ? "📦 Groups" : tab === "analytics" ? "📊 Analytics" : tab === "users" ? "👥 Users" : tab === "fraud" ? "🚩 Fraud" : "🤝 Collaborators"}
+              {tab === "matches" ? "🔄 Matches" : tab === "groups" ? "📦 Groups" : tab === "analytics" ? "📊 Analytics" : tab === "users" ? "👥 Users" : tab === "fraud" ? "🚩 Fraud" : tab === "collaborators" ? "🤝 Collaborators" : tab === "gyms" ? "🏋 Gyms" : "⏳ Pending"}
             </button>
           ))}
         </div>
@@ -1174,6 +1198,228 @@ export default function AdminPage() {
                       </div>
                     </div>
                   ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ==========================================
+            TAB: GYMS (Submissions)
+        ========================================== */}
+        {activeTab === "gyms" && (
+          <div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-4">
+              <div className="bg-blue-600/10 border border-blue-500/30 rounded-xl p-3 text-center">
+                <p className="text-lg font-bold text-blue-400">{gymSubmissions.length}</p>
+                <p className="text-[9px] text-gray-400">Total Submissions</p>
+              </div>
+              <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-3 text-center">
+                <p className="text-lg font-bold text-yellow-400">{gymSubmissions.filter(s => s.status === "pending").length}</p>
+                <p className="text-[9px] text-gray-400">Pending</p>
+              </div>
+              <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-3 text-center">
+                <p className="text-lg font-bold text-green-400">{gymSubmissions.filter(s => s.status === "approved").length}</p>
+                <p className="text-[9px] text-gray-400">Approved</p>
+              </div>
+            </div>
+
+            {gymSubmissions.length === 0 ? (
+              <div className="text-center text-gray-400 py-8 bg-[#0c0c0c] border border-[#FFD166]/20 rounded-xl">
+                <p>No gym submissions yet</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {gymSubmissions.map((sub) => (
+                  <div key={sub.id} className="p-4 bg-[#0c0c0c] border border-[#FFD166]/20 rounded-xl">
+                    <div className="flex justify-between items-start flex-wrap gap-2">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-base font-bold text-white">{sub.name}</h3>
+                          <span className={`px-2 py-0.5 text-[9px] font-bold rounded-full ${
+                            sub.status === "approved" ? "bg-green-600" : sub.status === "rejected" ? "bg-red-600" : "bg-yellow-500 text-black"
+                          }`}>{sub.status || "pending"}</span>
+                        </div>
+                        {sub.city && (
+                          <div className="flex items-center gap-1 mt-1">
+                            <span className="text-[10px] text-gray-400">📍 {sub.city}</span>
+                          </div>
+                        )}
+                      </div>
+                      <div className="text-[10px] text-gray-500">
+                        {formatDateTime(sub.createdAt)}
+                      </div>
+                    </div>
+
+                    <div className="mt-2 grid grid-cols-2 gap-2 text-[10px]">
+                      <div className="bg-black/40 rounded p-2">
+                        <p className="text-gray-500">Submitted By</p>
+                        <p className="text-white">{sub.submittedBy || "Anonymous"}</p>
+                      </div>
+                      <div className="bg-black/40 rounded p-2">
+                        <p className="text-gray-500">City</p>
+                        <p className="text-white">{sub.city || "N/A"}</p>
+                      </div>
+                    </div>
+
+                    {/* Admin actions */}
+                    <div className="flex gap-1.5 mt-3 flex-wrap">
+                      {sub.status !== "approved" && (
+                        <button
+                          onClick={async () => {
+                            await updateDoc(doc(db, "gymSubmissions", sub.id), {
+                              status: "approved",
+                              approvedAt: new Date(),
+                              updatedAt: new Date(),
+                            });
+                            alert(`"${sub.name}" approved!`);
+                          }}
+                          className="px-2 py-1 bg-green-600 rounded text-[10px]"
+                        >
+                          Approve
+                        </button>
+                      )}
+                      {sub.status !== "rejected" && (
+                        <button
+                          onClick={async () => {
+                            await updateDoc(doc(db, "gymSubmissions", sub.id), {
+                              status: "rejected",
+                              updatedAt: new Date(),
+                            });
+                          }}
+                          className="px-2 py-1 bg-red-600 rounded text-[10px]"
+                        >
+                          Reject
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ==========================================
+            TAB: PENDING BUSINESSES (Marketplace)
+        ========================================== */}
+        {activeTab === "pending" && (
+          <div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+              <div className="bg-blue-600/10 border border-blue-500/30 rounded-xl p-3 text-center">
+                <p className="text-lg font-bold text-blue-400">{pendingBusinesses.length}</p>
+                <p className="text-[9px] text-gray-400">Total Pending</p>
+              </div>
+              <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-3 text-center">
+                <p className="text-lg font-bold text-yellow-400">{pendingBusinesses.filter((b: any) => b.status === "pending").length}</p>
+                <p className="text-[9px] text-gray-400">Pending</p>
+              </div>
+              <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-3 text-center">
+                <p className="text-lg font-bold text-green-400">{pendingBusinesses.filter((b: any) => b.status === "approved").length}</p>
+                <p className="text-[9px] text-gray-400">Approved</p>
+              </div>
+              <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 text-center">
+                <p className="text-lg font-bold text-red-400">{pendingBusinesses.filter((b: any) => b.status === "rejected").length}</p>
+                <p className="text-[9px] text-gray-400">Rejected</p>
+              </div>
+            </div>
+
+            {pendingBusinesses.length === 0 ? (
+              <div className="text-center text-gray-400 py-8 bg-[#0c0c0c] border border-[#FFD166]/20 rounded-xl">
+                <p>No pending business submissions</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {pendingBusinesses.map((biz: any) => (
+                  <div key={biz.id} className="p-4 bg-[#0c0c0c] border border-[#FFD166]/20 rounded-xl">
+                    <div className="flex justify-between items-start flex-wrap gap-2">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-base font-bold text-white">{biz.businessName || "Unknown"}</h3>
+                          <span className={`px-2 py-0.5 text-[9px] font-bold rounded-full ${
+                            biz.status === "approved" ? "bg-green-600" :
+                            biz.status === "rejected" ? "bg-red-600" :
+                            "bg-yellow-500 text-black"
+                          }`}>{biz.status || "pending"}</span>
+                        </div>
+                        <p className="text-xs text-gray-400 mt-1">
+                          {biz.category} {biz.type === "collaborator" ? "🤝 Collaborator" : "🏪 Business"}
+                        </p>
+                      </div>
+                      <div className="text-[10px] text-gray-500">
+                        {formatDateTime(biz.submittedAt)}
+                      </div>
+                    </div>
+
+                    <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px]">
+                      <div className="bg-black/40 rounded p-2">
+                        <p className="text-gray-500">📍 Location</p>
+                        <p className="text-white">{biz.city || "N/A"}</p>
+                        <p className="text-gray-400">{biz.district}, {biz.state}</p>
+                      </div>
+                      <div className="bg-black/40 rounded p-2">
+                        <p className="text-gray-500">Submitted By</p>
+                        <p className="text-white font-mono text-[9px]">{biz.userName || "Anonymous"}</p>
+                        <p className="text-gray-400 text-[9px]">{biz.userPhone || ""}</p>
+                      </div>
+                      <div className="bg-black/40 rounded p-2">
+                        <p className="text-gray-500">Subcategory</p>
+                        <p className="text-white">{biz.subcategory || "N/A"}</p>
+                        {biz.offerName && <p className="text-gray-400">Offer: {biz.offerName}</p>}
+                      </div>
+                      <div className="bg-black/40 rounded p-2">
+                        <p className="text-gray-500">Type</p>
+                        <p className="text-white capitalize">{biz.type || "business"}</p>
+                        {biz.userEmail && <p className="text-gray-400 truncate">{biz.userEmail}</p>}
+                      </div>
+                    </div>
+
+                    {/* Admin actions */}
+                    <div className="flex gap-1.5 mt-3 flex-wrap">
+                      {biz.status !== "approved" && (
+                        <button
+                          onClick={async () => {
+                            if (!confirm(`Approve "${biz.businessName}"? This will create it in ${biz.city}.`)) return;
+                            try {
+                              // Create the business in the marketplace collection
+                              const { approveBusiness } = await import("@/app/lib/marketplace");
+                              await approveBusiness(biz.id);
+                              alert(`"${biz.businessName}" approved and created in ${biz.city}!`);
+                            } catch (err: any) {
+                              console.error(err);
+                              alert("Failed to approve: " + (err.message || ""));
+                            }
+                          }}
+                          className="px-2 py-1 bg-green-600 rounded text-[10px]"
+                        >
+                          Approve
+                        </button>
+                      )}
+                      {biz.status !== "rejected" && (
+                        <button
+                          onClick={async () => {
+                            if (!confirm(`Reject "${biz.businessName}"?`)) return;
+                            try {
+                              const { rejectBusiness } = await import("@/app/lib/marketplace");
+                              await rejectBusiness(biz.id);
+                            } catch (err: any) {
+                              console.error(err);
+                              alert("Failed to reject: " + (err.message || ""));
+                            }
+                          }}
+                          className="px-2 py-1 bg-red-600 rounded text-[10px]"
+                        >
+                          Reject
+                        </button>
+                      )}
+                      <button
+                        onClick={() => { navigator.clipboard.writeText(JSON.stringify({ name: biz.businessName, city: biz.city, category: biz.category, submittedBy: biz.userName, phone: biz.userPhone }, null, 2)); }}
+                        className="px-2 py-1 bg-blue-600/50 rounded text-[10px]"
+                      >
+                        Copy Details
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>

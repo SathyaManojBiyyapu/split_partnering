@@ -1,448 +1,373 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { db } from "@/firebase/config";
-import { collection, addDoc, serverTimestamp, query, where, getDocs } from "firebase/firestore";
-import { motion, AnimatePresence } from "framer-motion";
+import Image from "next/image";
 import Link from "next/link";
-import { masterCategories, slugToCategoryName } from "@/app/data/subcategories";
+import { motion, AnimatePresence } from "framer-motion";
+import { useUserLocation } from "@/app/lib/useUserLocation";
+import { categoryConfigs, getCategoryName } from "@/app/data/categoryConfig";
+import AddBusinessModal from "@/app/components/marketplace/AddBusinessModal";
 
-// India states data (same as profile page)
-const indiaStates = [
-  "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh",
-  "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jharkhand",
-  "Karnataka", "Kerala", "Madhya Pradesh", "Maharashtra", "Manipur",
-  "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Punjab",
-  "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana", "Tripura",
-  "Uttar Pradesh", "Uttarakhand", "West Bengal",
-  "Andaman and Nicobar Islands", "Chandigarh", "Dadra and Nagar Haveli and Daman and Diu",
-  "Delhi", "Jammu and Kashmir", "Ladakh", "Lakshadweep", "Puducherry"
-];
+// Flow states
+type FlowStep = "categories" | "subcategories";
 
-// Districts data from cities.js (simplified for form)
-const districtsByState: Record<string, string[]> = {
-  "Andhra Pradesh": ["Anantapur", "Chittoor", "East Godavari", "Guntur", "Krishna", "Kurnool", "Nellore", "Prakasam", "Srikakulam", "Visakhapatnam", "Vizianagaram", "West Godavari", "YSR Kadapa"],
-  "Telangana": ["Hyderabad", "Warangal", "Nizamabad", "Karimnagar", "Khammam", "Mahbubnagar", "Medak", "Nalgonda", "Adilabad", "Ranga Reddy", "Vikarabad", "Sangareddy", "Kamareddy", "Jagtial", "Peddapalli", "Mahabubabad", "Suryapet", "Mancherial", "Nirmal", "Jangaon", "Bhadradri Kothagudem", "Mulugu", "Medchal-Malkajgiri", "Rajanna Sircilla", "Siddipet", "Wanaparthy", "Nagarkurnool", "Yadadri Bhuvanagiri", "Komaram Bheem Asifabad", "Jogulamba Gadwal", "Narayanpet"],
-  "Maharashtra": ["Mumbai City", "Mumbai Suburban", "Pune", "Nagpur", "Thane", "Nashik", "Aurangabad", "Solapur", "Kolhapur", "Satara", "Jalgaon", "Amravati", "Latur", "Nanded", "Hingoli", "Parbhani", "Buldhana", "Akola", "Washim", "Yavatmal", "Wardha", "Dhule", "Nandurbar", "Raigad", "Ratnagiri", "Sindhudurg", "Sangli", "Osmanabad", "Beed", "Ahmednagar", "Palghar", "Jalna", "Gondia", "Gadchiroli", "Bhandara", "Chandrapur"],
-  "Karnataka": ["Bengaluru Urban", "Bengaluru Rural", "Belagavi", "Mysuru", "Hubli-Dharwad", "Mangaluru", "Kalaburagi", "Udupi", "Shivamogga", "Tumakuru", "Ballari", "Vijayapura", "Dakshina Kannada", "Chikkamagaluru", "Hassan", "Davanagere", "Kolar", "Chitradurga", "Raichur", "Bidar", "Koppal", "Gadag", "Bagalkot", "Haveri", "Chikkaballapur", "Ramanagara", "Kodagu", "Karwar", "Chamarajanagar", "Mandya", "Uttara Kannada", "Yadgir"],
-  "Tamil Nadu": ["Chennai", "Coimbatore", "Madurai", "Tiruchirappalli", "Salem", "Vellore", "Erode", "Tirunelveli", "Thoothukudi", "Kanyakumari", "Dindigul", "Cuddalore", "Thanjavur", "Nagapattinam", "Tiruvannamalai", "Villupuram", "Kanchipuram", "Ramanathapuram", "Virudhunagar", "Karur", "Perambalur", "Theni", "Tirupur", "Nilgiris", "Dharmapuri", "Krishnagiri", "Ariyalur", "Chengalpattu", "Ranipet", "Tirupattur", "Kallakurichi", "Tenkasi", "Mayiladuthurai", "Tiruvallur", "Namakkal", "Sivaganga", "Pudukkottai"],
-  "Kerala": ["Thiruvananthapuram", "Kochi", "Kozhikode", "Kollam", "Alappuzha", "Thrissur", "Palakkad", "Kannur", "Kottayam", "Malappuram", "Pathanamthitta", "Wayanad", "Idukki", "Kasaragod", "Ernakulam"],
-  "Delhi": ["Central Delhi", "East Delhi", "New Delhi", "North Delhi", "North East Delhi", "North West Delhi", "Shahdara", "South Delhi", "South East Delhi", "South West Delhi", "West Delhi"],
-  "Gujarat": ["Ahmedabad", "Surat", "Vadodara", "Rajkot", "Bhavnagar", "Jamnagar", "Junagadh", "Gandhinagar", "Kutch", "Anand", "Mehsana", "Patan", "Banaskantha", "Bharuch", "Navsari", "Valsad", "Surendranagar", "Amreli", "Kheda", "Morbi", "Mahisagar", "Aravalli", "Panchmahal", "Dahod", "Chhota Udaipur", "Devbhumi Dwarka", "Narmada", "Gir Somnath", "Tapi", "Porbandar", "Botad"],
-  "Uttar Pradesh": ["Lucknow", "Kanpur", "Agra", "Varanasi", "Prayagraj", "Ghaziabad", "Noida", "Meerut", "Bareilly", "Aligarh", "Moradabad", "Jhansi", "Gorakhpur", "Mathura", "Lakhimpur Kheri", "Saharanpur", "Faizabad/Ayodhya", "Azamgarh", "Mau", "Ballia", "Basti", "Siddharthnagar", "Maharajganj", "Deoria", "Kushinagar", "Gonda", "Bahraich", "Barabanki", "Raebareli", "Sultanpur", "Mirzapur", "Banda", "Hamirpur", "Mahoba", "Jalaun", "Etawah", "Mainpuri", "Firozabad", "Hathras", "Ambedkar Nagar", "Sambhal", "Rampur", "Amroha", "Bijnor", "Muzaffarnagar", "Gautam Buddha Nagar", "Bulandshahr", "Hapur", "Shahjahanpur", "Pilibhit", "Hardoi", "Sitapur", "Unnao", "Fatehpur", "Pratapgarh", "Kaushambi", "Chitrakoot", "Auraiya", "Kannauj", "Farrukhabad", "Etah", "Kasganj", "Budaun", "Shravasti", "Ayodhya"],
-  "Rajasthan": ["Jaipur", "Jodhpur", "Udaipur", "Kota", "Bikaner", "Ajmer", "Alwar", "Bhilwara", "Sikar", "Jhunjhunu", "Churu", "Sri Ganganagar", "Hanumangarh", "Bharatpur", "Dholpur", "Pali", "Sirohi", "Jalore", "Barmer", "Nagaur", "Tonk", "Banswara", "Pratapgarh", "Dungarpur", "Rajsamand", "Chittorgarh", "Baran", "Jhalawar", "Bundi", "Sawai Madhopur", "Karauli", "Dausa", "Jaisalmer", "Anupgarh", "Balotra", "Beawar", "Didwana-Kuchaman", "Kekri", "Neem Ka Thana", "Phulera", "Sanchore"],
-  "West Bengal": ["Kolkata", "Howrah", "North 24 Parganas", "South 24 Parganas", "Hooghly", "Bardhaman", "Paschim Bardhaman", "Purba Bardhaman", "Bankura", "Birbhum", "Jalpaiguri", "Darjeeling", "Kalimpong", "Midnapore", "Paschim Medinipur", "Purba Medinipur", "Murshidabad", "Nadia", "Malda", "Cooch Behar", "Dakshin Dinajpur", "Uttar Dinajpur", "Purulia", "Alipurduar", "Jhargram"],
-  "Bihar": ["Patna", "Gaya", "Muzaffarpur", "Bhagalpur", "Darbhanga", "Purnia", "Munger", "Nalanda", "West Champaran", "East Champaran", "Gopalganj", "Saran", "Siwan", "Vaishali", "Bhojpur", "Buxar", "Rohtas", "Aurangabad", "Samastipur", "Begusarai", "Saharsa", "Madhepura", "Supaul", "Araria", "Kishanganj", "Madhubani", "Sitamarhi", "Khagaria", "Katihar", "Banka", "Lakhisarai", "Sheikhpura", "Nawada", "Jamui", "Jehanabad", "Arwal", "Kaimur", "Sheohar"],
-  "Madhya Pradesh": ["Bhopal", "Indore", "Jabalpur", "Gwalior", "Ujjain", "Sagar", "Rewa", "Satna", "Ratlam", "Mandsaur", "Shahdol", "Hoshangabad", "Chhindwara", "Morena", "Bhind", "Vidisha", "Dewas", "Dhar", "Khandwa", "Khargone", "Neemuch", "Guna", "Shivpuri", "Tikamgarh", "Chhatarpur", "Panna", "Damoh", "Seoni", "Mandla", "Balaghat", "Narsinghpur", "Raisen", "Sehore", "Rajgarh", "Shajapur", "Barwani", "Jhabua", "Alirajpur", "Burhanpur", "Dindori", "Umaria", "Katni", "Ashoknagar", "Anuppur", "Singrauli", "Sidhi", "Sheopur", "Betul", "Harda", "Agar Malwa"],
-  "Punjab": ["Ludhiana", "Amritsar", "Jalandhar", "Patiala", "Chandigarh", "Mohali", "Bathinda", "Hoshiarpur", "Gurdaspur", "Firozpur", "Faridkot", "Sri Muktsar Sahib", "Sangrur", "Barnala", "Kapurthala", "Shaheed Bhagat Singh Nagar", "Rupnagar", "Fatehgarh Sahib", "Moga", "Tarn Taran", "Pathankot", "Fazilka", "Malerkotla", "Mansa", "SAS Nagar"],
-  "Haryana": ["Faridabad", "Gurugram", "Panchkula", "Ambala", "Karnal", "Sonipat", "Rohtak", "Hisar", "Panipat", "Yamunanagar", "Jind", "Kaithal", "Rewari", "Mahendragarh", "Bhiwani", "Jhajjar", "Fatehabad", "Sirsa", "Kurukshetra", "Palwal", "Nuh", "Charkhi Dadri"],
-  "Odisha": ["Khordha", "Cuttack", "Puri", "Bhubaneswar", "Balasore", "Sambalpur", "Berhampur", "Rourkela", "Jharsuguda", "Bargarh", "Balangir", "Jajpur", "Dhenkanal", "Bhadrak", "Kendrapara", "Mayurbhanj", "Keonjhar", "Kalahandi", "Kandhamal", "Koraput", "Malkangiri", "Nabarangpur", "Nayagarh", "Ganjam", "Gajapati", "Rayagada", "Nuapada", "Sonepur", "Boudh", "Deogarh", "Angul", "Jagatsinghpur", "Subarnapur"],
-  "Assam": ["Guwahati Metro", "Kamrup", "Kamrup Metropolitan", "Nagaon", "Dibrugarh", "Tinsukia", "Jorhat", "Sivasagar", "Cachar", "Barpeta", "Dhubri", "Goalpara", "Bongaigaon", "Kokrajhar", "Lakhimpur", "Dhemaji", "Sonitpur", "Hailakandi", "Karimganj", "Golaghat", "Darrang", "Udalguri", "Chirang", "Baksa", "Majuli", "Hojai", "Charaideo", "Biswanath", "South Salmara", "West Karbi Anglong", "Karbi Anglong", "Morigaon", "Nalbari"],
-  "Jharkhand": ["Ranchi", "Jamshedpur", "Dhanbad", "Bokaro", "Hazaribagh", "Deoghar", "Dumka", "Giridih", "East Singhbhum", "West Singhbhum", "Palamu", "Latehar", "Garhwa", "Godda", "Sahibganj", "Koderma", "Simdega", "Khunti", "Pakur", "Jamtara", "Ramgarh", "Saraikela Kharsawan", "Lohardaga"],
-  "Himachal Pradesh": ["Shimla", "Kangra", "Manali-Kullu", "Mandi", "Solan", "Hamirpur", "Una", "Bilaspur", "Chamba", "Sirmaur", "Kinnaur", "Lahaul and Spiti"],
-  "Chhattisgarh": ["Raipur", "Bilaspur", "Durg", "Raigarh", "Korba", "Jashpur", "Surguja", "Bastar", "Janjgir-Champa", "Kanker", "Mahasamund", "Dhamtari", "Balod", "Baloda Bazar", "Sukma", "Bijapur", "Narayanpur", "Gariaband", "Kondagaon", "Bemetara", "Mungeli", "Kabirdham", "Balrampur", "Surajpur", "Koriya", "Dantewada"],
-  "Uttarakhand": ["Dehradun", "Haridwar", "Nainital", "Haldwani", "Roorkee", "Udham Singh Nagar", "Pauri Garhwal", "Tehri Garhwal", "Chamoli", "Pithoragarh", "Almora", "Bageshwar", "Champawat", "Rudraprayag", "Uttarkashi"],
-  "Jammu and Kashmir": ["Srinagar", "Jammu", "Baramulla", "Anantnag", "Budgam", "Bandipora", "Ganderbal", "Kulgam", "Pulwama", "Rajouri", "Poonch", "Kupwara", "Doda", "Udhampur", "Reasi", "Ramban", "Kishtwar", "Samba", "Kathua"],
-  "Goa": ["North Goa", "South Goa"]
+interface SubcategoryOption {
+  name: string;
+  slug: string;
+  icon: string;
+  description: string;
+}
+
+// Default subcategory icons and descriptions
+const subcategoryDefaults: Record<string, SubcategoryOption[]> = {
+  gym: [
+    { name: "Gym Membership Split", slug: "membership", icon: "🏋️", description: "Offer shared gym membership plans" },
+    { name: "Supplements Group Buy", slug: "supplements", icon: "💊", description: "Sell supplements to groups" },
+    { name: "Personal Trainer Split", slug: "trainer", icon: "🎯", description: "Offer group training packages" },
+    { name: "Day Pass Sharing", slug: "pass", icon: "🎟️", description: "Offer day pass deals" },
+    { name: "Fitness Equipment Group Buy", slug: "equipment", icon: "🏃", description: "Bulk equipment sales" },
+  ],
+  fashion: [
+    { name: "Group Shopping", slug: "group-shopping", icon: "👕", description: "Offer group discounts on fashion" },
+    { name: "Sneakers", slug: "sneakers", icon: "👟", description: "Bulk sneaker deals" },
+  ],
+  movies: [
+    { name: "Save Ticket", slug: "save-ticket", icon: "🎫", description: "Offer ticket transfer deals" },
+    { name: "Bulk Ticket", slug: "bulk-ticket", icon: "🎟️", description: "Group booking discounts" },
+  ],
+  "local-travel": [
+    { name: "Trip Cost Sharing", slug: "trip-cost", icon: "✈️", description: "Group travel packages" },
+    { name: "Carpool", slug: "cab", icon: "🚗", description: "Carpool services" },
+    { name: "Hotel Sharing", slug: "hotel", icon: "🏨", description: "Shared hotel deals" },
+    { name: "Travel Groups", slug: "travel-group", icon: "👥", description: "Group tour packages" },
+    { name: "Travel Partner", slug: "travel-partner", icon: "🌍", description: "Travel buddy matching" },
+    { name: "Backpacking Groups", slug: "backpacking", icon: "🎒", description: "Backpacking group deals" },
+  ],
+  books: [
+    { name: "Book Exchange", slug: "book-exchange", icon: "📚", description: "Book exchange services" },
+    { name: "Second-Hand Books", slug: "second-hand", icon: "📖", description: "Pre-owned book sales" },
+    { name: "Competitive Exam Books", slug: "competitive", icon: "🎯", description: "Exam book groups" },
+    { name: "Engineering Books", slug: "engineering", icon: "🎓", description: "Engineering book sharing" },
+    { name: "Academic Books", slug: "academic", icon: "📘", description: "Academic resource sharing" },
+    { name: "Novel Community", slug: "novel", icon: "📕", description: "Novel reading communities" },
+    { name: "Group Book Purchases", slug: "group-purchase", icon: "📦", description: "Bulk book orders" },
+  ],
+  events: [
+    { name: "Event Passes", slug: "passes", icon: "🎤", description: "Group event pass deals" },
+  ],
+  coupons: [
+    { name: "Discount Coupons", slug: "discounts", icon: "🎟️", description: "Coupon sharing services" },
+  ],
+  villas: [
+    { name: "Weekend Stay", slug: "weekend", icon: "🏡", description: "Group villa stays" },
+  ],
+  lenskart: [
+    { name: "Eyeglasses Split", slug: "eyeglasses", icon: "👓", description: "Eyewear group deals" },
+  ],
 };
 
-// Cities by district (partial - major cities for form)
-const citiesByDistrict: Record<string, Record<string, string[]>> = {
-  "Andhra Pradesh": {
-    "Guntur": ["Guntur", "Tenali", "Narasaraopet", "Mangalagiri", "Repalle", "Sattenapalle", "Vinukonda"],
-    "Krishna": ["Vijayawada", "Machilipatnam", "Gudivada", "Nuzvid", "Jaggayyapeta"],
-    "Visakhapatnam": ["Visakhapatnam", "Vizianagaram", "Anakapalle", "Bheemunipatnam", "Narsipatnam"],
-  },
-  "Telangana": {
-    "Hyderabad": ["Hyderabad", "Secunderabad", "Gachibowli", "Madhapur", "Kukatpally", "Jubilee Hills", "Banjara Hills"],
-    "Warangal": ["Warangal", "Hanamkonda", "Kazipet"],
-    "Ranga Reddy": ["Rajendranagar", "Shamshabad", "Ibrahimpatnam"],
-  },
-  "Maharashtra": {
-    "Mumbai City": ["Mumbai", "Colaba", "Dadar", "Fort"],
-    "Mumbai Suburban": ["Andheri", "Bandra", "Borivali", "Kurla", "Ghatkopar"],
-    "Pune": ["Pune", "Pimpri-Chinchwad", "Shivajinagar", "Kothrud", "Hadapsar"],
-    "Nagpur": ["Nagpur", "Ramtek", "Umred"],
-    "Thane": ["Thane", "Kalyan", "Dombivli", "Bhiwandi", "Ulhasnagar", "Ambernath"],
-  },
-  "Karnataka": {
-    "Bengaluru Urban": ["Bengaluru", "Yelahanka", "Whitefield", "Electronic City"],
-    "Belagavi": ["Belagavi", "Nippani", "Chikkodi", "Gokak"],
-    "Mysuru": ["Mysuru", "Srirangapatna", "Krishnarajanagara"],
-    "Hubli-Dharwad": ["Hubli", "Dharwad", "Annigeri"],
-  },
-  "Tamil Nadu": {
-    "Chennai": ["Chennai", "Tambaram", "Avadi", "Pallavaram", "Chromepet"],
-    "Coimbatore": ["Coimbatore", "Tirupur", "Pollachi", "Mettupalayam"],
-    "Madurai": ["Madurai", "Kariapatti", "Thirumangalam"],
-  },
-  "Delhi": {
-    "Central Delhi": ["Chandni Chowk", "Daryaganj", "Karol Bagh", "Paharganj"],
-    "South Delhi": ["Hauz Khas", "Saket", "Greater Kailash", "Lajpat Nagar"],
-    "New Delhi": ["Connaught Place", "India Gate", "Chanakyapuri"],
-    "West Delhi": ["Rajouri Garden", "Vikas Puri", "Punjabi Bagh", "Uttam Nagar"],
-  },
-  "Gujarat": {
-    "Ahmedabad": ["Ahmedabad", "Sanand", "Dholka"],
-    "Surat": ["Surat", "Bardoli", "Mahuva"],
-    "Vadodara": ["Vadodara", "Padra", "Dabhoi"],
-  },
-  "Rajasthan": {
-    "Jaipur": ["Jaipur", "Chomu", "Bassi", "Jamwa Ramgarh"],
-    "Jodhpur": ["Jodhpur", "Bilara", "Phalodi"],
-    "Udaipur": ["Udaipur", "Rajsamand", "Fatehnagar"],
-  },
-};
+// All category cards (same as Explore page)
+const categories = Object.entries(categoryConfigs).map(([slug, config]) => ({
+  slug,
+  name: config.name,
+  icon: config.icon,
+  subtitle: config.subtitle,
+  defaultImage: config.defaultImage,
+  subcategoryCount: config.subcategories.length,
+}));
 
 export default function CollaboratorsPage() {
-  const [formData, setFormData] = useState({
-    category: "",
-    subcategory: "",
-    state: "",
-    district: "",
-    city: "",
-    option: "",
-    businessName: "",
-    phone: "",
-    email: "",
-    website: "",
-    description: "",
-  });
-  const [submitting, setSubmitting] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
-  const [error, setError] = useState("");
+  const location = useUserLocation();
+  const [flowStep, setFlowStep] = useState<FlowStep>("categories");
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [selectedSubcategory, setSelectedSubcategory] = useState<string | null>(null);
+  const [showAddModal, setShowAddModal] = useState(false);
 
-  // Build category list from master source of truth
-  const categoryKeys = Object.keys(masterCategories);
-  const categoryOptions = categoryKeys.map(key => ({
-    key,
-    name: masterCategories[key].name,
-    icon: masterCategories[key].icon,
-    subcategories: masterCategories[key].subcategories
-  }));
+  const selectedConfig = selectedCategory ? categoryConfigs[selectedCategory] : null;
 
-  const currentSubcategories = selectedCategory ? masterCategories[selectedCategory]?.subcategories || [] : [];
-  const currentDistricts = formData.state ? districtsByState[formData.state] || [] : [];
-  const currentCities = (formData.state && formData.district && citiesByDistrict[formData.state]) 
-    ? (citiesByDistrict[formData.state][formData.district] || [])
-    : [];
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => {
-      const updated = { ...prev, [name]: value };
-      // Reset dependent fields
-      if (name === "state") { updated.district = ""; updated.city = ""; }
-      if (name === "district") { updated.city = ""; }
-      if (name === "category") { updated.subcategory = ""; }
-      return updated;
-    });
+  const handleCategorySelect = (slug: string) => {
+    setSelectedCategory(slug);
+    setFlowStep("subcategories");
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
+  const handleSubcategorySelect = (subName: string) => {
+    setSelectedSubcategory(subName);
+    setShowAddModal(true);
+  };
 
-    if (!formData.category || !formData.subcategory || !formData.state || !formData.district || !formData.city || !formData.option || !formData.phone) {
-      setError("Please fill all required fields marked with *");
-      return;
+  const handleBack = () => {
+    if (flowStep === "subcategories") {
+      setFlowStep("categories");
+      setSelectedCategory(null);
+      setSelectedSubcategory(null);
     }
+  };
 
-    // Get canonical category name from slug
-    const canonicalCategoryName = masterCategories[formData.category]?.name || formData.category;
-
-    // Duplicate protection: check for existing entry with same phone + business + category + subcategory
-    setSubmitting(true);
-    try {
-      const dupQuery = query(
-        collection(db, "collaborators"),
-        where("phone", "==", formData.phone),
-        where("category", "==", canonicalCategoryName),
-        where("subcategory", "==", formData.subcategory),
-        where("option", "==", formData.option)
-      );
-      const dupSnap = await getDocs(dupQuery);
-      if (!dupSnap.empty) {
-        setError("A collaborator with this phone, business, category, and subcategory already exists. Duplicate entries are not allowed.");
-        setSubmitting(false);
-        return;
-      }
-      await addDoc(collection(db, "collaborators"), {
-        category: canonicalCategoryName,
-        subcategory: formData.subcategory,
-        option: formData.option,
-        businessName: formData.businessName || formData.option,
-        state: formData.state,
-        district: formData.district,
-        city: formData.city,
-        phone: formData.phone,
-        email: formData.email || "",
-        website: formData.website || "",
-        description: formData.description || "",
-        status: "pending",
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
-      setSubmitted(true);
-    } catch (err: any) {
-      console.error("Submission error:", err);
-      const errorCode = err?.code || "";
-      const errorMsg = err?.message || "";
-      
-      if (errorCode === "permission-denied" || errorMsg.includes("permission_denied")) {
-        setError("Firebase security rules are blocking the write. Please deploy the updated firestore.rules to Firebase Console first (see Settings → Rules).");
-      } else if (errorCode === "unavailable" || errorMsg.includes("unavailable")) {
-        setError("Network error. Please check your internet connection and try again.");
-      } else {
-        setError(`Failed to submit: ${errorMsg.substring(0, 100)}`);
-      }
-    }
-    setSubmitting(false);
+  const handleModalClose = () => {
+    setShowAddModal(false);
+    setSelectedSubcategory(null);
   };
 
   return (
     <main className="min-h-screen bg-black text-white pb-mobile-cta">
-      
-      {/* Hero */}
+      {/* ===== HERO SECTION (same as Explore categories page styling) ===== */}
       <section className="relative pt-28 pb-12 px-4 overflow-hidden">
-        <div className="hero-grid-bg" />
         <div className="relative z-10 max-w-4xl mx-auto text-center">
-          <motion.h1
-            initial={{ opacity: 0, y: 20 }}
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="font-heading text-3xl sm:text-4xl md:text-5xl text-[#FFD166] mb-4"
+            transition={{ duration: 0.5 }}
           >
-            Become a PartnerSync Collaborator
-          </motion.h1>
-          <motion.p
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-            className="text-gray-400 text-sm sm:text-base max-w-2xl mx-auto mb-8"
-          >
-            Reach users already searching for partnerships in your category. Get listed automatically across PartnerSync.
-          </motion.p>
+            <h1 className="font-heading text-3xl sm:text-4xl md:text-5xl mb-3 text-[#FFD166] leading-tight">
+              Become a PartnerSync Collaborator
+            </h1>
+            <p className="text-gray-400 text-sm sm:text-base max-w-2xl mx-auto mb-4 px-2">
+              Reach users already searching for partnerships in your city. 
+              Register your business and appear automatically after admin approval.
+            </p>
+
+            {/* Location Display */}
+            {location.city && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.2 }}
+                className="inline-flex items-center gap-2 bg-black/40 border border-[#D4AF37]/20 rounded-full px-4 py-2 text-xs"
+              >
+                <span className="text-lg">📍</span>
+                <span className="text-gray-400">Your Location:</span>
+                <span className="text-[#FFD166] font-semibold">{location.city}, {location.state}</span>
+              </motion.div>
+            )}
+            {!location.loading && !location.city && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.2 }}
+                className="text-xs text-gray-500"
+              >
+                <Link href="/profile" className="text-[#D4AF37] hover:underline">
+                  Complete your profile
+                </Link>{" "}
+                to register your business in your city.
+              </motion.div>
+            )}
+          </motion.div>
         </div>
       </section>
 
-      {/* Category Cards */}
-      <section className="px-4 pb-8">
+      {/* ===== BREADCRUMB ===== */}
+      <section className="px-4 sm:px-6 mb-6">
         <div className="max-w-5xl mx-auto">
-          <h2 className="font-heading text-xl text-[#FFD166] mb-4 text-center">Select Your Category</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {categoryOptions.map(({ key, name, icon, subcategories }) => {
-              const isSelected = selectedCategory === key;
-              return (
-                <motion.button
-                  key={key}
-                  onClick={() => { setSelectedCategory(key); setFormData(prev => ({ ...prev, category: key, subcategory: "" })); }}
-                  whileHover={{ y: -2 }}
-                  className={`card-premium p-4 text-left transition-all ${
-                    isSelected ? "border-[#FFD166] ring-1 ring-[#FFD166]/50" : ""
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="text-2xl">{icon}</span>
-                    <div>
-                      <h3 className="text-white font-semibold text-sm">{name}</h3>
-                      <p className="text-[10px] text-gray-400">{subcategories.length} subcategories</p>
-                    </div>
-                    {isSelected && <span className="ml-auto text-[#FFD166] text-xs">✓</span>}
-                  </div>
-                </motion.button>
-              );
-            })}
+          <div className="flex items-center gap-2 text-xs text-gray-500">
+            <button
+              onClick={handleBack}
+              className="text-[#FFD166] hover:underline"
+            >
+              ← Back
+            </button>
+            {selectedCategory && (
+              <>
+                <span>/</span>
+                <span className="text-white">{getCategoryName(selectedCategory)}</span>
+                {selectedSubcategory && (
+                  <>
+                    <span>/</span>
+                    <span className="text-gray-300">{selectedSubcategory}</span>
+                  </>
+                )}
+              </>
+            )}
           </div>
         </div>
       </section>
 
-      {/* Registration Form */}
-      <section id="register" className="px-4 pb-20">
-        <div className="max-w-lg mx-auto">
-          {submitted ? (
-            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="card-premium p-8 text-center">
-              <div className="text-4xl mb-4">🎉</div>
-              <h2 className="text-xl font-bold text-[#FFD166] mb-2">Partnership Request Submitted!</h2>
-              <p className="text-sm text-gray-400 mb-6">
-                Our team will review your application. Once approved, <span className="text-[#FFD166]">{formData.option}</span> will appear under {masterCategories[formData.category]?.name || formData.category} → {formData.subcategory}.
-              </p>
-              <Link href="/" className="btn-primary text-sm">Back to Home</Link>
-            </motion.div>
-          ) : (
-            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="card-premium p-6 sm:p-8">
-              <h2 className="text-xl font-bold text-[#FFD166] mb-1">Business Registration</h2>
-              <p className="text-xs text-gray-400 mb-6">Fill in your business details to get listed on PartnerSync</p>
+      {/* ===== CATEGORIES GRID (same layout as Explore page) ===== */}
+      {flowStep === "categories" && (
+        <section className="px-4 sm:px-6 pb-16">
+          <div className="max-w-5xl mx-auto">
+            <motion.h2
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="font-heading text-xl sm:text-2xl text-[#FFD166] mb-1"
+            >
+              Select Your Category
+            </motion.h2>
+            <p className="text-gray-400 text-xs mb-6">Choose the category you want to collaborate in</p>
 
-              <form onSubmit={handleSubmit} className="space-y-4">
-                {/* Category */}
-                <div>
-                  <label className="text-xs text-gray-400 mb-1 block">Category *</label>
-                  <select
-                    name="category"
-                    value={formData.category}
-                    onChange={handleChange}
-                    className="w-full bg-black/50 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-white focus:border-[#FFD166] outline-none"
-                  >
-                    <option value="">Select Category</option>
-                    {categoryOptions.map(({ key, name, icon }) => (
-                      <option key={key} value={key}>{icon} {name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Subcategory */}
-                {formData.category && (
-                  <div>
-                    <label className="text-xs text-gray-400 mb-1 block">Subcategory *</label>
-                    <select
-                      name="subcategory"
-                      value={formData.subcategory}
-                      onChange={handleChange}
-                      className="w-full bg-black/50 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-white focus:border-[#FFD166] outline-none"
-                    >
-                      <option value="">Select Subcategory</option>
-                      {currentSubcategories.map(sub => (
-                        <option key={sub} value={sub}>{sub}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
-                {/* Location - State */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div>
-                    <label className="text-xs text-gray-400 mb-1 block">State *</label>
-                    <select
-                      name="state"
-                      value={formData.state}
-                      onChange={handleChange}
-                      className="w-full bg-black/50 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-white focus:border-[#FFD166] outline-none"
-                    >
-                      <option value="">State</option>
-                      {indiaStates.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-xs text-gray-400 mb-1 block">District *</label>
-                    <select
-                      name="district"
-                      value={formData.district}
-                      onChange={handleChange}
-                      disabled={!formData.state}
-                      className="w-full bg-black/50 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-white focus:border-[#FFD166] outline-none disabled:opacity-40"
-                    >
-                      <option value="">District</option>
-                      {currentDistricts.map(d => <option key={d} value={d}>{d}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-xs text-gray-400 mb-1 block">City *</label>
-                    <select
-                      name="city"
-                      value={formData.city}
-                      onChange={handleChange}
-                      disabled={!formData.district}
-                      className="w-full bg-black/50 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-white focus:border-[#FFD166] outline-none disabled:opacity-40"
-                    >
-                      <option value="">City</option>
-                      {currentCities.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                  </div>
-                </div>
-
-                {/* Brand/Option */}
-                <div>
-                  <label className="text-xs text-gray-400 mb-1 block">Brand / Offer Name *</label>
-                  <input
-                    type="text"
-                    name="option"
-                    value={formData.option}
-                    onChange={handleChange}
-                    placeholder="e.g. Nike, QuickFit, PVR Gold Seats"
-                    className="w-full bg-black/50 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-white focus:border-[#FFD166] outline-none"
-                  />
-                </div>
-
-                {/* Business Name (optional) */}
-                <div>
-                  <label className="text-xs text-gray-400 mb-1 block">Business Name <span className="text-gray-600">(optional)</span></label>
-                  <input
-                    type="text"
-                    name="businessName"
-                    value={formData.businessName}
-                    onChange={handleChange}
-                    placeholder="Your company name"
-                    className="w-full bg-black/50 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-white focus:border-[#FFD166] outline-none"
-                  />
-                </div>
-
-                {/* Phone */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs text-gray-400 mb-1 block">Phone *</label>
-                    <input
-                      type="tel"
-                      name="phone"
-                      value={formData.phone}
-                      onChange={handleChange}
-                      placeholder="Phone number"
-                      className="w-full bg-black/50 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-white focus:border-[#FFD166] outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs text-gray-400 mb-1 block">Email <span className="text-gray-600">(optional)</span></label>
-                    <input
-                      type="email"
-                      name="email"
-                      value={formData.email}
-                      onChange={handleChange}
-                      placeholder="Email address"
-                      className="w-full bg-black/50 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-white focus:border-[#FFD166] outline-none"
-                    />
-                  </div>
-                </div>
-
-                {/* Website */}
-                <div>
-                  <label className="text-xs text-gray-400 mb-1 block">Website <span className="text-gray-600">(optional)</span></label>
-                  <input
-                    type="url"
-                    name="website"
-                    value={formData.website}
-                    onChange={handleChange}
-                    placeholder="https://example.com"
-                    className="w-full bg-black/50 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-white focus:border-[#FFD166] outline-none"
-                  />
-                </div>
-
-                {/* Description */}
-                <div>
-                  <label className="text-xs text-gray-400 mb-1 block">Description <span className="text-gray-600">(optional)</span></label>
-                  <textarea
-                    name="description"
-                    value={formData.description}
-                    onChange={handleChange}
-                    placeholder="Tell us about your offer..."
-                    rows={3}
-                    className="w-full bg-black/50 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-white focus:border-[#FFD166] outline-none resize-none"
-                  />
-                </div>
-
-                {error && <p className="text-red-400 text-xs">{error}</p>}
-
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="w-full py-3 rounded-xl font-bold bg-gradient-to-r from-[#D4AF37] to-[#E6C97A] text-black text-sm hover:scale-[1.02] transition disabled:opacity-50"
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+              {categories.map((cat, i) => (
+                <motion.div
+                  key={cat.slug}
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.3, delay: i * 0.05 }}
+                  whileHover={{ y: -4 }}
                 >
-                  {submitting ? "Submitting..." : "Request Partnership"}
-                </button>
-              </form>
+                  <button
+                    onClick={() => handleCategorySelect(cat.slug)}
+                    className="card-premium block p-5 h-full w-full text-left relative overflow-hidden"
+                  >
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="w-12 h-12 rounded-xl overflow-hidden bg-gray-800 flex-shrink-0 border border-[#D4AF37]/20">
+                        <Image
+                          src={cat.defaultImage}
+                          alt={cat.name}
+                          width={48}
+                          height={48}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <h2 className="text-white font-semibold text-sm">{cat.name}</h2>
+                        <p className="text-[10px] text-gray-400">{cat.subtitle}</p>
+                      </div>
+                      <div className="bg-[#D4AF37]/10 border border-[#D4AF37]/30 rounded-lg px-2.5 py-1.5 flex-shrink-0">
+                        <p className="text-[#FFD166] text-[10px] font-bold">{cat.subcategoryCount} options</p>
+                      </div>
+                    </div>
+
+                    <p className="text-[10px] text-gray-500 mb-4">
+                      Register your {cat.name.toLowerCase()} business to collaborate with PartnerSync users.
+                    </p>
+
+                    <div className="mt-auto">
+                      <span className="inline-block w-full text-center py-2.5 rounded-lg text-xs font-bold transition-all duration-300 bg-gradient-to-r from-[#D4AF37]/20 to-[#E6C97A]/10 text-[#FFD166] border border-[#D4AF37]/30 group-hover:bg-[#D4AF37]/30">
+                        Collaborate →
+                      </span>
+                    </div>
+
+                    {/* Gold glow overlay on hover */}
+                    <div
+                      className="absolute inset-0 rounded-2xl opacity-0 hover:opacity-100 transition-opacity duration-300 pointer-events-none"
+                      style={{
+                        background:
+                          "radial-gradient(circle at 50% 100%, rgba(212, 175, 55, 0.08), transparent 70%)",
+                      }}
+                    />
+                  </button>
+                </motion.div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* ===== SUBCATEGORIES GRID (same layout as options page) ===== */}
+      {flowStep === "subcategories" && selectedConfig && (
+        <section className="px-4 sm:px-6 pb-16">
+          <div className="max-w-5xl mx-auto">
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mb-6"
+            >
+              <h2 className="font-heading text-xl sm:text-2xl text-[#FFD166] mb-1">
+                {selectedConfig.icon} {selectedConfig.name} Collaboration
+              </h2>
+              <p className="text-gray-400 text-xs">
+                Select your specific service area to collaborate in
+              </p>
             </motion.div>
-          )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+              {(subcategoryDefaults[selectedCategory!] || selectedConfig.subcategories.map((name) => ({
+                name,
+                slug: name.toLowerCase().replace(/\s+/g, "-"),
+                icon: "🤝",
+                description: `Offer ${name.toLowerCase()} collaboration`,
+              }))).map((sub, i) => (
+                <motion.div
+                  key={sub.slug}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.05 }}
+                  whileHover={{ y: -4 }}
+                >
+                  <button
+                    onClick={() => handleSubcategorySelect(sub.name)}
+                    className="card-premium p-5 h-full w-full text-left"
+                  >
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#D4AF37]/20 to-[#E6C97A]/10 border border-[#D4AF37]/20 flex items-center justify-center text-xl flex-shrink-0">
+                        {sub.icon}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="text-white font-semibold text-sm leading-tight">{sub.name}</h3>
+                        <p className="text-[10px] text-gray-400 mt-0.5 line-clamp-1">{sub.description}</p>
+                      </div>
+                    </div>
+
+                    <div className="bg-black/30 rounded-lg p-3 mb-4">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[#FFD166] text-xs font-bold">🤝</span>
+                        <span className="text-gray-400 text-[10px]">Partner with users looking for {sub.name}</span>
+                      </div>
+                    </div>
+
+                    <div className="mt-auto">
+                      <span className="inline-block w-full text-center py-2.5 rounded-lg text-xs font-bold transition-all duration-300 bg-gradient-to-r from-[#D4AF37]/20 to-[#E6C97A]/10 text-[#FFD166] border border-[#D4AF37]/30 hover:bg-[#D4AF37]/30">
+                        Collaborate →
+                      </span>
+                    </div>
+                  </button>
+                </motion.div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* ===== COLLABORATOR REGISTRATION MODAL ===== */}
+      {selectedCategory && (
+        <AddBusinessModal
+          open={showAddModal}
+          onClose={handleModalClose}
+          categorySlug={selectedCategory}
+          subcategory={selectedSubcategory || undefined}
+          type="collaborator"
+        />
+      )}
+
+      {/* ===== STEPS FOOTER ===== */}
+      <div className="px-4 pb-16">
+        <div className="max-w-5xl mx-auto">
+          <div className="glass-strong rounded-2xl p-6">
+            <h3 className="text-sm font-semibold text-[#FFD166] mb-4 text-center">How It Works</h3>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              {[
+                { step: "1", icon: "🎯", title: "Select Category", desc: "Choose your business type" },
+                { step: "2", icon: "📋", title: "Pick Service", desc: "Select what you offer" },
+                { step: "3", icon: "📝", title: "Register", desc: "Submit business details" },
+                { step: "4", icon: "✅", title: "Get Approved", desc: "Appear after admin review" },
+              ].map((item, i) => (
+                <div key={i} className="text-center">
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#D4AF37]/20 to-[#E6C97A]/10 border border-[#D4AF37]/30 flex items-center justify-center mx-auto mb-2">
+                    <span className="text-lg">{item.icon}</span>
+                  </div>
+                  <p className="text-[10px] text-[#FFD166] font-bold mb-0.5">Step {item.step}</p>
+                  <p className="text-xs text-white font-medium">{item.title}</p>
+                  <p className="text-[9px] text-gray-500">{item.desc}</p>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
-      </section>
+      </div>
+
+      {/* ===== STICKY BOTTOM CTA ===== */}
+      {flowStep === "categories" && (
+        <div className="sticky-bottom-cta">
+          <button
+            onClick={() => {
+              if (categories.length > 0) handleCategorySelect(categories[0].slug);
+            }}
+            className="block w-full text-center py-3 rounded-xl font-bold bg-gradient-to-r from-[#D4AF37] to-[#E6C97A] text-black text-sm"
+          >
+            Get Started →
+          </button>
+        </div>
+      )}
     </main>
   );
 }

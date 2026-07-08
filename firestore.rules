@@ -1,341 +1,168 @@
 rules_version = '2';
-
 service cloud.firestore {
-
   match /databases/{database}/documents {
 
-    /* =========================
-       HELPERS
-    ========================== */
+    // =============================================
+    // HELPER FUNCTIONS
+    // =============================================
 
-    function loggedIn() {
+    // Check if the request is from the admin
+    function isAdmin() {
+      return request.auth != null && request.auth.token.email == 'sathyamanojbiyyapu@gmail.com';
+    }
+
+    // Check if user is authenticated
+    function isAuthenticated() {
       return request.auth != null;
     }
 
-    function validString(field) {
-      return field is string && field.size() > 0;
+    // Get the user's phone from auth
+    function getUserPhone() {
+      return request.auth.uid;
     }
 
-    function validNumber(field) {
-      return field is number;
-    }
-
-    function validList(field) {
-      return field is list;
-    }
-
-    /* =========================
-       USER PROFILES
-       Document ID: phone number
-       Ownership model: Phone-based (no Auth UID check)
-       Current: Any logged-in user can read/write
-       Risk: Known — requires Auth UID migration to fix
-       Safe hardening: delete locked, field validation on create
-    ========================== */
+    // =============================================
+    // USERS
+    // =============================================
 
     match /users/{phone} {
-
-      allow read: if loggedIn();
-
-      allow create: if
-        loggedIn() &&
-        validString(request.resource.data.phone);
-
-      allow update: if
-        loggedIn();
-
-      /* 🔒 SAFE HARDENING: Prevent profile deletion */
-      allow delete: if false;
+      allow read: if true;  // Anyone can read profiles
+      allow create: if isAuthenticated() && request.auth.uid == phone;
+      allow update: if isAuthenticated() && (
+        request.auth.uid == phone ||  // Own profile
+        isAdmin()                       // Admin can update any
+      );
+      allow delete: if isAdmin();
     }
 
-    /* =========================
-       CATEGORY SYSTEM
-       Admin-managed, safe for public read
-    ========================== */
+    // =============================================
+    // MARKETPLACE - City-based business directories
+    // Structure: marketplace/{categorySlug}/states/{state}/districts/{district}/cities/{city}/businesses/{businessId}
+    // =============================================
 
-    match /categories/{categoryId} {
-
-      allow read: if true;
-
-      /* Admin managed via Firebase console */
-      allow write: if false;
-
-      match /subcategories/{subId} {
-
-        allow read: if true;
-
-        allow write: if false;
-      }
+    match /marketplace/{categorySlug}/states/{state}/districts/{district}/cities/{city}/businesses/{businessId} {
+      allow read: if true;  // Anyone can see businesses
+      allow create: if isAdmin();  // Only admin can create (via approval)
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
     }
 
-    /* =========================
-       USER SELECTIONS
-       Document ID: auto-generated
-       Ownership model: Phone-based (uid field = phone)
-       Safe hardening: delete locked, create requires uid
-    ========================== */
+    // =============================================
+    // PENDING BUSINESSES - User-submitted businesses waiting for approval
+    // =============================================
 
-    match /selections/{docId} {
-
-      allow read: if loggedIn();
-
-      allow create: if
-        loggedIn() &&
-        validString(request.resource.data.uid) &&
-        validString(request.resource.data.phone) &&
-        validString(request.resource.data.category);
-
-      allow update: if
-        loggedIn();
-
-      /* 🔒 SAFE HARDENING: Prevent selection tampering/deletion */
-      allow delete: if false;
+    match /pendingBusinesses/{docId} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated();  // Any logged-in user can submit
+      allow update: if isAdmin();  // Only admin can approve/reject
+      allow delete: if isAdmin();
     }
 
-    /* =========================
-       GROUP MATCHING
-       Document ID: auto-generated
-       Ownership model: Phone-based (members[].phone, createdBy)
-       Safe hardening: delete locked, create validates structure
-    ========================== */
+    // =============================================
+    // GROUPS
+    // =============================================
 
     match /groups/{groupId} {
-
-      allow read: if loggedIn();
-
-      allow create: if
-        loggedIn() &&
-        validString(request.resource.data.category) &&
-        validString(request.resource.data.option) &&
-        validNumber(request.resource.data.membersCount) &&
-        validNumber(request.resource.data.requiredSize) &&
-        validList(request.resource.data.members) &&
-        validList(request.resource.data.memberUIDs) &&
-        validString(request.resource.data.createdBy) &&
-        request.resource.data.membersCount >= 1 &&
-        request.resource.data.requiredSize >= 2;
-
-      allow update: if
-        loggedIn();
-
-      /* 🔒 SAFE HARDENING: Prevent group deletion by users */
-      allow delete: if false;
+      allow read: if true;
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated();
+      allow delete: if isAdmin();
     }
 
-    /* =========================
-       MATCH REQUESTS
-       Document ID: auto-generated
-       New collection for admin match tracking
-      ========================== */
+    // =============================================
+    // MATCH REQUESTS
+    // =============================================
 
     match /matchRequests/{docId} {
-
-      allow read: if loggedIn();
-
-      allow create: if
-        loggedIn() &&
-        request.resource.data.userA is map &&
-        request.resource.data.userB is map &&
-        validString(request.resource.data.userA.phone) &&
-        validString(request.resource.data.userB.phone) &&
-        validString(request.resource.data.status);
-
-      allow update: if
-        loggedIn();
-
-      /* 🔒 SAFE HARDENING: Prevent deletion */
-      allow delete: if false;
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated();
+      allow delete: if isAdmin();
     }
 
-    /* =========================
-       PAYMENTS
-       Document ID: auto-generated
-       Safe hardening: delete locked, update locked, read all (for admin)
-       Create requires valid uid + amount
-    ========================== */
-
-    match /payments/{paymentId} {
-
-      allow read: if
-        loggedIn();
-
-      allow create: if
-        loggedIn() &&
-        validString(request.resource.data.uid) &&
-        validNumber(request.resource.data.amount);
-
-      /* 🔒 SAFE HARDENING: Payments immutable after creation */
-      allow update: if false;
-
-      /* 🔒 SAFE HARDENING: Prevent payment deletion */
-      allow delete: if false;
-    }
-
-    /* =========================
-       CHAT SYSTEM
-       Document ID: auto-generated
-       Safe hardening: delete locked, messages read/create only
-       Future: Add memberUIDs-based read restriction
-    ========================== */
+    // =============================================
+    // CHATS
+    // =============================================
 
     match /chats/{chatId} {
-
-      allow read: if
-        loggedIn();
-
-      allow create: if
-        loggedIn() &&
-        validList(request.resource.data.memberUIDs);
-
-      allow update: if
-        loggedIn();
-
-      /* 🔒 SAFE HARDENING: Prevent chat deletion */
-      allow delete: if false;
-
-      /* ---------- MESSAGES ---------- */
-
-      match /messages/{messageId} {
-
-        allow read: if
-          loggedIn();
-
-        allow create: if
-          loggedIn() &&
-          validString(request.resource.data.senderId) &&
-          validString(request.resource.data.text);
-
-        /* 🔒 SAFE HARDENING: Messages immutable */
-        allow update: if false;
-
-        /* 🔒 SAFE HARDENING: Prevent message deletion */
-        allow delete: if false;
-      }
-
-      /* ---------- TYPING ---------- */
-
-      match /typing/{uid} {
-
-        allow read: if
-          loggedIn();
-
-        allow write: if
-          loggedIn();
-      }
+      allow read, write: if isAuthenticated();
     }
 
-    /* =========================
-       ONLINE STATUS
-       Document ID: phone number
-       Safe: Keep current model
-    ========================== */
+    // =============================================
+    // MESSAGES subcollection
+    // =============================================
 
-    match /status/{uid} {
-
-      allow read: if
-        loggedIn();
-
-      allow write: if
-        loggedIn();
+    match /chats/{chatId}/messages/{messageId} {
+      allow read, write: if isAuthenticated();
     }
 
-    /* =========================
-       MOVIE TICKETS
-       Safe: Keep current model with hardened updates
-    ========================== */
+    // =============================================
+    // PAYMENTS
+    // =============================================
 
-    match /movieTickets/{ticketId} {
-
-      allow read: if
-        loggedIn();
-
-      allow create: if
-        loggedIn();
-
-      allow update: if false;
-
-      allow delete: if false;
+    match /payments/{paymentId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
     }
 
-    /* =========================
-       TICKET REQUESTS
-       Safe: Keep current model
-    ========================== */
+    // =============================================
+    // SELECTIONS
+    // =============================================
 
-    match /ticketRequests/{requestId} {
-
-      allow read: if
-        loggedIn();
-
-      allow create: if
-        loggedIn();
-
-      allow update: if false;
-
-      allow delete: if false;
+    match /selections/{selectionId} {
+      allow read, create: if isAuthenticated();
+      allow update, delete: if isAdmin();
     }
 
-    /* =========================
-       COLLABORATORS
-       Business partnership requests
-       Create: Any logged-in user can submit
-       Read: Any logged-in user
-       Update: Admin via dashboard
-       Delete: Locked
-    ========================== */
+    // =============================================
+    // COLLABORATORS (legacy - kept for existing data)
+    // =============================================
 
-    match /collaborators/{docId} {
-
-      allow read: if
-        loggedIn();
-
-      allow create: if
-        loggedIn() &&
-        validString(request.resource.data.category) &&
-        validString(request.resource.data.subcategory) &&
-        validString(request.resource.data.option) &&
-        validString(request.resource.data.state) &&
-        validString(request.resource.data.district) &&
-        validString(request.resource.data.city) &&
-        validString(request.resource.data.phone) &&
-        (
-          request.resource.data.status == "pending" ||
-          request.resource.data.status == "approved" ||
-          request.resource.data.status == "rejected" ||
-          request.resource.data.status == "featured" ||
-          request.resource.data.status == "hidden"
-        );
-
-      allow update: if
-        loggedIn();
-
-      /* 🔒 SAFE HARDENING: Prevent deletion */
-      allow delete: if false;
+    match /collaborators/{collaboratorId} {
+      allow read: if true;
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated();
+      allow delete: if isAdmin();
     }
 
-    /* =========================
-       REPORTS COLLECTION
-       Safe: Create only, admin reads via console
-    ========================== */
+    // =============================================
+    // GYM SUBMISSIONS (legacy - kept for existing data)
+    // =============================================
 
-    match /reports/{docId} {
-
-      allow read: if false;
-
-      allow create: if
-        loggedIn();
-
-      allow update: if false;
-
-      allow delete: if false;
+    match /gymSubmissions/{submissionId} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
     }
 
-    /* =========================
-       FALLBACK: DENY ALL UNMATCHED COLLECTIONS
-    ========================== */
+    // =============================================
+    // NOTIFICATIONS
+    // =============================================
+
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated();
+      allow delete: if isAdmin();
+    }
+
+    // =============================================
+    // SPOTLIGHT
+    // =============================================
+
+    match /spotlight/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // =============================================
+    // DEFAULT - Deny everything else
+    // =============================================
 
     match /{document=**} {
-
       allow read, write: if false;
     }
   }

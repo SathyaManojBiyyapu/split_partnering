@@ -25,28 +25,50 @@ export default function AddGymModal({ open, onClose, city, userPhone }: AddGymMo
       toast.error("Please enter a gym name");
       return;
     }
+
+    const effectiveCity = city || location.city || "";
+    const effectiveState = location.state || "";
+    const effectiveDistrict = location.district || "";
+
+    if (!effectiveCity) {
+      toast.error("City not found. Please complete your profile first.");
+      return;
+    }
+    if (!effectiveState) {
+      toast.error("State not found. Please complete your profile first.");
+      return;
+    }
+    if (!effectiveDistrict) {
+      toast.error("District not found. Please complete your profile first.");
+      return;
+    }
+
     setSubmitting(true);
     try {
-      await submitUserCollaboration({
+      const docId = await submitUserCollaboration({
         businessName: name,
         category: "Gym",
         categorySlug: "gym",
         subCategory: "Gym Membership Split",
-        state: location.state || "",
-        district: location.district || "",
-        city: city || location.city || "",
+        state: effectiveState,
+        district: effectiveDistrict,
+        city: effectiveCity,
         createdBy: userPhone || location.phone || "anonymous",
         createdByName: location.userName || "Anonymous",
         createdByEmail: location.userEmail || "",
         createdByPhone: userPhone || location.phone || "anonymous",
       });
       
+      if (!docId) {
+        throw new Error("Firestore did not return a document ID - write may have failed");
+      }
+
       toast.success(`✅ Submitted Successfully!\nYour request has been sent to PartnerSync Admin. After approval it will automatically become available to users from your city.`);
       setGymName("");
       onClose();
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error submitting gym:", err);
-      toast.error("Failed to submit. Try again.");
+      toast.error(err?.message || "Failed to submit. Try again.");
     }
     setSubmitting(false);
   };

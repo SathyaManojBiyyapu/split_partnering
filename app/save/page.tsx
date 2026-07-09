@@ -34,11 +34,7 @@ import {
 import { partneringInfo } from "@/app/data/partneringInfo";
 import { getExpiryDate } from "@/app/data/matchExpiry";
 import { categoryData, slugToCategoryName } from "@/app/data/subcategories";
-import { getAvailableCities, GymData, getGymsByCity as getSeedGymsByCity } from "@/app/data/gyms";
-import { getBusinessesForCity, subscribeToBusinesses, MarketplaceBusiness } from "@/app/lib/marketplace";
-import GymCard from "@/app/components/gym/GymCard";
-import AddGymPlusCard from "@/app/components/gym/AddGymPlusCard";
-import AddGymModal from "@/app/components/gym/AddGymModal";
+import MarketplaceGrid from "@/app/components/marketplace/MarketplaceGrid";
 import toast from "react-hot-toast";
 
 /* -----------------------------------------
@@ -500,15 +496,8 @@ function SaveContent() {
   const [selectedCollaboratorId, setSelectedCollaboratorId] = useState<string | null>(null);
   const [selectedCollaboratorName, setSelectedCollaboratorName] = useState<string | null>(null);
 
-  // Gym selection state
-  const [selectedCity, setSelectedCity] = useState<string>("");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [showAddGymModal, setShowAddGymModal] = useState(false);
-  const [userCityFromProfile, setUserCityFromProfile] = useState<string>("");
-  const [showCityPicker, setShowCityPicker] = useState(false);
-
   const info = partneringInfo[category];
-  const isGymSplit = category === "gym" && option === "split";
+  const subcategoryName = getSubcategoryName(category, option);
 
   /* -------- MOUNT -------- */
   useEffect(() => {
@@ -538,7 +527,6 @@ function SaveContent() {
         if (snap.exists()) {
           const d = snap.data() as any;
           setUserName(d.name || null);
-          setUserCityFromProfile(d.city || "");
         }
       } catch (error) {
         console.error("User fetch error:", error);
@@ -679,90 +667,6 @@ function SaveContent() {
     }
   };
 
-  /* -------- COMPUTED VALUES -------- */
-  const availableCities = getAvailableCities();
-  const effectiveCity = selectedCity || userCityFromProfile || "";
-
-  /* -------- MARKETPLACE GYMS (dynamic from Firestore) -------- */
-  const [marketplaceGyms, setMarketplaceGyms] = useState<any[]>([]);
-  const [marketplaceLoading, setMarketplaceLoading] = useState(false);
-  const [userState, setUserState] = useState("");
-  const [userDistrict, setUserDistrict] = useState("");
-
-  // Fetch user location for marketplace queries
-  useEffect(() => {
-    if (!phone) return;
-    const fetchLocation = async () => {
-      try {
-        const snap = await getDoc(doc(db, "users", phone));
-        if (snap.exists()) {
-          const d = snap.data();
-          setUserState(d.state || "");
-          setUserDistrict(d.district || "");
-        }
-      } catch (e) { console.error(e); }
-    };
-    fetchLocation();
-  }, [phone]);
-
-  // Subscribe to marketplace gyms for the selected city
-  useEffect(() => {
-    if (!effectiveCity || !userState || !userDistrict) return;
-    setMarketplaceLoading(true);
-    
-    const unsub = subscribeToBusinesses(
-      "gym",
-      userState,
-      userDistrict,
-      effectiveCity,
-      (businesses) => {
-        // Convert marketplace businesses to gym format
-        const gyms = businesses.map((b: any) => ({
-          id: b.id,
-          name: b.businessName,
-          city: b.city,
-          verified: b.verified,
-          image: b.defaultImage || b.image || "/gym.webp",
-          waitingUsers: b.waitingUsers || 0,
-        }));
-        setMarketplaceGyms(gyms);
-        setMarketplaceLoading(false);
-      }
-    );
-    
-    return () => {
-      if (typeof unsub === "function") unsub();
-    };
-  }, [effectiveCity, userState, userDistrict]);
-
-  // Merge seed gyms with marketplace gyms (seed acts as fallback)
-  const getGymsByCity = (city: string) => {
-    const seed = getSeedGymsByCity(city);
-    const market = marketplaceGyms.filter(g => 
-      g.city?.toLowerCase() === city.toLowerCase()
-    );
-    // Merge: marketplace gyms take precedence, add seed gyms if not already in marketplace
-    const marketNames = new Set(market.map(g => g.name.toLowerCase()));
-    const merged = [...market];
-    seed.forEach(sg => {
-      if (!marketNames.has(sg.name.toLowerCase())) {
-        merged.push(sg as any);
-      }
-    });
-    return merged;
-  };
-
-  const searchGyms = (query: string, city: string) => {
-    const all = getGymsByCity(city);
-    const q = query.toLowerCase().trim();
-    if (!q) return all;
-    return all.filter(g => g.name.toLowerCase().includes(q));
-  };
-
-  const filteredGyms = effectiveCity
-    ? searchQuery ? searchGyms(searchQuery, effectiveCity) : getGymsByCity(effectiveCity)
-    : [];
-
   /* -------- LOADING -------- */
   if (!mounted) {
     return (
@@ -772,203 +676,24 @@ function SaveContent() {
     );
   }
 
-  /* ==================== UI (Gym Selection Mode) ==================== */
-  if (isGymSplit) {
-    return (
-      <div className="min-h-screen pt-28 pb-16 px-4 sm:px-6 bg-black text-[#F5F5F5]">
-        <div className="max-w-5xl mx-auto">
-
-          {/* HEADING */}
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
-          >
-            <h1 className="font-heading text-3xl sm:text-4xl md:text-5xl mb-3 text-[#FFD166] leading-tight">
-              🏋 Select Your Gym
-            </h1>
-            <p className="text-gray-400 text-sm sm:text-base max-w-xl mb-8">
-              Choose your preferred gym and start finding partners in your city.
-            </p>
-          </motion.div>
-
-          {/* CITY SELECTION */}
-          <div className="mb-6">
-            {effectiveCity ? (
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-lg">📍</span>
-                <span className="text-white font-semibold text-base">{effectiveCity}</span>
-                <button
-                  onClick={() => setShowCityPicker(!showCityPicker)}
-                  className="text-[10px] text-[#D4AF37] hover:underline"
-                >
-                  Change City
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => setShowCityPicker(!showCityPicker)}
-                className="text-[#D4AF37] text-sm font-medium hover:underline"
-              >
-                Select City
-              </button>
-            )}
-
-            {showCityPicker && (
-              <motion.div
-                initial={{ opacity: 0, y: -8 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="mt-3 flex flex-wrap gap-2"
-              >
-                {availableCities.map((city) => (
-                  <button
-                    key={city}
-                    onClick={() => {
-                      setSelectedCity(city);
-                      setShowCityPicker(false);
-                      setSearchQuery("");
-                    }}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition border ${
-                      city === effectiveCity
-                        ? "bg-[#D4AF37]/20 border-[#D4AF37]/50 text-[#FFD166]"
-                        : "bg-[#0c0c0c] border-gray-700 text-gray-300 hover:border-[#D4AF37]/30"
-                    }`}
-                  >
-                    📍 {city}
-                  </button>
-                ))}
-                <button
-                  onClick={() => setShowCityPicker(false)}
-                  className="text-[10px] text-gray-500 hover:text-white ml-2"
-                >
-                  Close
-                </button>
-              </motion.div>
-            )}
-          </div>
-
-          {/* SEARCH BAR */}
-          {effectiveCity && (
-            <div className="mb-6">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search Gym..."
-                className="input w-full max-w-md"
-              />
-            </div>
-          )}
-
-          {/* GYM GRID */}
-          {effectiveCity && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-              <AnimatePresence>
-                {filteredGyms.length > 0 ? (
-                  filteredGyms.map((gym, i) => (
-                    <GymCard
-                      key={gym.id}
-                      gym={gym}
-                      index={i}
-                      onSelect={(selectedGym) => {
-                        setSelectedCollaboratorId(selectedGym.id);
-                        setSelectedCollaboratorName(selectedGym.name);
-                        savePartner();
-                      }}
-                    />
-                  ))
-                ) : (
-                  <div className="col-span-full text-center py-12">
-                    <p className="text-gray-400 text-sm">
-                      {searchQuery
-                        ? `No gyms found matching "${searchQuery}" in ${effectiveCity}`
-                        : `No gyms found in ${effectiveCity}`}
-                    </p>
-                    <p className="text-gray-500 text-xs mt-2">
-                      <button
-                        onClick={() => setShowAddGymModal(true)}
-                        className="text-[#D4AF37] hover:underline"
-                      >
-                        Add Gym
-                      </button>
-                    </p>
-                  </div>
-                )}
-
-                <AddGymPlusCard
-                  index={filteredGyms.length}
-                  onAdd={() => setShowAddGymModal(true)}
-                />
-              </AnimatePresence>
-            </div>
-          )}
-
-          {/* NO CITY SELECTED */}
-          {!effectiveCity && (
-            <div className="text-center py-12">
-              <p className="text-gray-400 text-sm">Select a city to browse gyms in your area.</p>
-            </div>
-          )}
-
-          {/* ADD GYM MODAL */}
-          <AddGymModal
-            open={showAddGymModal}
-            onClose={() => setShowAddGymModal(false)}
-            city={effectiveCity}
-            userPhone={phone}
-          />
-
-          {/* BACK LINK */}
-          <div className="mt-12 text-center">
-            <button
-              onClick={() => router.push("/options/gym")}
-              className="text-sm text-gray-400 hover:text-[#D4AF37] transition-colors"
-            >
-              ← Back
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  /* ==================== UI (Original - Non-Gym Categories) ==================== */
+  /* ==================== UI ==================== */
   return (
     <div className="min-h-screen pt-28 pb-16 px-4 sm:px-6 bg-black text-[#F5F5F5]">
-      <div className="max-w-4xl mx-auto">
+      <div className="max-w-5xl mx-auto">
 
-        {/* TOP ROW */}
-        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
-          <div className="flex-1">
-            <h1 className="text-2xl sm:text-3xl font-heading text-white tracking-tight">Make Your Match</h1>
-            <p className="text-gray-400 text-sm mt-1">
-              You selected <span className="text-[#D4AF37] font-medium">{option}</span> under{" "}
-              <span className="text-[#D4AF37] font-medium">{category.replace("-", " ")}</span>
-            </p>
-          </div>
-          <div className="hidden sm:block flex-shrink-0">
-            <button
-              onClick={savePartner}
-              disabled={loading}
-              className="px-8 py-3.5 rounded-xl font-semibold text-sm bg-[#D4AF37] text-black hover:bg-[#E6C97A] hover:-translate-y-0.5 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? "Saving..." : existingGroup ? "Partner Already Saved ✓" : "Make Partner"}
-            </button>
-          </div>
-        </div>
-
-        {/* Mobile CTA */}
-        <div className="sm:hidden mb-6">
-          <button
-            onClick={savePartner}
-            disabled={loading || !!existingGroup}
-            className={`w-full py-3.5 rounded-xl font-semibold text-sm transition-all duration-200 disabled:cursor-not-allowed ${
-              existingGroup ? "bg-emerald-600 text-white hover:bg-emerald-700" : "bg-[#D4AF37] text-black hover:bg-[#E6C97A] disabled:opacity-50"
-            }`}
-          >
-            {loading ? "Saving..." : existingGroup ? "Partner Already Saved ✓" : "Make Partner"}
-          </button>
-        </div>
+        {/* HEADING */}
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+        >
+          <h1 className="font-heading text-2xl sm:text-3xl md:text-4xl mb-2 text-[#FFD166] leading-tight">
+            Find Your Partner
+          </h1>
+          <p className="text-gray-400 text-sm sm:text-base max-w-xl mb-6">
+            Browse businesses and select one to start matching with partners.
+          </p>
+        </motion.div>
 
         {/* STATUS MESSAGES */}
         {existingGroup && (
@@ -994,6 +719,21 @@ function SaveContent() {
             <p className="text-gray-500 text-[10px] mt-2">Joining one of these again will update the existing request instead of creating a new one.</p>
           </div>
         )}
+
+        {/* GENERIC MARKETPLACE GRID - works for ALL categories */}
+        <div className="mb-8">
+          <MarketplaceGrid
+            categorySlug={category}
+            subcategory={subcategoryName}
+            buttonLabel="Make Partner →"
+            buttonHrefBuilder={(business: { businessName: string; id: string }) =>
+              `/dashboard?category=${category}&option=${option}&business=${business.businessName}&businessId=${business.id}`
+            }
+            showAddButton={true}
+            addButtonType="business"
+            emptyMessage={`No ${subcategoryName || "businesses"} found in your city yet.`}
+          />
+        </div>
 
         {/* HOW IT WORKS INFO */}
         {info && (
@@ -1034,11 +774,21 @@ function SaveContent() {
         )}
 
         {/* BOTTOM CTAs */}
-        <div className="hidden sm:flex items-center justify-between gap-4 mt-8 pt-6 border-t border-white/5">
-          <button onClick={() => router.push("/categories")} className="text-sm text-gray-400 hover:text-[#D4AF37] transition-colors">← Back to Categories</button>
+        <div className="flex items-center justify-center gap-4 mt-8 pt-6 border-t border-white/5">
+          <button
+            onClick={savePartner}
+            disabled={loading}
+            className="px-8 py-3.5 rounded-xl font-semibold text-sm bg-[#D4AF37] text-black hover:bg-[#E6C97A] hover:-translate-y-0.5 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {loading ? "Saving..." : existingGroup ? "Partner Already Saved ✓" : "Make Partner"}
+          </button>
         </div>
-        <div className="sm:hidden mt-8 pt-6 border-t border-white/5 text-center">
-          <button onClick={() => router.push("/categories")} className="text-sm text-gray-400 hover:text-[#D4AF37] transition-colors">← Back to Categories</button>
+
+        {/* BACK LINK */}
+        <div className="mt-6 text-center">
+          <button onClick={() => router.push("/categories")} className="text-sm text-gray-400 hover:text-[#D4AF37] transition-colors">
+            ← Back to Categories
+          </button>
         </div>
       </div>
     </div>

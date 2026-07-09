@@ -35,6 +35,7 @@ import {
 } from "firebase/firestore";
 
 import UserCollaborationsPanel from "@/app/components/admin/UserCollaborationsPanel";
+import MarketplaceManager from "@/app/components/admin/MarketplaceManager";
 
 /* ---------------------------------------
    HELPERS
@@ -96,12 +97,13 @@ export default function AdminPage() {
 
   // View states
   const [viewingUser, setViewingUser] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<"matches" | "groups" | "analytics" | "users" | "fraud" | "collaborators" | "gyms" | "pending" | "user-collaborations">("matches");
+  const [activeTab, setActiveTab] = useState<"matches" | "groups" | "analytics" | "users" | "fraud" | "collaborators" | "gyms" | "pending" | "user-collaborations" | "marketplace">("matches");
   const [collaborators, setCollaborators] = useState<any[]>([]);
   const [collaboratorSearch, setCollaboratorSearch] = useState("");
   const [collaboratorFilterStatus, setCollaboratorFilterStatus] = useState("all");
   const [gymSubmissions, setGymSubmissions] = useState<any[]>([]);
   const [pendingBusinesses, setPendingBusinesses] = useState<any[]>([]);
+  const [marketplaceManagerKey, setMarketplaceManagerKey] = useState(0);
 
   /* ---------------------------------------
      ADMIN AUTH
@@ -418,7 +420,7 @@ export default function AdminPage() {
         </div>
         {/* Tab nav */}
         <div className="max-w-7xl mx-auto flex gap-2 mt-2 overflow-x-auto text-xs pb-1">
-          {(["matches", "groups", "analytics", "users", "fraud", "collaborators", "gyms", "pending", "user-collaborations"] as const).map(tab => (
+          {(["matches", "groups", "analytics", "users", "fraud", "collaborators", "gyms", "pending", "user-collaborations", "marketplace"] as const).map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -426,7 +428,7 @@ export default function AdminPage() {
                 activeTab === tab ? "bg-[#D4AF37] text-black font-bold" : "text-gray-400 hover:text-white"
               }`}
             >
-              {tab === "matches" ? "🔄 Matches" : tab === "groups" ? "📦 Groups" : tab === "analytics" ? "📊 Analytics" : tab === "users" ? "👥 Users" : tab === "fraud" ? "🚩 Fraud" : tab === "collaborators" ? "🤝 Collaborators" : tab === "gyms" ? "🏋 Gyms" : tab === "pending" ? "⏳ Pending" : "👤 User Collabs"}
+              {tab === "matches" ? "🔄 Matches" : tab === "groups" ? "📦 Groups" : tab === "analytics" ? "📊 Analytics" : tab === "users" ? "👥 Users" : tab === "fraud" ? "🚩 Fraud" : tab === "collaborators" ? "🤝 Collaborators" : tab === "gyms" ? "🏋 Gyms" : tab === "pending" ? "⏳ Pending" : tab === "user-collaborations" ? "👤 User Collabs" : "🏪 Marketplace"}
             </button>
           ))}
         </div>
@@ -1439,6 +1441,21 @@ export default function AdminPage() {
               </p>
             </div>
             <UserCollaborationsPanel />
+          </div>
+        )}
+
+        {/* ==========================================
+            TAB: MARKETPLACE MANAGER
+        ========================================== */}
+        {activeTab === "marketplace" && (
+          <div>
+            <div className="mb-4">
+              <h2 className="text-lg font-heading text-[#FFD166] mb-1">🏪 Marketplace Manager</h2>
+              <p className="text-xs text-gray-400">
+                Central management for all marketplace businesses. Create, edit, manage, and control every business across all categories and locations.
+              </p>
+            </div>
+            <MarketplaceManager key={marketplaceManagerKey} />
           </div>
         )}
 

@@ -18,6 +18,7 @@ import {
   serverTimestamp,
   Timestamp,
   increment,
+  onSnapshot,
 } from "firebase/firestore";
 import { getDefaultImage } from "@/app/data/categoryConfig";
 
@@ -204,7 +205,6 @@ export function subscribeToUserCollaborations(
   const collabRef = collection(db, "userCollaborations");
   const q = query(collabRef, orderBy("submittedAt", "desc"));
 
-  const { onSnapshot } = require("firebase/firestore");
   const unsub = onSnapshot(q, (snapshot: any) => {
     const collaborations: UserCollaboration[] = [];
     snapshot.forEach((d: any) => {
@@ -230,7 +230,6 @@ export function subscribeToCollaborationsByStatus(
       ? query(collabRef, orderBy("submittedAt", "desc"))
       : query(collabRef, where("status", "==", status), orderBy("submittedAt", "desc"));
 
-  const { onSnapshot } = require("firebase/firestore");
   const unsub = onSnapshot(q, (snapshot: any) => {
     const collaborations: UserCollaboration[] = [];
     snapshot.forEach((d: any) => {

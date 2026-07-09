@@ -19,6 +19,8 @@ import {
   DocumentReference,
   CollectionReference,
   DocumentData,
+  onSnapshot,
+  increment,
 } from "firebase/firestore";
 
 /* ----------------------------------------
@@ -263,7 +265,6 @@ export function subscribeToBusinesses(
   const businessesRef = getBusinessesCollection(categorySlug, state, district, city);
   const q = query(businessesRef, orderBy("createdAt", "desc"));
 
-  const { onSnapshot } = require("firebase/firestore");
   const unsub = onSnapshot(q, (snapshot: any) => {
     const businesses: MarketplaceBusiness[] = [];
     snapshot.forEach((d: any) => {
@@ -309,7 +310,6 @@ export async function incrementWaitingUsers(
    Helpers
 ---------------------------------------- */
 
-import { increment } from "firebase/firestore";
 
 function getDefaultImageForCategory(categorySlug: string): string {
   const defaultImages: Record<string, string> = {

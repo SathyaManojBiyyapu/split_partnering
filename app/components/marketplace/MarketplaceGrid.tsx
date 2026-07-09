@@ -33,6 +33,7 @@ export default function MarketplaceGrid({
   const location = useUserLocation();
   const [businesses, setBusinesses] = useState<MarketplaceBusiness[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -48,6 +49,7 @@ export default function MarketplaceGrid({
     }
 
     setLoading(true);
+    setError(null);
     const subcategoryName = subcategory || "";
     const unsub = subscribeToBusinessesByScope(
       categorySlug,
@@ -55,7 +57,12 @@ export default function MarketplaceGrid({
       location.state,
       location.district,
       location.city,
-      (data) => {
+      (data, err) => {
+        if (err) {
+          setError(err);
+          setLoading(false);
+          return;
+        }
         setBusinesses(data);
         setLoading(false);
       }
@@ -76,6 +83,28 @@ export default function MarketplaceGrid({
   const defaultEmptyMessage = subcategory
     ? `No ${subcategory} businesses found in ${location.city || "your city"} yet.`
     : `No ${categoryName} businesses found in ${location.city || "your city"} yet.`;
+
+  // Show error state if Firestore query failed
+  if (!loading && error) {
+    return (
+      <div className="text-center py-8">
+        <div className="glass-strong rounded-xl p-6 max-w-md mx-auto">
+          <p className="text-red-400 text-sm font-semibold mb-2">
+            ⚠️ Unable to load businesses
+          </p>
+          <p className="text-gray-500 text-xs mb-4">
+            Reason: {error}
+          </p>
+          <button
+            onClick={() => window.location.reload()}
+            className="btn-primary text-xs inline-block"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // Show location warning if user hasn't completed profile
   if (!location.loading && !location.state) {

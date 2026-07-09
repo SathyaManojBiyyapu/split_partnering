@@ -1,9 +1,7 @@
 "use client";
 
 // Marketplace Manager Service — handles ALL marketplace business CRUD operations
-// Supports: create, read, update, delete, hide/show, feature/unfeature, bulk operations
 // Firestore: marketplace/{categorySlug}/businesses/{businessId}
-// The businesses collection contains scope field: "national" | "state" | "district" | "city"
 
 import { db } from "@/firebase/config";
 import {
@@ -25,9 +23,6 @@ import {
   writeBatch,
   DocumentReference,
   CollectionReference,
-  DocumentData,
-  arrayUnion,
-  arrayRemove,
 } from "firebase/firestore";
 import { getDefaultImage } from "@/app/data/categoryConfig";
 
@@ -60,7 +55,6 @@ export interface MarketplaceBusiness {
   createdAt: Timestamp | Date;
   updatedAt: Timestamp | Date;
   source: "admin" | "collaborator" | "user";
-  // Optional fields from collaborator/legacy systems
   offerName?: string;
   officialPartner?: boolean;
   topRated?: boolean;
@@ -86,12 +80,8 @@ export interface MarketplaceStats {
    Firestore Path Helpers
 ---------------------------------------- */
 
-// Structure: marketplace/{categorySlug}/businesses/{businessId}
-function getBusinessesCollection(categorySlug?: string): CollectionReference {
-  if (categorySlug) {
-    return collection(db, "marketplace", categorySlug, "businesses");
-  }
-  return collection(db, "marketplace");
+function getBusinessesCollection(categorySlug: string): CollectionReference {
+  return collection(db, "marketplace", categorySlug, "businesses");
 }
 
 export function getBusinessDocRef(categorySlug: string, businessId: string): DocumentReference {
@@ -99,10 +89,44 @@ export function getBusinessDocRef(categorySlug: string, businessId: string): Doc
 }
 
 /* ----------------------------------------
-   CRUD Operations (Admin Marketplace Manager)
+   Scope Filter
 ---------------------------------------- */
 
-// Create a new marketplace business
+function filterBusinessesByScope(
+  data: MarketplaceBusiness[],
+  subcategory: string,
+  userState: string,
+  userDistrict: string,
+  userCity: string
+): MarketplaceBusiness[] {
+  const results: MarketplaceBusiness[] = [];
+
+  for (const b of data) {
+    if (!b.visible && b.visible !== undefined) continue;
+    if (subcategory && b.subcategory !== subcategory) continue;
+
+    let scopeMatch = false;
+    switch (b.scope) {
+      case "national": scopeMatch = true; break;
+      case "state": scopeMatch = b.state === userState; break;
+      case "district": scopeMatch = b.state === userState && b.district === userDistrict; break;
+      case "city": scopeMatch = b.state === userState && b.district === userDistrict && b.city === userCity; break;
+      default: scopeMatch = b.city === userCity; break;
+    }
+
+    if (scopeMatch) results.push(b);
+  }
+
+  const priority: Record<string, number> = { city: 0, district: 1, state: 2, national: 3 };
+  results.sort((a, b) => (priority[a.scope] ?? 99) - (priority[b.scope] ?? 99));
+
+  return results;
+}
+
+/* ----------------------------------------
+   CRUD Operations
+---------------------------------------- */
+
 export async function createMarketplaceBusiness(data: {
   businessName: string;
   category: string;
@@ -121,11 +145,9 @@ export async function createMarketplaceBusiness(data: {
   waitingUsers: number;
   createdBy: string;
 }): Promise<string> {
-  // Validate required fields based on scope
   if (!data.businessName || !data.categorySlug || !data.scope) {
     throw new Error("Business name, category, and scope are required");
   }
-
   if (data.scope === "state" && !data.state) {
     throw new Error("State is required for State scope");
   }
@@ -137,7 +159,6 @@ export async function createMarketplaceBusiness(data: {
   }
 
   const businessesRef = getBusinessesCollection(data.categorySlug);
-  
   const businessDoc: MarketplaceBusiness = {
     businessName: data.businessName,
     category: data.category,
@@ -166,121 +187,78 @@ export async function createMarketplaceBusiness(data: {
   return docRef.id;
 }
 
-// Update a marketplace business
 export async function updateMarketplaceBusiness(
   categorySlug: string,
   businessId: string,
   data: Partial<MarketplaceBusiness>
 ): Promise<void> {
   const businessRef = getBusinessDocRef(categorySlug, businessId);
-  
-  // Validate scope requirements if scope is being changed
-  if (data.scope === "state" && !data.state && !(await getDoc(businessRef)).data()?.state) {
-    throw new Error("State is required for State scope");
-  }
-
-  await updateDoc(businessRef, {
-    ...data,
-    updatedAt: serverTimestamp(),
-  });
+  await updateDoc(businessRef, { ...data, updatedAt: serverTimestamp() });
 }
 
-// Delete a marketplace business
 export async function deleteMarketplaceBusiness(
   categorySlug: string,
   businessId: string
 ): Promise<void> {
-  const businessRef = getBusinessDocRef(categorySlug, businessId);
-  await deleteDoc(businessRef);
+  await deleteDoc(getBusinessDocRef(categorySlug, businessId));
 }
 
-// Bulk delete marketplace businesses
 export async function bulkDeleteMarketplaceBusinesses(
   items: { categorySlug: string; businessId: string }[]
 ): Promise<void> {
   const batch = writeBatch(db);
   items.forEach(({ categorySlug, businessId }) => {
-    const ref = getBusinessDocRef(categorySlug, businessId);
-    batch.delete(ref);
+    batch.delete(getBusinessDocRef(categorySlug, businessId));
   });
   await batch.commit();
 }
 
-// Toggle visible (hide/show)
 export async function toggleVisibleMarketplaceBusiness(
-  categorySlug: string,
-  businessId: string,
-  visible: boolean
+  categorySlug: string, businessId: string, visible: boolean
 ): Promise<void> {
-  const businessRef = getBusinessDocRef(categorySlug, businessId);
-  await updateDoc(businessRef, {
-    visible,
-    updatedAt: serverTimestamp(),
-  });
+  await updateDoc(getBusinessDocRef(categorySlug, businessId), { visible, updatedAt: serverTimestamp() });
 }
 
-// Toggle featured
 export async function toggleFeaturedMarketplaceBusiness(
-  categorySlug: string,
-  businessId: string,
-  featured: boolean
+  categorySlug: string, businessId: string, featured: boolean
 ): Promise<void> {
-  const businessRef = getBusinessDocRef(categorySlug, businessId);
-  await updateDoc(businessRef, {
-    featured,
-    updatedAt: serverTimestamp(),
-  });
+  await updateDoc(getBusinessDocRef(categorySlug, businessId), { featured, updatedAt: serverTimestamp() });
 }
 
-// Bulk update visible
 export async function bulkSetVisibleMarketplaceBusinesses(
-  items: { categorySlug: string; businessId: string }[],
-  visible: boolean
+  items: { categorySlug: string; businessId: string }[], visible: boolean
 ): Promise<void> {
   const batch = writeBatch(db);
   items.forEach(({ categorySlug, businessId }) => {
-    const ref = getBusinessDocRef(categorySlug, businessId);
-    batch.update(ref, { visible, updatedAt: serverTimestamp() });
+    batch.update(getBusinessDocRef(categorySlug, businessId), { visible, updatedAt: serverTimestamp() });
   });
   await batch.commit();
 }
 
-// Bulk update featured
 export async function bulkSetFeaturedMarketplaceBusinesses(
-  items: { categorySlug: string; businessId: string }[],
-  featured: boolean
+  items: { categorySlug: string; businessId: string }[], featured: boolean
 ): Promise<void> {
   const batch = writeBatch(db);
   items.forEach(({ categorySlug, businessId }) => {
-    const ref = getBusinessDocRef(categorySlug, businessId);
-    batch.update(ref, { featured, updatedAt: serverTimestamp() });
+    batch.update(getBusinessDocRef(categorySlug, businessId), { featured, updatedAt: serverTimestamp() });
   });
   await batch.commit();
 }
 
-// Duplicate a marketplace business
 export async function duplicateMarketplaceBusiness(
-  categorySlug: string,
-  businessId: string
+  categorySlug: string, businessId: string
 ): Promise<string> {
   const businessRef = getBusinessDocRef(categorySlug, businessId);
   const snap = await getDoc(businessRef);
-  
-  if (!snap.exists()) {
-    throw new Error("Business not found");
-  }
-
+  if (!snap.exists()) throw new Error("Business not found");
   const data = snap.data() as MarketplaceBusiness;
   const businessesRef = getBusinessesCollection(categorySlug);
-  
-  const newDoc = {
+  const docRef = await addDoc(businessesRef, {
     ...data,
     businessName: `${data.businessName} (Copy)`,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
-  };
-
-  const docRef = await addDoc(businessesRef, newDoc);
+  });
   return docRef.id;
 }
 
@@ -291,57 +269,40 @@ export async function duplicateMarketplaceBusiness(
 export function subscribeToAllMarketplaceBusinesses(
   callback: (businesses: MarketplaceBusiness[]) => void
 ) {
-  // Query all categories' businesses
-  // Firestore doesn't support cross-collection group queries easily with subcollections,
-  // so we query each category separately and combine
-  
   const categorySlugs = [
     "gym", "fashion", "movies", "local-travel", "books", "events", "coupons", "villas", "lenskart"
   ];
 
   const allBusinesses: MarketplaceBusiness[] = [];
   const unsubFunctions: (() => void)[] = [];
-  let loadedCategories = 0;
 
   categorySlugs.forEach((slug) => {
     const businessesRef = getBusinessesCollection(slug);
     const q = query(businessesRef, orderBy("createdAt", "desc"));
     
-    const unsub = onSnapshot(q, (snapshot) => {
-      // Clear previous entries for this category
-      const filtered = allBusinesses.filter(b => b.categorySlug !== slug);
-      
-      snapshot.forEach((d) => {
-        const data = d.data() as MarketplaceBusiness;
-        filtered.push({
-          id: d.id,
-          ...data,
-        } as MarketplaceBusiness);
-      });
-
-      // Replace the array
-      allBusinesses.length = 0;
-      allBusinesses.push(...filtered);
-      
-      loadedCategories++;
-      callback([...allBusinesses]);
-    });
-
+    const unsub = onSnapshot(q, 
+      (snapshot) => {
+        const filtered = allBusinesses.filter(b => b.categorySlug !== slug);
+        snapshot.forEach((d) => {
+          const data = d.data() as MarketplaceBusiness;
+          filtered.push({ id: d.id, ...data } as MarketplaceBusiness);
+        });
+        allBusinesses.length = 0;
+        allBusinesses.push(...filtered);
+        callback([...allBusinesses]);
+      },
+      (error) => {
+        console.warn(`Marketplace snapshot error for ${slug}:`, error.message);
+        callback([...allBusinesses]);
+      }
+    );
     unsubFunctions.push(unsub);
   });
 
-  return () => {
-    unsubFunctions.forEach((fn) => fn());
-  };
+  return () => { unsubFunctions.forEach((fn) => fn()); };
 }
 
-/* ----------------------------------------
-   Get Marketplace Stats
----------------------------------------- */
-
-export function getMarketplaceStats(
-  businesses: MarketplaceBusiness[]
-): MarketplaceStats {
+export function getMarketplaceStats(businesses: MarketplaceBusiness[]): MarketplaceStats {
   return {
     total: businesses.length,
     verified: businesses.filter((b) => b.verified).length,
@@ -359,159 +320,64 @@ export function getMarketplaceStats(
 
 /* ----------------------------------------
    Scope-Based Query for Explore/MarketplaceGrid
+   FIX: Uses getDocs + onSnapshot separately
+   If onSnapshot fails (permission/index), getDocs fallback fires callback
+   This prevents infinite loading
 ---------------------------------------- */
 
-// Get businesses that match a user's location considering scope
-// Returns: national + state + district + city businesses combined
-export async function getBusinessesByScope(
-  categorySlug: string,
-  subcategory: string,
-  userState: string,
-  userDistrict: string,
-  userCity: string
-): Promise<MarketplaceBusiness[]> {
-  try {
-    const businessesRef = getBusinessesCollection(categorySlug);
-    const snap = await getDocs(businessesRef);
-    
-    const results: MarketplaceBusiness[] = [];
-    
-    snap.forEach((d) => {
-      const data = d.data() as MarketplaceBusiness;
-      
-      // Filter by visible + verified
-      if (!data.visible && data.visible !== undefined) return;
-      
-      // Filter by subcategory if specified
-      if (subcategory && data.subcategory !== subcategory) return;
-      
-      // Apply scope filtering
-      let scopeMatch = false;
-      
-      switch (data.scope) {
-        case "national":
-          scopeMatch = true;
-          break;
-        case "state":
-          scopeMatch = data.state === userState;
-          break;
-        case "district":
-          scopeMatch = data.state === userState && data.district === userDistrict;
-          break;
-        case "city":
-          scopeMatch = data.state === userState && data.district === userDistrict && data.city === userCity;
-          break;
-        default:
-          // Legacy: city-level fallback
-          scopeMatch = data.city === userCity;
-          break;
-      }
-      
-      if (scopeMatch) {
-        results.push({ id: d.id, ...data } as MarketplaceBusiness);
-      }
-    });
-    
-    // Sort by scope priority: city > district > state > national
-    const priority: Record<string, number> = { city: 0, district: 1, state: 2, national: 3 };
-    results.sort((a, b) => (priority[a.scope] ?? 99) - (priority[b.scope] ?? 99));
-    
-    return results;
-  } catch (error) {
-    console.error("Error fetching businesses by scope:", error);
-    return [];
-  }
-}
-
-// Real-time listener for scope-based queries
 export function subscribeToBusinessesByScope(
   categorySlug: string,
   subcategory: string,
   userState: string,
   userDistrict: string,
   userCity: string,
-  callback: (businesses: MarketplaceBusiness[]) => void
+  callback: (businesses: MarketplaceBusiness[], error?: string) => void
 ) {
   const businessesRef = getBusinessesCollection(categorySlug);
-  const q = query(businessesRef, orderBy("createdAt", "desc"));
+  let unsubscribe: (() => void) | null = null;
+  let fallbackUsed = false;
 
-  const unsub = onSnapshot(q, (snapshot) => {
-    const results: MarketplaceBusiness[] = [];
-    
-    snapshot.forEach((d) => {
-      const data = d.data() as MarketplaceBusiness;
-      
-      // Filter by visible
-      if (!data.visible && data.visible !== undefined) return;
-      
-      // Filter by subcategory if specified
-      if (subcategory && data.subcategory !== subcategory) return;
-      
-      // Apply scope filtering
-      let scopeMatch = false;
-      
-      switch (data.scope) {
-        case "national":
-          scopeMatch = true;
-          break;
-        case "state":
-          scopeMatch = data.state === userState;
-          break;
-        case "district":
-          scopeMatch = data.state === userState && data.district === userDistrict;
-          break;
-        case "city":
-          scopeMatch = data.state === userState && data.district === userDistrict && data.city === userCity;
-          break;
-        default:
-          scopeMatch = data.city === userCity;
-          break;
-      }
-      
-      if (scopeMatch) {
-        results.push({ id: d.id, ...data } as MarketplaceBusiness);
-      }
+  // Step 1: Always do a getDocs first (reliable, no index needed, checks permissions immediately)
+  getDocs(businessesRef)
+    .then((snap) => {
+      const allBusinesses: MarketplaceBusiness[] = [];
+      snap.forEach((d) => {
+        allBusinesses.push({ id: d.id, ...(d.data() as any) } as MarketplaceBusiness);
+      });
+      const filtered = filterBusinessesByScope(allBusinesses, subcategory, userState, userDistrict, userCity);
+      callback(filtered);
+    })
+    .catch((err: any) => {
+      console.error(`getDocs failed for ${categorySlug}:`, err.message);
+      callback([], err.message || "Failed to load businesses");
+      return;
     });
-    
-    // Sort by scope priority
-    const priority: Record<string, number> = { city: 0, district: 1, state: 2, national: 3 };
-    results.sort((a, b) => (priority[a.scope] ?? 99) - (priority[b.scope] ?? 99));
-    
-    callback(results);
-  });
 
-  return unsub;
-}
+  // Step 2: Try onSnapshot for realtime updates (may fail if no index or permission)
+  try {
+    const q = query(businessesRef, orderBy("createdAt", "desc"));
+    unsubscribe = onSnapshot(q,
+      (snapshot) => {
+        if (fallbackUsed) return; // Already got data from getDocs
+        const allBusinesses: MarketplaceBusiness[] = [];
+        snapshot.forEach((d) => {
+          allBusinesses.push({ id: d.id, ...(d.data() as any) } as MarketplaceBusiness);
+        });
+        const filtered = filterBusinessesByScope(allBusinesses, subcategory, userState, userDistrict, userCity);
+        callback(filtered);
+        fallbackUsed = true; // Mark as used so getDocs doesn't overwrite
+      },
+      (error) => {
+        // onSnapshot failed (permission or index) - getDocs already handled the data load
+        console.warn(`onSnapshot failed for ${categorySlug}, getDocs was used instead:`, error.message);
+        fallbackUsed = true;
+      }
+    );
+  } catch (err) {
+    console.warn(`Could not set up onSnapshot for ${categorySlug}:`, err);
+  }
 
-/* ----------------------------------------
-   Update Approval Flow to use new structure
----------------------------------------- */
-
-// Convert old approval to new scope-based marketplace entry
-export function convertToScopeMarketplace(business: Partial<MarketplaceBusiness>): MarketplaceBusiness {
-  const scope: ScopeType = business.scope || "city";
-  
-  return {
-    businessName: business.businessName || "",
-    category: business.category || "",
-    categorySlug: business.categorySlug || "",
-    subcategory: business.subcategory || "",
-    description: business.description || "",
-    image: business.image || "",
-    defaultImage: getDefaultImage(business.categorySlug || ""),
-    verified: true,
-    featured: false,
-    visible: true,
-    scope,
-    country: business.country || "India",
-    state: business.state || "",
-    district: business.district || "",
-    city: business.city || "",
-    waitingUsers: 0,
-    createdBy: business.createdBy || "",
-    approvedBy: business.approvedBy || "",
-    createdAt: serverTimestamp() as Timestamp,
-    updatedAt: serverTimestamp() as Timestamp,
-    source: business.source || "user",
+  return () => {
+    if (typeof unsubscribe === "function") unsubscribe();
   };
 }

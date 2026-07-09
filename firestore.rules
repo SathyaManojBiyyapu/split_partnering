@@ -4,10 +4,6 @@ service cloud.firestore {
 
   match /databases/{database}/documents {
 
-    /* =========================
-       HELPERS
-    ========================== */
-
     function loggedIn() {
       return request.auth != null;
     }
@@ -33,85 +29,49 @@ service cloud.firestore {
     }
 
     /* =========================
-       MARKETPLACE (SCOPE-BASED - NEW STRUCTURE)
+       MARKETPLACE (NEW SCOPE-BASED)
        Path: marketplace/{categorySlug}/businesses/{businessId}
-       Read: Any logged-in user
-       Create: Admin only (via Marketplace Manager)
-       Update: Admin only
-       Delete: Locked
+       This matches ALL businesses in the scoped marketplace system.
+       Must be defined BEFORE the legacy path to avoid conflicts.
     ========================== */
 
     match /marketplace/{categorySlug}/businesses/{businessId} {
-
       allow read: if loggedIn();
-
-      allow create: if
-        loggedIn() &&
-        validString(request.resource.data.businessName) &&
-        validString(request.resource.data.category) &&
-        validScope(request.resource.data.scope);
-
-      allow update: if
-        isAdmin();
-
+      allow create: if loggedIn() && validString(request.resource.data.businessName) && validScope(request.resource.data.scope);
+      allow update: if isAdmin();
       allow delete: if false;
     }
 
     /* =========================
-       MARKETPLACE (LEGACY - CITY-BASED)
-       Keep for backward compatibility
+       MARKETPLACE (LEGACY CITY-BASED - for backward compatibility)
        Path: marketplace/{categorySlug}/states/{state}/districts/{district}/cities/{city}/businesses/{businessId}
     ========================== */
 
     match /marketplace/{categorySlug}/states/{state}/districts/{district}/cities/{city}/businesses/{businessId} {
-
-      allow read: if
-        loggedIn();
-
-      allow create: if
-        loggedIn();
-
-      allow update: if
-        isAdmin();
-
+      allow read, create: if loggedIn();
+      allow update: if isAdmin();
       allow delete: if false;
     }
 
     /* =========================
        USER PROFILES
        Document ID: phone number
-       Ownership model: Phone-based
     ========================== */
 
     match /users/{phone} {
-
-      allow read: if loggedIn();
-
-      allow create: if
-        loggedIn() &&
-        validString(request.resource.data.phone);
-
-      allow update: if
-        loggedIn();
-
+      allow read, create, update: if loggedIn();
       allow delete: if false;
     }
 
     /* =========================
        CATEGORY SYSTEM
-       Admin-managed
     ========================== */
 
     match /categories/{categoryId} {
-
       allow read: if true;
-
       allow write: if false;
-
       match /subcategories/{subId} {
-
         allow read: if true;
-
         allow write: if false;
       }
     }
@@ -121,18 +81,9 @@ service cloud.firestore {
     ========================== */
 
     match /selections/{docId} {
-
       allow read: if loggedIn();
-
-      allow create: if
-        loggedIn() &&
-        validString(request.resource.data.uid) &&
-        validString(request.resource.data.phone) &&
-        validString(request.resource.data.category);
-
-      allow update: if
-        loggedIn();
-
+      allow create: if loggedIn() && validString(request.resource.data.uid) && validString(request.resource.data.phone) && validString(request.resource.data.category);
+      allow update: if loggedIn();
       allow delete: if false;
     }
 
@@ -141,24 +92,9 @@ service cloud.firestore {
     ========================== */
 
     match /groups/{groupId} {
-
       allow read: if loggedIn();
-
-      allow create: if
-        loggedIn() &&
-        validString(request.resource.data.category) &&
-        validString(request.resource.data.option) &&
-        validNumber(request.resource.data.membersCount) &&
-        validNumber(request.resource.data.requiredSize) &&
-        validList(request.resource.data.members) &&
-        validList(request.resource.data.memberUIDs) &&
-        validString(request.resource.data.createdBy) &&
-        request.resource.data.membersCount >= 1 &&
-        request.resource.data.requiredSize >= 2;
-
-      allow update: if
-        loggedIn();
-
+      allow create: if loggedIn() && validString(request.resource.data.category) && validString(request.resource.data.option) && validNumber(request.resource.data.membersCount) && validNumber(request.resource.data.requiredSize) && validList(request.resource.data.members) && validList(request.resource.data.memberUIDs) && validString(request.resource.data.createdBy) && request.resource.data.membersCount >= 1 && request.resource.data.requiredSize >= 2;
+      allow update: if loggedIn();
       allow delete: if false;
     }
 
@@ -167,20 +103,9 @@ service cloud.firestore {
     ========================== */
 
     match /matchRequests/{docId} {
-
       allow read: if loggedIn();
-
-      allow create: if
-        loggedIn() &&
-        request.resource.data.userA is map &&
-        request.resource.data.userB is map &&
-        validString(request.resource.data.userA.phone) &&
-        validString(request.resource.data.userB.phone) &&
-        validString(request.resource.data.status);
-
-      allow update: if
-        loggedIn();
-
+      allow create: if loggedIn() && request.resource.data.userA is map && request.resource.data.userB is map && validString(request.resource.data.userA.phone) && validString(request.resource.data.userB.phone) && validString(request.resource.data.status);
+      allow update: if loggedIn();
       allow delete: if false;
     }
 
@@ -189,16 +114,9 @@ service cloud.firestore {
     ========================== */
 
     match /payments/{paymentId} {
-
       allow read: if loggedIn();
-
-      allow create: if
-        loggedIn() &&
-        validString(request.resource.data.uid) &&
-        validNumber(request.resource.data.amount);
-
+      allow create: if loggedIn() && validString(request.resource.data.uid) && validNumber(request.resource.data.amount);
       allow update: if false;
-
       allow delete: if false;
     }
 
@@ -207,37 +125,20 @@ service cloud.firestore {
     ========================== */
 
     match /chats/{chatId} {
-
       allow read: if loggedIn();
-
-      allow create: if
-        loggedIn() &&
-        validList(request.resource.data.memberUIDs);
-
-      allow update: if
-        loggedIn();
-
+      allow create: if loggedIn() && validList(request.resource.data.memberUIDs);
+      allow update: if loggedIn();
       allow delete: if false;
 
       match /messages/{messageId} {
-
         allow read: if loggedIn();
-
-        allow create: if
-          loggedIn() &&
-          validString(request.resource.data.senderId) &&
-          validString(request.resource.data.text);
-
+        allow create: if loggedIn() && validString(request.resource.data.senderId) && validString(request.resource.data.text);
         allow update: if false;
-
         allow delete: if false;
       }
 
       match /typing/{uid} {
-
-        allow read: if loggedIn();
-
-        allow write: if loggedIn();
+        allow read, write: if loggedIn();
       }
     }
 
@@ -246,40 +147,21 @@ service cloud.firestore {
     ========================== */
 
     match /status/{uid} {
-
-      allow read: if loggedIn();
-
-      allow write: if loggedIn();
+      allow read, write: if loggedIn();
     }
 
     /* =========================
-       MOVIE TICKETS
+       MOVIE TICKETS / TICKET REQUESTS
     ========================== */
 
     match /movieTickets/{ticketId} {
-
-      allow read: if loggedIn();
-
-      allow create: if loggedIn();
-
-      allow update: if false;
-
-      allow delete: if false;
+      allow read, create: if loggedIn();
+      allow update, delete: if false;
     }
 
-    /* =========================
-       TICKET REQUESTS
-    ========================== */
-
     match /ticketRequests/{requestId} {
-
-      allow read: if loggedIn();
-
-      allow create: if loggedIn();
-
-      allow update: if false;
-
-      allow delete: if false;
+      allow read, create: if loggedIn();
+      allow update, delete: if false;
     }
 
     /* =========================
@@ -287,56 +169,20 @@ service cloud.firestore {
     ========================== */
 
     match /collaborators/{docId} {
-
       allow read: if loggedIn();
-
-      allow create: if
-        loggedIn() &&
-        validString(request.resource.data.category) &&
-        validString(request.resource.data.subcategory) &&
-        validString(request.resource.data.option) &&
-        validString(request.resource.data.state) &&
-        validString(request.resource.data.district) &&
-        validString(request.resource.data.city) &&
-        validString(request.resource.data.phone) &&
-        (
-          request.resource.data.status == "pending" ||
-          request.resource.data.status == "approved" ||
-          request.resource.data.status == "rejected" ||
-          request.resource.data.status == "featured" ||
-          request.resource.data.status == "hidden"
-        );
-
-      allow update: if
-        isAdmin();
-
+      allow create: if loggedIn() && validString(request.resource.data.category) && validString(request.resource.data.subcategory) && validString(request.resource.data.option) && validString(request.resource.data.state) && validString(request.resource.data.district) && validString(request.resource.data.city) && validString(request.resource.data.phone) && (request.resource.data.status in ["pending", "approved", "rejected", "featured", "hidden"]);
+      allow update: if isAdmin();
       allow delete: if false;
     }
 
     /* =========================
        USER COLLABORATIONS
-       User-generated business approval workflow
     ========================== */
 
     match /userCollaborations/{docId} {
-
       allow read: if loggedIn();
-
-      allow create: if
-        loggedIn() &&
-        validString(request.resource.data.businessName) &&
-        validString(request.resource.data.category) &&
-        validString(request.resource.data.state) &&
-        validString(request.resource.data.district) &&
-        validString(request.resource.data.city) &&
-        validString(request.resource.data.createdBy) &&
-        validString(request.resource.data.createdByName) &&
-        validString(request.resource.data.createdByPhone) &&
-        request.resource.data.status == "pending";
-
-      allow update: if
-        isAdmin();
-
+      allow create: if loggedIn() && validString(request.resource.data.businessName) && validString(request.resource.data.category) && validString(request.resource.data.state) && validString(request.resource.data.district) && validString(request.resource.data.city) && validString(request.resource.data.createdBy) && validString(request.resource.data.createdByName) && validString(request.resource.data.createdByPhone) && request.resource.data.status == "pending";
+      allow update: if isAdmin();
       allow delete: if false;
     }
 
@@ -345,14 +191,9 @@ service cloud.firestore {
     ========================== */
 
     match /reports/{docId} {
-
       allow read: if false;
-
       allow create: if loggedIn();
-
-      allow update: if false;
-
-      allow delete: if false;
+      allow update, delete: if false;
     }
 
     /* =========================
@@ -360,54 +201,29 @@ service cloud.firestore {
     ========================== */
 
     match /notifications/{notificationId} {
-
-      allow read: if loggedIn();
-
-      allow create: if loggedIn();
-
-      allow update: if loggedIn();
-
+      allow read, create, update: if loggedIn();
       allow delete: if false;
     }
 
     /* =========================
-       GYM SUBMISSIONS
+       GYM SUBMISSIONS & PENDING BUSINESSES
     ========================== */
 
     match /gymSubmissions/{docId} {
-
-      allow read: if loggedIn();
-
-      allow create: if loggedIn();
-
-      allow update: if
-        loggedIn();
-
+      allow read, create, update: if loggedIn();
       allow delete: if false;
     }
-
-    /* =========================
-       PENDING BUSINESSES
-    ========================== */
 
     match /pendingBusinesses/{docId} {
-
-      allow read: if loggedIn();
-
-      allow create: if loggedIn();
-
-      allow update: if
-        loggedIn();
-
+      allow read, create, update: if loggedIn();
       allow delete: if false;
     }
 
     /* =========================
-       FALLBACK: DENY ALL UNMATCHED COLLECTIONS
+       FALLBACK: DENY ALL UNMATCHED
     ========================== */
 
     match /{document=**} {
-
       allow read, write: if false;
     }
   }

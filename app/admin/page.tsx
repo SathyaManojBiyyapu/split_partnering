@@ -1384,9 +1384,40 @@ export default function AdminPage() {
                           onClick={async () => {
                             if (!confirm(`Approve "${biz.businessName}"? This will create it in ${biz.city}.`)) return;
                             try {
-                              // Create the business in the marketplace collection
-                              const { approveBusiness } = await import("@/app/lib/marketplace");
-                              await approveBusiness(biz.id);
+                              // Use the NEW scope-based marketplace path: marketplace/{categorySlug}/businesses/{businessId}
+                              // This ensures the business appears in MarketplaceGrid for all users in the same city
+                              const { createMarketplaceBusiness } = await import("@/app/lib/marketplaceManager");
+                              const { getDefaultImage } = await import("@/app/data/categoryConfig");
+                              const { doc, updateDoc, serverTimestamp } = await import("firebase/firestore");
+                              const { db } = await import("@/firebase/config");
+                              
+                              const businessId = await createMarketplaceBusiness({
+                                businessName: biz.businessName,
+                                category: biz.category,
+                                categorySlug: biz.categorySlug,
+                                subcategory: biz.subcategory || "",
+                                description: biz.description || "",
+                                image: biz.image || "",
+                                verified: true,
+                                featured: false,
+                                visible: true,
+                                scope: "city",
+                                country: "India",
+                                state: biz.state || "",
+                                district: biz.district || "",
+                                city: biz.city || "",
+                                waitingUsers: 0,
+                                createdBy: biz.userId || biz.userPhone || "admin",
+                              });
+                              
+                              // Update the pending business status
+                              const pendingRef = doc(db, "pendingBusinesses", biz.id);
+                              await updateDoc(pendingRef, {
+                                status: "approved",
+                                approvedAt: serverTimestamp(),
+                                businessId: businessId,
+                              });
+                              
                               alert(`"${biz.businessName}" approved and created in ${biz.city}!`);
                             } catch (err: any) {
                               console.error(err);
@@ -1403,8 +1434,13 @@ export default function AdminPage() {
                           onClick={async () => {
                             if (!confirm(`Reject "${biz.businessName}"?`)) return;
                             try {
-                              const { rejectBusiness } = await import("@/app/lib/marketplace");
-                              await rejectBusiness(biz.id);
+                              const { doc, updateDoc, serverTimestamp } = await import("firebase/firestore");
+                              const { db } = await import("@/firebase/config");
+                              const pendingRef = doc(db, "pendingBusinesses", biz.id);
+                              await updateDoc(pendingRef, {
+                                status: "rejected",
+                                rejectedAt: serverTimestamp(),
+                              });
                             } catch (err: any) {
                               console.error(err);
                               alert("Failed to reject: " + (err.message || ""));

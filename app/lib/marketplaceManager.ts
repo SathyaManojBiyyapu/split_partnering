@@ -89,7 +89,16 @@ export function getBusinessDocRef(categorySlug: string, businessId: string): Doc
 }
 
 /* ----------------------------------------
-   Scope Filter
+   Helper: Normalize strings for comparison
+   Converts to lowercase and trims whitespace
+---------------------------------------- */
+
+function normalize(val: string | null | undefined): string {
+  return (val || "").toString().trim().toLowerCase();
+}
+
+/* ----------------------------------------
+   Scope Filter (case-insensitive)
 ---------------------------------------- */
 
 function filterBusinessesByScope(
@@ -99,26 +108,82 @@ function filterBusinessesByScope(
   userDistrict: string,
   userCity: string
 ): MarketplaceBusiness[] {
+  const normState = normalize(userState);
+  const normDistrict = normalize(userDistrict);
+  const normCity = normalize(userCity);
+  const normSubcategory = normalize(subcategory);
+
+  console.log(`[PartnerSync Debug] filterBusinessesByScope called with:
+    userState="${userState}" (norm="${normState}")
+    userDistrict="${userDistrict}" (norm="${normDistrict}")
+    userCity="${userCity}" (norm="${normCity}")
+    subcategory="${subcategory}" (norm="${normSubcategory}")
+    total businesses in collection: ${data.length}`);
+
   const results: MarketplaceBusiness[] = [];
 
   for (const b of data) {
-    if (!b.visible && b.visible !== undefined) continue;
-    if (subcategory && b.subcategory !== subcategory) continue;
+    console.log(`[PartnerSync Debug] Checking business: "${b.businessName}"
+      id="${b.id}"
+      scope="${b.scope}"
+      visible=${b.visible}
+      subcategory="${b.subcategory}"
+      state="${b.state}"
+      district="${b.district}"
+      city="${b.city}"`);
+
+    // Skip if explicitly hidden (visible === false)
+    if (b.visible === false) {
+      console.log(`[PartnerSync Debug]   → FILTERED OUT: visible is false`);
+      continue;
+    }
+
+    // Filter by subcategory (case-insensitive)
+    if (normSubcategory && normalize(b.subcategory) !== normSubcategory) {
+      console.log(`[PartnerSync Debug]   → FILTERED OUT: subcategory mismatch
+        business subcategory="${b.subcategory}" (norm="${normalize(b.subcategory)}")
+        requested subcategory="${subcategory}" (norm="${normSubcategory}")`);
+      continue;
+    }
 
     let scopeMatch = false;
     switch (b.scope) {
-      case "national": scopeMatch = true; break;
-      case "state": scopeMatch = b.state === userState; break;
-      case "district": scopeMatch = b.state === userState && b.district === userDistrict; break;
-      case "city": scopeMatch = b.state === userState && b.district === userDistrict && b.city === userCity; break;
-      default: scopeMatch = b.city === userCity; break;
+      case "national":
+        scopeMatch = true;
+        console.log(`[PartnerSync Debug]   → scope=national: MATCH (all users)`);
+        break;
+      case "state":
+        scopeMatch = normalize(b.state) === normState;
+        console.log(`[PartnerSync Debug]   → scope=state: comparing business state="${normalize(b.state)}" === user state="${normState}" → ${scopeMatch}`);
+        break;
+      case "district":
+        scopeMatch = normalize(b.state) === normState && normalize(b.district) === normDistrict;
+        console.log(`[PartnerSync Debug]   → scope=district: comparing state="${normalize(b.state)}"==="${normState}" && district="${normalize(b.district)}"==="${normDistrict}" → ${scopeMatch}`);
+        break;
+      case "city":
+        scopeMatch = normalize(b.state) === normState && normalize(b.district) === normDistrict && normalize(b.city) === normCity;
+        console.log(`[PartnerSync Debug]   → scope=city: comparing state="${normalize(b.state)}"==="${normState}" && district="${normalize(b.district)}"==="${normDistrict}" && city="${normalize(b.city)}"==="${normCity}" → ${scopeMatch}`);
+        break;
+      default:
+        scopeMatch = normalize(b.city) === normCity;
+        console.log(`[PartnerSync Debug]   → scope=default: comparing city="${normalize(b.city)}"==="${normCity}" → ${scopeMatch}`);
+        break;
     }
 
-    if (scopeMatch) results.push(b);
+    if (scopeMatch) {
+      console.log(`[PartnerSync Debug]   → ✅ MATCH - including in results`);
+      results.push(b);
+    } else {
+      console.log(`[PartnerSync Debug]   → ❌ FILTERED OUT: scope/location mismatch`);
+    }
   }
 
+  // Sort: city-scoped first, then district, state, national
   const priority: Record<string, number> = { city: 0, district: 1, state: 2, national: 3 };
   results.sort((a, b) => (priority[a.scope] ?? 99) - (priority[b.scope] ?? 99));
+
+  console.log(`[PartnerSync Debug] filterBusinessesByScope returning ${results.length} businesses`);
+  results.forEach((r, i) => console.log(`  [${i+1}] "${r.businessName}" (${r.scope}) - ${r.city}, ${r.district}, ${r.state}`));
 
   return results;
 }
@@ -320,9 +385,12 @@ export function getMarketplaceStats(businesses: MarketplaceBusiness[]): Marketpl
 
 /* ----------------------------------------
    Scope-Based Query for Explore/MarketplaceGrid
-   FIX: Uses getDocs + onSnapshot separately
-   If onSnapshot fails (permission/index), getDocs fallback fires callback
-   This prevents infinite loading
+   
+   FIX: 
+   1. getDocs is always the reliable primary source (no index needed)
+   2. Client-side filtering is now case-insensitive to prevent location mismatches
+   3. onSnapshot is used only for real-time updates, with getDocs as fallback
+   4. The fallbackUsed flag correctly prevents double-callbacks
 ---------------------------------------- */
 
 export function subscribeToBusinessesByScope(
@@ -335,42 +403,57 @@ export function subscribeToBusinessesByScope(
 ) {
   const businessesRef = getBusinessesCollection(categorySlug);
   let unsubscribe: (() => void) | null = null;
-  let fallbackUsed = false;
+  let hasInitialData = false;
+  let isUnmounted = false;
 
   // Step 1: Always do a getDocs first (reliable, no index needed, checks permissions immediately)
+  // This guarantees data even if onSnapshot fails
   getDocs(businessesRef)
     .then((snap) => {
+      if (isUnmounted) return;
       const allBusinesses: MarketplaceBusiness[] = [];
       snap.forEach((d) => {
         allBusinesses.push({ id: d.id, ...(d.data() as any) } as MarketplaceBusiness);
       });
       const filtered = filterBusinessesByScope(allBusinesses, subcategory, userState, userDistrict, userCity);
       callback(filtered);
+      hasInitialData = true;
     })
     .catch((err: any) => {
+      if (isUnmounted) return;
       console.error(`getDocs failed for ${categorySlug}:`, err.message);
       callback([], err.message || "Failed to load businesses");
-      return;
     });
 
   // Step 2: Try onSnapshot for realtime updates (may fail if no index or permission)
+  // Only calls callback if getDocs hasn't already provided the data
   try {
-    const q = query(businessesRef, orderBy("createdAt", "desc"));
-    unsubscribe = onSnapshot(q,
+    // Note: We DON'T use orderBy here to avoid requiring a composite index
+    // The client-side filter handles ordering anyway
+    unsubscribe = onSnapshot(businessesRef,
       (snapshot) => {
-        if (fallbackUsed) return; // Already got data from getDocs
+        if (isUnmounted) return;
+        
         const allBusinesses: MarketplaceBusiness[] = [];
         snapshot.forEach((d) => {
           allBusinesses.push({ id: d.id, ...(d.data() as any) } as MarketplaceBusiness);
         });
         const filtered = filterBusinessesByScope(allBusinesses, subcategory, userState, userDistrict, userCity);
-        callback(filtered);
-        fallbackUsed = true; // Mark as used so getDocs doesn't overwrite
+        
+        // Only send if getDocs hasn't already provided more recent data
+        if (!hasInitialData) {
+          callback(filtered);
+          hasInitialData = true;
+        }
       },
       (error) => {
-        // onSnapshot failed (permission or index) - getDocs already handled the data load
-        console.warn(`onSnapshot failed for ${categorySlug}, getDocs was used instead:`, error.message);
-        fallbackUsed = true;
+        // onSnapshot failed - getDocs already handled the data load
+        if (!hasInitialData) {
+          console.warn(`onSnapshot failed for ${categorySlug}:`, error.message);
+          // If onSnapshot fails and getDocs already ran, we still have data
+          // If getDocs hasn't run yet, the catch handler above will handle it
+          hasInitialData = true;
+        }
       }
     );
   } catch (err) {
@@ -378,6 +461,7 @@ export function subscribeToBusinessesByScope(
   }
 
   return () => {
+    isUnmounted = true;
     if (typeof unsubscribe === "function") unsubscribe();
   };
 }

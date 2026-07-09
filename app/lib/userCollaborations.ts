@@ -2,6 +2,7 @@
 
 // User Collaboration Service - handles all user-generated business approval workflow
 // Firestore: userCollaborations/{documentId}
+// Marketplace (scope-based): marketplace/{categorySlug}/businesses/{businessId}
 
 import { db } from "@/firebase/config";
 import {
@@ -90,6 +91,8 @@ export async function submitUserCollaboration(data: {
 
 /* ----------------------------------------
    Approve a user collaboration
+   Creates a marketplace document at: marketplace/{categorySlug}/businesses/{businessId}
+   This path MUST match what subscribeToBusinessesByScope() queries.
 ---------------------------------------- */
 
 export async function approveUserCollaboration(
@@ -106,9 +109,9 @@ export async function approveUserCollaboration(
   const data = collabSnap.data() as UserCollaboration & { categorySlug?: string };
   const categorySlug = data.categorySlug || data.category?.toLowerCase().replace(/\s+/g, "-") || "unknown";
 
-  // Create the business in the NEW scope-based marketplace path:
+  // Create the business in the SCOPE-BASED marketplace path:
   // marketplace/{categorySlug}/businesses/{businessId}
-  // This ensures it's found by MarketplaceGrid's subscribeToBusinessesByScope()
+  // This matches exactly what MarketplaceGrid's subscribeToBusinessesByScope() queries.
   const businessesRef = collection(
     db,
     "marketplace",
@@ -116,6 +119,8 @@ export async function approveUserCollaboration(
     "businesses"
   );
 
+  // Build a document that fully conforms to MarketplaceBusiness interface
+  // This ensures scope-based filtering works correctly (city scope + location match)
   const businessDoc = {
     businessName: data.businessName,
     category: data.category,
@@ -140,9 +145,11 @@ export async function approveUserCollaboration(
     source: "user",
   };
 
+  // Step 1: Create marketplace document
   const businessDocRef = await addDoc(businessesRef, businessDoc);
 
-  // Update original collaboration record
+  // Step 2: Update original collaboration record to approved
+  // If this fails, the marketplace doc still exists (which is fine - just orphaned)
   await updateDoc(collabRef, {
     status: "approved",
     verified: true,

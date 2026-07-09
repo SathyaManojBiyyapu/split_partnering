@@ -60,6 +60,12 @@ export interface MarketplaceBusiness {
   createdAt: Timestamp | Date;
   updatedAt: Timestamp | Date;
   source: "admin" | "collaborator" | "user";
+  // Optional fields from collaborator/legacy systems
+  offerName?: string;
+  officialPartner?: boolean;
+  topRated?: boolean;
+  premium?: boolean;
+  type?: string;
 }
 
 export interface MarketplaceStats {

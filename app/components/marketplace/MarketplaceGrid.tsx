@@ -3,7 +3,8 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useUserLocation } from "@/app/lib/useUserLocation";
-import { subscribeToBusinesses, MarketplaceBusiness } from "@/app/lib/marketplace";
+import { MarketplaceBusiness } from "@/app/lib/marketplaceManager";
+import { subscribeToBusinessesByScope } from "@/app/lib/marketplaceManager";
 import BusinessCard from "./BusinessCard";
 import AddBusinessModal from "./AddBusinessModal";
 import { getCategoryName } from "@/app/data/categoryConfig";
@@ -13,6 +14,7 @@ interface MarketplaceGridProps {
   subcategory?: string;
   buttonLabel?: string;
   buttonHrefBuilder?: (business: MarketplaceBusiness) => string;
+  onMakePartner?: (business: MarketplaceBusiness) => void;
   showAddButton?: boolean;
   addButtonType?: "business" | "collaborator";
   emptyMessage?: string;
@@ -23,6 +25,7 @@ export default function MarketplaceGrid({
   subcategory,
   buttonLabel = "Make Partner →",
   buttonHrefBuilder,
+  onMakePartner,
   showAddButton = true,
   addButtonType = "business",
   emptyMessage,
@@ -35,7 +38,9 @@ export default function MarketplaceGrid({
 
   const categoryName = getCategoryName(categorySlug);
 
-  // Subscribe to businesses for this category + city
+  // Subscribe to businesses using SCOPE-BASED queries (new Firestore structure)
+  // This finds businesses at marketplace/{categorySlug}/businesses/{businessId}
+  // and filters by national + state + district + city scope
   useEffect(() => {
     if (!location.state || !location.district || !location.city) {
       setLoading(false);
@@ -43,17 +48,15 @@ export default function MarketplaceGrid({
     }
 
     setLoading(true);
-    const unsub = subscribeToBusinesses(
+    const subcategoryName = subcategory || "";
+    const unsub = subscribeToBusinessesByScope(
       categorySlug,
+      subcategoryName,
       location.state,
       location.district,
       location.city,
       (data) => {
-        // Filter by subcategory if specified
-        const filtered = subcategory
-          ? data.filter((b) => b.subcategory === subcategory)
-          : data;
-        setBusinesses(filtered);
+        setBusinesses(data);
         setLoading(false);
       }
     );
@@ -142,6 +145,7 @@ export default function MarketplaceGrid({
                     index={i}
                     buttonLabel={buttonLabel}
                     buttonHref={href}
+                    onButtonClick={onMakePartner ? () => onMakePartner(business) : undefined}
                   />
                 );
               })

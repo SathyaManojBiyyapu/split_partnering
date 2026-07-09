@@ -12,6 +12,10 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function isAdmin() {
+      return request.auth != null && request.auth.token.email == "sathyamanojbiyyapu@gmail.com";
+    }
+
     function validString(field) {
       return field is string && field.size() > 0;
     }
@@ -24,13 +28,59 @@ service cloud.firestore {
       return field is list;
     }
 
+    function validScope(field) {
+      return field in ["national", "state", "district", "city"];
+    }
+
+    /* =========================
+       MARKETPLACE (SCOPE-BASED - NEW STRUCTURE)
+       Path: marketplace/{categorySlug}/businesses/{businessId}
+       Read: Any logged-in user
+       Create: Admin only (via Marketplace Manager)
+       Update: Admin only
+       Delete: Locked
+    ========================== */
+
+    match /marketplace/{categorySlug}/businesses/{businessId} {
+
+      allow read: if loggedIn();
+
+      allow create: if
+        loggedIn() &&
+        validString(request.resource.data.businessName) &&
+        validString(request.resource.data.category) &&
+        validScope(request.resource.data.scope);
+
+      allow update: if
+        isAdmin();
+
+      allow delete: if false;
+    }
+
+    /* =========================
+       MARKETPLACE (LEGACY - CITY-BASED)
+       Keep for backward compatibility
+       Path: marketplace/{categorySlug}/states/{state}/districts/{district}/cities/{city}/businesses/{businessId}
+    ========================== */
+
+    match /marketplace/{categorySlug}/states/{state}/districts/{district}/cities/{city}/businesses/{businessId} {
+
+      allow read: if
+        loggedIn();
+
+      allow create: if
+        loggedIn();
+
+      allow update: if
+        isAdmin();
+
+      allow delete: if false;
+    }
+
     /* =========================
        USER PROFILES
        Document ID: phone number
-       Ownership model: Phone-based (no Auth UID check)
-       Current: Any logged-in user can read/write
-       Risk: Known — requires Auth UID migration to fix
-       Safe hardening: delete locked, field validation on create
+       Ownership model: Phone-based
     ========================== */
 
     match /users/{phone} {
@@ -44,20 +94,18 @@ service cloud.firestore {
       allow update: if
         loggedIn();
 
-      /* 🔒 SAFE HARDENING: Prevent profile deletion */
       allow delete: if false;
     }
 
     /* =========================
        CATEGORY SYSTEM
-       Admin-managed, safe for public read
+       Admin-managed
     ========================== */
 
     match /categories/{categoryId} {
 
       allow read: if true;
 
-      /* Admin managed via Firebase console */
       allow write: if false;
 
       match /subcategories/{subId} {
@@ -70,9 +118,6 @@ service cloud.firestore {
 
     /* =========================
        USER SELECTIONS
-       Document ID: auto-generated
-       Ownership model: Phone-based (uid field = phone)
-       Safe hardening: delete locked, create requires uid
     ========================== */
 
     match /selections/{docId} {
@@ -88,15 +133,11 @@ service cloud.firestore {
       allow update: if
         loggedIn();
 
-      /* 🔒 SAFE HARDENING: Prevent selection tampering/deletion */
       allow delete: if false;
     }
 
     /* =========================
        GROUP MATCHING
-       Document ID: auto-generated
-       Ownership model: Phone-based (members[].phone, createdBy)
-       Safe hardening: delete locked, create validates structure
     ========================== */
 
     match /groups/{groupId} {
@@ -118,15 +159,12 @@ service cloud.firestore {
       allow update: if
         loggedIn();
 
-      /* 🔒 SAFE HARDENING: Prevent group deletion by users */
       allow delete: if false;
     }
 
     /* =========================
        MATCH REQUESTS
-       Document ID: auto-generated
-       New collection for admin match tracking
-      ========================== */
+    ========================== */
 
     match /matchRequests/{docId} {
 
@@ -143,45 +181,34 @@ service cloud.firestore {
       allow update: if
         loggedIn();
 
-      /* 🔒 SAFE HARDENING: Prevent deletion */
       allow delete: if false;
     }
 
     /* =========================
        PAYMENTS
-       Document ID: auto-generated
-       Safe hardening: delete locked, update locked, read all (for admin)
-       Create requires valid uid + amount
     ========================== */
 
     match /payments/{paymentId} {
 
-      allow read: if
-        loggedIn();
+      allow read: if loggedIn();
 
       allow create: if
         loggedIn() &&
         validString(request.resource.data.uid) &&
         validNumber(request.resource.data.amount);
 
-      /* 🔒 SAFE HARDENING: Payments immutable after creation */
       allow update: if false;
 
-      /* 🔒 SAFE HARDENING: Prevent payment deletion */
       allow delete: if false;
     }
 
     /* =========================
        CHAT SYSTEM
-       Document ID: auto-generated
-       Safe hardening: delete locked, messages read/create only
-       Future: Add memberUIDs-based read restriction
     ========================== */
 
     match /chats/{chatId} {
 
-      allow read: if
-        loggedIn();
+      allow read: if loggedIn();
 
       allow create: if
         loggedIn() &&
@@ -190,67 +217,50 @@ service cloud.firestore {
       allow update: if
         loggedIn();
 
-      /* 🔒 SAFE HARDENING: Prevent chat deletion */
       allow delete: if false;
-
-      /* ---------- MESSAGES ---------- */
 
       match /messages/{messageId} {
 
-        allow read: if
-          loggedIn();
+        allow read: if loggedIn();
 
         allow create: if
           loggedIn() &&
           validString(request.resource.data.senderId) &&
           validString(request.resource.data.text);
 
-        /* 🔒 SAFE HARDENING: Messages immutable */
         allow update: if false;
 
-        /* 🔒 SAFE HARDENING: Prevent message deletion */
         allow delete: if false;
       }
 
-      /* ---------- TYPING ---------- */
-
       match /typing/{uid} {
 
-        allow read: if
-          loggedIn();
+        allow read: if loggedIn();
 
-        allow write: if
-          loggedIn();
+        allow write: if loggedIn();
       }
     }
 
     /* =========================
        ONLINE STATUS
-       Document ID: phone number
-       Safe: Keep current model
     ========================== */
 
     match /status/{uid} {
 
-      allow read: if
-        loggedIn();
+      allow read: if loggedIn();
 
-      allow write: if
-        loggedIn();
+      allow write: if loggedIn();
     }
 
     /* =========================
        MOVIE TICKETS
-       Safe: Keep current model with hardened updates
     ========================== */
 
     match /movieTickets/{ticketId} {
 
-      allow read: if
-        loggedIn();
+      allow read: if loggedIn();
 
-      allow create: if
-        loggedIn();
+      allow create: if loggedIn();
 
       allow update: if false;
 
@@ -259,16 +269,13 @@ service cloud.firestore {
 
     /* =========================
        TICKET REQUESTS
-       Safe: Keep current model
     ========================== */
 
     match /ticketRequests/{requestId} {
 
-      allow read: if
-        loggedIn();
+      allow read: if loggedIn();
 
-      allow create: if
-        loggedIn();
+      allow create: if loggedIn();
 
       allow update: if false;
 
@@ -277,17 +284,11 @@ service cloud.firestore {
 
     /* =========================
        COLLABORATORS
-       Business partnership requests
-       Create: Any logged-in user can submit
-       Read: Any logged-in user
-       Update: Admin via dashboard
-       Delete: Locked
     ========================== */
 
     match /collaborators/{docId} {
 
-      allow read: if
-        loggedIn();
+      allow read: if loggedIn();
 
       allow create: if
         loggedIn() &&
@@ -307,25 +308,7 @@ service cloud.firestore {
         );
 
       allow update: if
-        loggedIn();
-
-      /* 🔒 SAFE HARDENING: Prevent deletion */
-      allow delete: if false;
-    }
-
-    /* =========================
-       REPORTS COLLECTION
-       Safe: Create only, admin reads via console
-    ========================== */
-
-    match /reports/{docId} {
-
-      allow read: if false;
-
-      allow create: if
-        loggedIn();
-
-      allow update: if false;
+        isAdmin();
 
       allow delete: if false;
     }
@@ -333,17 +316,11 @@ service cloud.firestore {
     /* =========================
        USER COLLABORATIONS
        User-generated business approval workflow
-       Create: Any logged-in user can submit a new business request
-       Read: Only admin can view all pending/approved/rejected requests
-       Update: Only admin can approve/reject
-       Delete: Locked for safety
-       Structure: userCollaborations/{documentId}
     ========================== */
 
     match /userCollaborations/{docId} {
 
-      allow read: if
-        loggedIn();
+      allow read: if loggedIn();
 
       allow create: if
         loggedIn() &&
@@ -358,49 +335,66 @@ service cloud.firestore {
         request.resource.data.status == "pending";
 
       allow update: if
-        loggedIn();
+        isAdmin();
 
-      /* 🔒 SAFE HARDENING: Prevent deletion */
       allow delete: if false;
     }
 
     /* =========================
-       MARKETPLACE
-       City-based business directories
-       Read: Any logged-in user can browse businesses
-       Create: Only via admin approval (from userCollaborations)
-       Update: Admin only
-       Delete: Locked for safety
-       Structure: marketplace/{categorySlug}/states/{state}/districts/{district}/cities/{city}/businesses/{businessId}
+       REPORTS
     ========================== */
 
-    match /marketplace/{categorySlug}/states/{state}/districts/{district}/cities/{city}/businesses/{businessId} {
+    match /reports/{docId} {
 
-      allow read: if
-        loggedIn();
+      allow read: if false;
 
-      allow create: if
-        loggedIn();
+      allow create: if loggedIn();
 
-      allow update: if
-        loggedIn();
+      allow update: if false;
 
-      /* 🔒 SAFE HARDENING: Prevent deletion */
       allow delete: if false;
     }
 
     /* =========================
        NOTIFICATIONS
-       User notification system
     ========================== */
 
     match /notifications/{notificationId} {
 
-      allow read: if
+      allow read: if loggedIn();
+
+      allow create: if loggedIn();
+
+      allow update: if loggedIn();
+
+      allow delete: if false;
+    }
+
+    /* =========================
+       GYM SUBMISSIONS
+    ========================== */
+
+    match /gymSubmissions/{docId} {
+
+      allow read: if loggedIn();
+
+      allow create: if loggedIn();
+
+      allow update: if
         loggedIn();
 
-      allow create: if
-        loggedIn();
+      allow delete: if false;
+    }
+
+    /* =========================
+       PENDING BUSINESSES
+    ========================== */
+
+    match /pendingBusinesses/{docId} {
+
+      allow read: if loggedIn();
+
+      allow create: if loggedIn();
 
       allow update: if
         loggedIn();

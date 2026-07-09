@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { MarketplaceBusiness } from "@/app/lib/marketplace";
+import { MarketplaceBusiness } from "@/app/lib/marketplaceManager";
 
 interface BusinessCardProps {
   business: MarketplaceBusiness;

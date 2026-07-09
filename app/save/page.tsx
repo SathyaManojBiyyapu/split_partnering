@@ -726,9 +726,69 @@ function SaveContent() {
             categorySlug={category}
             subcategory={subcategoryName}
             buttonLabel="Make Partner →"
-            buttonHrefBuilder={(business: { businessName: string; id: string }) =>
-              `/dashboard?category=${category}&option=${option}&business=${business.businessName}&businessId=${business.id}`
-            }
+            onMakePartner={async (business) => {
+              // Direct partner creation from marketplace business card click
+              // Bypasses state to avoid timing issues with setState
+              if (!mounted) return;
+              if (!phone) {
+                toast.error("Please login first");
+                return;
+              }
+              if (!auth.currentUser) {
+                toast.error("User not logged in");
+                return;
+              }
+              
+              try {
+                setLoading(true);
+                const collaboratorId = business.id || business.businessName;
+                const collaboratorName = business.businessName;
+                
+                const result = await createOrJoinGroup(
+                  category,
+                  option,
+                  phone,
+                  collaboratorId,
+                  collaboratorName
+                );
+
+                if (phone) {
+                  try {
+                    const userRef = doc(db, "users", phone);
+                    await updateDoc(userRef, {
+                      category: category.replace("-", " "),
+                      option: option,
+                      updatedAt: serverTimestamp(),
+                    });
+                  } catch (err) {
+                    console.warn("Could not update user category:", err);
+                  }
+                }
+
+                await addDoc(collection(db, "selections"), {
+                  uid: phone,
+                  groupId: result.groupId,
+                  phone,
+                  maskedPhone: maskPhone(phone),
+                  userName: userName || "Anonymous",
+                  category,
+                  option,
+                  collaboratorId,
+                  collaboratorName,
+                  paid: false,
+                  status: result.status,
+                  createdAt: serverTimestamp(),
+                });
+
+                toast.success(`Partner saved! Status: ${result.status}`);
+                router.push("/dashboard");
+              } catch (error: any) {
+                console.error("MAKE PARTNER ERROR:", error);
+                toast.error(error?.message || error?.code || "Saving failed.");
+              } finally {
+                setLoading(false);
+              }
+            }}
             showAddButton={true}
             addButtonType="business"
             emptyMessage={`No ${subcategoryName || "businesses"} found in your city yet.`}

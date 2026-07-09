@@ -106,18 +106,13 @@ export async function approveUserCollaboration(
   const data = collabSnap.data() as UserCollaboration & { categorySlug?: string };
   const categorySlug = data.categorySlug || data.category?.toLowerCase().replace(/\s+/g, "-") || "unknown";
 
-  // Create the business in marketplace with proper path:
-  // marketplace/{categorySlug}/states/{state}/districts/{district}/cities/{city}/businesses
+  // Create the business in the NEW scope-based marketplace path:
+  // marketplace/{categorySlug}/businesses/{businessId}
+  // This ensures it's found by MarketplaceGrid's subscribeToBusinessesByScope()
   const businessesRef = collection(
     db,
     "marketplace",
     categorySlug,
-    "states",
-    data.state?.trim(),
-    "districts",
-    data.district?.trim(),
-    "cities",
-    data.city?.trim(),
     "businesses"
   );
 
@@ -126,22 +121,23 @@ export async function approveUserCollaboration(
     category: data.category,
     categorySlug: categorySlug,
     subcategory: data.subCategory || "",
-    state: data.state,
-    district: data.district,
-    city: data.city,
-    verified: true,
-    waitingUsers: 0,
+    description: "",
     image: data.image || "",
     defaultImage: getDefaultImage(categorySlug),
+    verified: true,
     featured: false,
-    officialPartner: false,
-    topRated: false,
-    premium: false,
-    type: "business",
+    visible: true,
+    scope: "city",
+    country: "India",
+    state: data.state || "",
+    district: data.district || "",
+    city: data.city || "",
+    waitingUsers: 0,
     createdBy: data.createdBy,
-    createdAt: serverTimestamp(),
     approvedBy: approvedByPhone,
-    approvedAt: serverTimestamp(),
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    source: "user",
   };
 
   const businessDocRef = await addDoc(businessesRef, businessDoc);

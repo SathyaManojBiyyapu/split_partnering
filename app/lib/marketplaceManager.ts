@@ -13,13 +13,10 @@ import {
   updateDoc,
   deleteDoc,
   query,
-  where,
   orderBy,
   serverTimestamp,
   Timestamp,
-  setDoc,
   onSnapshot,
-  increment,
   writeBatch,
   DocumentReference,
   CollectionReference,
@@ -98,6 +95,18 @@ function normalize(val: string | null | undefined): string {
 }
 
 /* ----------------------------------------
+   Development-only logging helper
+   All [PartnerSync Debug] logs are wrapped here
+   so they never appear in production.
+---------------------------------------- */
+
+function debugLog(...args: unknown[]) {
+  if (process.env.NODE_ENV === "development") {
+    console.log(...args);
+  }
+}
+
+/* ----------------------------------------
    Scope Filter (case-insensitive)
 ---------------------------------------- */
 
@@ -113,7 +122,7 @@ function filterBusinessesByScope(
   const normCity = normalize(userCity);
   const normSubcategory = normalize(subcategory);
 
-  console.log(`[PartnerSync Debug] filterBusinessesByScope called with:
+  debugLog(`[PartnerSync Debug] filterBusinessesByScope called with:
     userState="${userState}" (norm="${normState}")
     userDistrict="${userDistrict}" (norm="${normDistrict}")
     userCity="${userCity}" (norm="${normCity}")
@@ -123,7 +132,7 @@ function filterBusinessesByScope(
   const results: MarketplaceBusiness[] = [];
 
   for (const b of data) {
-    console.log(`[PartnerSync Debug] Checking business: "${b.businessName}"
+    debugLog(`[PartnerSync Debug] Checking business: "${b.businessName}"
       id="${b.id}"
       scope="${b.scope}"
       visible=${b.visible}
@@ -134,13 +143,13 @@ function filterBusinessesByScope(
 
     // Skip if explicitly hidden (visible === false)
     if (b.visible === false) {
-      console.log(`[PartnerSync Debug]   → FILTERED OUT: visible is false`);
+      debugLog(`[PartnerSync Debug]   → FILTERED OUT: visible is false`);
       continue;
     }
 
     // Filter by subcategory (case-insensitive)
     if (normSubcategory && normalize(b.subcategory) !== normSubcategory) {
-      console.log(`[PartnerSync Debug]   → FILTERED OUT: subcategory mismatch
+      debugLog(`[PartnerSync Debug]   → FILTERED OUT: subcategory mismatch
         business subcategory="${b.subcategory}" (norm="${normalize(b.subcategory)}")
         requested subcategory="${subcategory}" (norm="${normSubcategory}")`);
       continue;
@@ -150,31 +159,31 @@ function filterBusinessesByScope(
     switch (b.scope) {
       case "national":
         scopeMatch = true;
-        console.log(`[PartnerSync Debug]   → scope=national: MATCH (all users)`);
+        debugLog(`[PartnerSync Debug]   → scope=national: MATCH (all users)`);
         break;
       case "state":
         scopeMatch = normalize(b.state) === normState;
-        console.log(`[PartnerSync Debug]   → scope=state: comparing business state="${normalize(b.state)}" === user state="${normState}" → ${scopeMatch}`);
+        debugLog(`[PartnerSync Debug]   → scope=state: comparing business state="${normalize(b.state)}" === user state="${normState}" → ${scopeMatch}`);
         break;
       case "district":
         scopeMatch = normalize(b.state) === normState && normalize(b.district) === normDistrict;
-        console.log(`[PartnerSync Debug]   → scope=district: comparing state="${normalize(b.state)}"==="${normState}" && district="${normalize(b.district)}"==="${normDistrict}" → ${scopeMatch}`);
+        debugLog(`[PartnerSync Debug]   → scope=district: comparing state="${normalize(b.state)}"==="${normState}" && district="${normalize(b.district)}"==="${normDistrict}" → ${scopeMatch}`);
         break;
       case "city":
         scopeMatch = normalize(b.state) === normState && normalize(b.district) === normDistrict && normalize(b.city) === normCity;
-        console.log(`[PartnerSync Debug]   → scope=city: comparing state="${normalize(b.state)}"==="${normState}" && district="${normalize(b.district)}"==="${normDistrict}" && city="${normalize(b.city)}"==="${normCity}" → ${scopeMatch}`);
+        debugLog(`[PartnerSync Debug]   → scope=city: comparing state="${normalize(b.state)}"==="${normState}" && district="${normalize(b.district)}"==="${normDistrict}" && city="${normalize(b.city)}"==="${normCity}" → ${scopeMatch}`);
         break;
       default:
         scopeMatch = normalize(b.city) === normCity;
-        console.log(`[PartnerSync Debug]   → scope=default: comparing city="${normalize(b.city)}"==="${normCity}" → ${scopeMatch}`);
+        debugLog(`[PartnerSync Debug]   → scope=default: comparing city="${normalize(b.city)}"==="${normCity}" → ${scopeMatch}`);
         break;
     }
 
     if (scopeMatch) {
-      console.log(`[PartnerSync Debug]   → ✅ MATCH - including in results`);
+      debugLog(`[PartnerSync Debug]   → ✅ MATCH - including in results`);
       results.push(b);
     } else {
-      console.log(`[PartnerSync Debug]   → ❌ FILTERED OUT: scope/location mismatch`);
+      debugLog(`[PartnerSync Debug]   → ❌ FILTERED OUT: scope/location mismatch`);
     }
   }
 
@@ -182,8 +191,8 @@ function filterBusinessesByScope(
   const priority: Record<string, number> = { city: 0, district: 1, state: 2, national: 3 };
   results.sort((a, b) => (priority[a.scope] ?? 99) - (priority[b.scope] ?? 99));
 
-  console.log(`[PartnerSync Debug] filterBusinessesByScope returning ${results.length} businesses`);
-  results.forEach((r, i) => console.log(`  [${i+1}] "${r.businessName}" (${r.scope}) - ${r.city}, ${r.district}, ${r.state}`));
+  debugLog(`[PartnerSync Debug] filterBusinessesByScope returning ${results.length} businesses`);
+  results.forEach((r, i) => debugLog(`  [${i+1}] "${r.businessName}" (${r.scope}) - ${r.city}, ${r.district}, ${r.state}`));
 
   return results;
 }

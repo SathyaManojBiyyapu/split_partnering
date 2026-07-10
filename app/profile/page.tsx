@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { db, storage, auth } from "@/firebase/config";
+import { signOut } from "firebase/auth";
 import { doc, setDoc, getDoc } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { indiaStates } from "@/app/data/indiaStates";
@@ -190,7 +191,8 @@ export default function ProfilePage() {
     }
   };
 
-  const logout = () => {
+  const logout = async () => {
+    await signOut(auth);
     localStorage.clear();
     window.location.href = "/login";
   };

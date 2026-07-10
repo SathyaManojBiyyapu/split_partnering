@@ -92,44 +92,104 @@ export default function LoginPage() {
       // --- STEP 1: Confirm OTP ---
       const credential = await window.confirmationResult.confirm(otp);
 
-      // --- STEP 2: Log auth state ---
-      console.log("[Login Debug] uid:", credential.user.uid);
-      console.log("[Login Debug] phoneNumber:", credential.user.phoneNumber);
-      console.log("[Login Debug] email:", credential.user.email);
+      // ================ BACKEND AUTH DIAGNOSTIC ================
+      if (credential.user) {
+        // Log Firebase project config
+        try {
+          const { getApp } = await import("firebase/app");
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const firebaseApp = getApp();
+          // Use auth.app.options to get config
+          const appOptions = (auth as any).app?.options || {};
+          console.log("================ FIREBASE PROJECT ================");
+          console.log("projectId:", appOptions.projectId || "unknown");
+          console.log("authDomain:", appOptions.authDomain || "unknown");
+          console.log("storageBucket:", appOptions.storageBucket || "unknown");
+          console.log("appId:", appOptions.appId || "unknown");
+          console.log("apiKey:", appOptions.apiKey ? "***" + appOptions.apiKey.slice(-4) : "unknown");
+          console.log("===============================================");
+        } catch (_e) {
+          console.log("================ FIREBASE PROJECT ================");
+          console.log("Could not read app options");
+          console.log("===============================================");
+        }
 
-      // --- STEP 3: Normalize phone exactly as Firestore rules expect ---
-      const authPhone = credential.user.phoneNumber?.replace(/^\+91/, "").trim() ?? "";
-      const cleanPhone = phone.trim();
-      const docPath = "users/" + cleanPhone;
-      const expectedAuthPhone = authPhone; // This is what myPhone10() will return in rules
-      const ruleCheckPassed = cleanPhone === expectedAuthPhone;
+        // Log auth user data
+        console.log("================ AUTH USER ======================");
+        console.log("uid:", credential.user.uid);
+        console.log("phoneNumber:", credential.user.phoneNumber);
+        console.log("email:", credential.user.email);
+        console.log("providerData:");
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        credential.user.providerData?.forEach((p: any, i: number) => {
+          console.log("  [" + i + "] providerId:", p?.providerId, "uid:", p?.uid, "phoneNumber:", p?.phoneNumber, "email:", p?.email);
+        });
+        console.log("===============================================");
 
-      console.log("[Login Debug] normalized authPhone:", `"${authPhone}"`);
-      console.log("[Login Debug] input phone:", `"${cleanPhone}"`);
-      console.log("[Login Debug] document path:", docPath);
-      console.log("[Login Debug] authPhone === cleanPhone:", ruleCheckPassed);
-      console.log("[Login Debug] Firestore rule check: phone(" + cleanPhone + ") == myPhone10()(" + authPhone + "):", ruleCheckPassed);
+        // Log JWT claims
+        try {
+          const tokenResult = await credential.user.getIdTokenResult(true);
+          console.log("================ JWT ===========================");
+          console.log("claims:", JSON.stringify(tokenResult.claims, null, 2));
+          console.log("claims.phone_number:", (tokenResult.claims as any).phone_number);
+          console.log("claims.firebase:", JSON.stringify((tokenResult.claims as any).firebase, null, 2));
+          console.log("authTime:", tokenResult.authTime);
+          console.log("issuedAtTime:", tokenResult.issuedAtTime);
+          console.log("expirationTime:", tokenResult.expirationTime);
+          console.log("signInProvider:", tokenResult.signInProvider);
+          console.log("===============================================");
+        } catch (_e) {
+          console.log("================ JWT ===========================");
+          console.log("Could not get token result");
+          console.log("===============================================");
+        }
 
-      // --- STEP 4: Set localStorage ---
+        // Comparison
+        const cleanPhone = phone.trim();
+        const authPhone = credential.user.phoneNumber?.replace(/^\+91/, "").trim() ?? "";
+        try {
+          const tokenResult = await credential.user.getIdTokenResult(true);
+          const jwtPhone = (tokenResult.claims as any).phone_number;
+          console.log("================ COMPARISON =====================");
+          console.log("CLIENT PHONE:", authPhone);
+          console.log("JWT PHONE:", jwtPhone);
+          console.log("DOC ID:", cleanPhone);
+          console.log("client === jwt:", authPhone === jwtPhone);
+          console.log("client === docId:", authPhone === cleanPhone);
+          console.log("jwt === docId:", jwtPhone === cleanPhone);
+          console.log("===============================================");
+        } catch (_e) {
+          console.log("================ COMPARISON =====================");
+          console.log("Cannot compare - JWT unavailable");
+          console.log("===============================================");
+        }
+      }
+      // ================ END BACKEND AUTH DIAGNOSTIC ================
+
       localStorage.setItem("loggedIn", "true");
-      localStorage.setItem("phone", cleanPhone);
+      localStorage.setItem("phone", phone.trim());
       localStorage.removeItem("guest");
 
       toast.success("Login successful 🎉");
 
       // --- STEP 5: First Firestore operation after login ---
-      console.log("[Firestore Read] path:", docPath);
+      const cleanPhone = phone.trim();
+      const docPath = "users/" + cleanPhone;
+      console.log("================ FIRESTORE ======================");
+      console.log("document path:", docPath);
       const userRef = doc(db, "users", cleanPhone);
 
       let userSnap;
       try {
         userSnap = await getDoc(userRef);
-        console.log("[Firestore Read Success] exists:", userSnap.exists());
+        console.log("getDoc SUCCESS, exists:", userSnap.exists());
+        console.log("===============================================");
       } catch (fsError: any) {
-        console.error("[Firestore Read FAILED] code:", fsError.code);
-        console.error("[Firestore Read FAILED] message:", fsError.message);
-        console.error("[Firestore Read FAILED] path:", docPath);
-        console.error("[Firestore Read FAILED] operation: getDoc (read)");
+        console.error("getDoc FAILED");
+        console.error("code:", fsError.code);
+        console.error("message:", fsError.message);
+        console.error("stack:", fsError.stack);
+        console.log("===============================================");
         throw fsError;
       }
 

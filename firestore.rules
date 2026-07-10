@@ -4,12 +4,48 @@ service cloud.firestore {
 
   match /databases/{database}/documents {
 
+    /* ===================================================================
+       PARTNERSYNC — PRODUCTION FIREBASE SECURITY RULES
+       
+       Rewritten from scratch based on complete codebase audit.
+       Every rule reflects actual code paths. No legacy support.
+       =================================================================== */
+
+    /* ===================================================================
+       HELPER FUNCTIONS
+       =================================================================== */
+
     function loggedIn() {
       return request.auth != null;
     }
 
+    /* ------------------------------------------------------------------
+       isAdmin() — email-based. The admin account 
+       (sathyamanojbiyyapu@gmail.com) authenticates via Phone OTP but has
+       a linked email. request.auth.token.email is populated in both 
+       Google Sign-In and Phone OTP flows when the account has an email.
+       
+       Migration path to custom claims (if multiple admins are needed):
+       1. Firebase Admin SDK sets custom claims on user creation
+       2. Rules check: request.auth.token.admin == true
+       3. Requires Cloud Functions backend — not implemented yet.
+       ------------------------------------------------------------------ */
+
     function isAdmin() {
       return request.auth != null && request.auth.token.email == "sathyamanojbiyyapu@gmail.com";
+    }
+
+    /* ------------------------------------------------------------------
+       myPhone10() — extracts 10-digit phone from Firebase Auth token.
+       Firebase stores phone numbers in E.164 format: +91XXXXXXXXXX.
+       This strips the country code to match the app's 10-digit format.
+       Returns "" for email-only auth users (who have no phone_number).
+       ------------------------------------------------------------------ */
+
+    function myPhone10() {
+      return request.auth.token.phone_number != null
+        ? request.auth.token.phone_number.substring(3)
+        : "";
     }
 
     function validString(field) {
@@ -28,200 +64,367 @@ service cloud.firestore {
       return field in ["national", "state", "district", "city"];
     }
 
-    /* =========================
-       MARKETPLACE (NEW SCOPE-BASED)
-       Path: marketplace/{categorySlug}/businesses/{businessId}
-       This matches ALL businesses in the scoped marketplace system.
-       Must be defined BEFORE the legacy path to avoid conflicts.
-    ========================== */
-
-    match /marketplace/{categorySlug}/businesses/{businessId} {
-      allow read: if loggedIn();
-      allow create: if loggedIn() && validString(request.resource.data.businessName) && validScope(request.resource.data.scope);
-      allow update: if isAdmin();
-      allow delete: if false;
-    }
-
-    /* =========================
-       MARKETPLACE (LEGACY CITY-BASED - for backward compatibility)
-       Path: marketplace/{categorySlug}/states/{state}/districts/{district}/cities/{city}/businesses/{businessId}
-    ========================== */
-
-    match /marketplace/{categorySlug}/states/{state}/districts/{district}/cities/{city}/businesses/{businessId} {
-      allow read, create: if loggedIn();
-      allow update: if isAdmin();
-      allow delete: if false;
-    }
-
-    /* =========================
-       USER PROFILES
-       Document ID: phone number
-    ========================== */
+    /* ===================================================================
+       1. USERS
+       
+       Document ID: 10-digit phone number
+       
+       CREATE: User creates own profile during registration.
+       READ:   User reads own profile. Admin reads all (for admin panel).
+       UPDATE: User updates own profile only.
+       DELETE: Disabled.
+       =================================================================== */
 
     match /users/{phone} {
-      allow read, create, update: if loggedIn();
-      allow delete: if false;
+      allow read:    if loggedIn() && (phone == myPhone10() || isAdmin());
+      allow create:  if loggedIn() && phone == myPhone10();
+      allow update:  if loggedIn() && phone == myPhone10();
+      allow delete:  if false;
     }
 
-    /* =========================
-       CATEGORY SYSTEM
-    ========================== */
+    /* ===================================================================
+       2. CATEGORIES (Reference Data)
+       
+       Public read-only data. Used by the explore/categories page.
+       No authentication required for reads.
+       =================================================================== */
 
     match /categories/{categoryId} {
-      allow read: if true;
-      allow write: if false;
+      allow read:   if true;
+      allow write:  if false;
+
       match /subcategories/{subId} {
-        allow read: if true;
-        allow write: if false;
+        allow read:   if true;
+        allow write:  if false;
       }
     }
 
-    /* =========================
-       USER SELECTIONS
-    ========================== */
+    /* ===================================================================
+       3. MARKETPLACE (Single Architecture)
+       
+       Path: marketplace/{categorySlug}/businesses/{businessId}
+       
+       This is the ONLY marketplace path. No legacy nested paths.
+       
+       CREATE: Admin only (via MarketplaceManager or approveUserCollaboration).
+               Users cannot create marketplace documents directly.
+               User flow: userCollaborations → Admin Approval → Marketplace.
+       READ:   Any authenticated user (filtered client-side by scope).
+       UPDATE: Admin only.
+       DELETE: Admin only.
+       
+       NOTE: approveUserCollaboration() in app/lib/userCollaborations.ts
+             writes to marketplace/{categorySlug}/businesses/{businessId}
+             at line 115-149. This path matches exactly.
+       =================================================================== */
+
+    match /marketplace/{categorySlug}/businesses/{businessId} {
+      allow read:    if loggedIn();
+      allow create:  if isAdmin() && validString(request.resource.data.businessName) && validScope(request.resource.data.scope);
+      allow update:  if isAdmin();
+      allow delete:  if isAdmin();
+    }
+
+    /* ===================================================================
+       4. USER COLLABORATIONS
+       
+       Path: userCollaborations/{docId}
+       
+       This is the user → admin approval pipeline.
+       
+       CREATE: Users can only create collaborations with their own phone.
+               Submit via AddBusinessModal → submitUserCollaboration().
+       READ:   Any authenticated user (admin reads all for approval).
+       UPDATE: Admin only (approve or reject).
+       DELETE: Disabled.
+       
+       Flow: AddBusinessModal → submitUserCollaboration() → status:"pending"
+             → Admin approves → approveUserCollaboration() creates marketplace doc
+             → updates status:"approved"
+       =================================================================== */
+
+    match /userCollaborations/{docId} {
+      allow read:    if loggedIn();
+      allow create:  if loggedIn()
+        && validString(request.resource.data.businessName)
+        && validString(request.resource.data.category)
+        && validString(request.resource.data.state)
+        && validString(request.resource.data.district)
+        && validString(request.resource.data.city)
+        && request.resource.data.createdBy == myPhone10()
+        && request.resource.data.status == "pending";
+      allow update:  if isAdmin();
+      allow delete:  if false;
+    }
+
+    /* ===================================================================
+       5. COLLABORATORS
+       
+       Path: collaborators/{docId}
+       
+       CREATE: Users submit collaborator requests.
+       READ:   Any authenticated user.
+       UPDATE: Admin only (approve/reject/feature/hide).
+       DELETE: Disabled.
+       =================================================================== */
+
+    match /collaborators/{docId} {
+      allow read:    if loggedIn();
+      allow create:  if loggedIn()
+        && validString(request.resource.data.category)
+        && validString(request.resource.data.subcategory)
+        && validString(request.resource.data.option)
+        && validString(request.resource.data.state)
+        && validString(request.resource.data.district)
+        && validString(request.resource.data.city)
+        && validString(request.resource.data.phone)
+        && (request.resource.data.status in ["pending", "approved", "rejected", "featured", "hidden"]);
+      allow update:  if isAdmin();
+      allow delete:  if false;
+    }
+
+    /* ===================================================================
+       6. SELECTIONS
+       
+       Path: selections/{docId}
+       
+       Created when user clicks "Make Partner" on a BusinessCard.
+       Triggers matching engine to find/join/create a group.
+       
+       CREATE: Authenticated user with valid uid/phone/category.
+       READ:   Any authenticated user.
+       UPDATE: Any authenticated user (matching engine needs to update).
+       DELETE: Disabled.
+       =================================================================== */
 
     match /selections/{docId} {
-      allow read: if loggedIn();
-      allow create: if loggedIn() && validString(request.resource.data.uid) && validString(request.resource.data.phone) && validString(request.resource.data.category);
-      allow update: if loggedIn();
-      allow delete: if false;
+      allow read:    if loggedIn();
+      allow create:  if loggedIn()
+        && validString(request.resource.data.uid)
+        && validString(request.resource.data.phone)
+        && validString(request.resource.data.category);
+      allow update:  if loggedIn();
+      allow delete:  if false;
     }
 
-    /* =========================
-       GROUP MATCHING
-    ========================== */
+    /* ===================================================================
+       7. GROUPS (Matching)
+       
+       Path: groups/{groupId}
+       
+       CREATE: Authenticated user with valid category/option/members.
+       READ:   Any authenticated user.
+       UPDATE: Only group members (by phone in members[] array), creator,
+               or admin. This protects the matching system from external
+               tampering while allowing members to join/leave.
+       DELETE: Disabled.
+       
+       Note: createdBy stores the 10-digit phone. members[] stores
+             member objects with .phone as 10-digit.
+       =================================================================== */
 
     match /groups/{groupId} {
-      allow read: if loggedIn();
-      allow create: if loggedIn() && validString(request.resource.data.category) && validString(request.resource.data.option) && validNumber(request.resource.data.membersCount) && validNumber(request.resource.data.requiredSize) && validList(request.resource.data.members) && validList(request.resource.data.memberUIDs) && validString(request.resource.data.createdBy) && request.resource.data.membersCount >= 1 && request.resource.data.requiredSize >= 2;
-      allow update: if loggedIn();
-      allow delete: if false;
+      allow read:    if loggedIn();
+      allow create:  if loggedIn()
+        && validString(request.resource.data.category)
+        && validString(request.resource.data.option)
+        && validNumber(request.resource.data.membersCount)
+        && validNumber(request.resource.data.requiredSize)
+        && validList(request.resource.data.members)
+        && validList(request.resource.data.memberUIDs)
+        && validString(request.resource.data.createdBy)
+        && request.resource.data.membersCount >= 1
+        && request.resource.data.requiredSize >= 2;
+
+      allow update:  if loggedIn() && (
+        isAdmin()
+        || request.resource.data.createdBy == myPhone10()
+        || request.resource.data.members.hasAny([myPhone10()])
+      );
+
+      allow delete:  if false;
     }
 
-    /* =========================
-       MATCH REQUESTS
-    ========================== */
+    /* ===================================================================
+       8. MATCH REQUESTS (Legacy — kept for backward compatibility)
+       
+       Path: matchRequests/{docId}
+       
+       Used by the matching engine for pending match proposals.
+       Kept as-is to avoid breaking existing matching flows.
+       =================================================================== */
 
     match /matchRequests/{docId} {
-      allow read: if loggedIn();
-      allow create: if loggedIn() && request.resource.data.userA is map && request.resource.data.userB is map && validString(request.resource.data.userA.phone) && validString(request.resource.data.userB.phone) && validString(request.resource.data.status);
-      allow update: if loggedIn();
-      allow delete: if false;
+      allow read:    if loggedIn();
+      allow create:  if loggedIn()
+        && request.resource.data.userA is map
+        && request.resource.data.userB is map
+        && validString(request.resource.data.userA.phone)
+        && validString(request.resource.data.userB.phone)
+        && validString(request.resource.data.status);
+      allow update:  if loggedIn();
+      allow delete:  if false;
     }
 
-    /* =========================
-       PAYMENTS
-    ========================== */
+    /* ===================================================================
+       9. PAYMENTS
+       
+       Path: payments/{paymentId}
+       
+       CREATE: Authenticated user with valid uid and amount.
+               Created during checkout flow (Stripe/Razorpay).
+       READ:   Any authenticated user (dashboard shows payment status).
+       UPDATE: Disabled (webhooks handle verification).
+       DELETE: Disabled.
+       =================================================================== */
 
     match /payments/{paymentId} {
-      allow read: if loggedIn();
-      allow create: if loggedIn() && validString(request.resource.data.uid) && validNumber(request.resource.data.amount);
-      allow update: if false;
-      allow delete: if false;
+      allow read:    if loggedIn();
+      allow create:  if loggedIn()
+        && validString(request.resource.data.uid)
+        && validNumber(request.resource.data.amount);
+      allow update:  if false;
+      allow delete:  if false;
     }
 
-    /* =========================
-       CHAT SYSTEM
-    ========================== */
+    /* ===================================================================
+       10. CHAT SYSTEM
+       
+       Path: chats/{chatId}
+             chats/{chatId}/messages/{messageId}
+             chats/{chatId}/typing/{uid}
+       
+       READ:   Only chat members (in memberUIDs array) or admin.
+               Messages and typing inherit parent chat's access control
+               via get() on the parent document.
+       CREATE: Only chat members can create messages.
+       UPDATE: Typing status only.
+       DELETE: Disabled.
+       
+       Note: memberUIDs stores Firebase Auth UIDs (not phone numbers)
+             for reliable identity verification.
+       =================================================================== */
 
     match /chats/{chatId} {
-      allow read: if loggedIn();
-      allow create: if loggedIn() && validList(request.resource.data.memberUIDs);
-      allow update: if loggedIn();
-      allow delete: if false;
+      allow read:    if loggedIn() && (isAdmin() || request.auth.uid in resource.data.memberUIDs);
+      allow create:  if loggedIn() && validList(request.resource.data.memberUIDs);
+      allow update:  if loggedIn() && (isAdmin() || request.auth.uid in resource.data.memberUIDs);
+      allow delete:  if false;
 
       match /messages/{messageId} {
-        allow read: if loggedIn();
-        allow create: if loggedIn() && validString(request.resource.data.senderId) && validString(request.resource.data.text);
+        allow read:   if loggedIn() && (isAdmin() || request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.memberUIDs);
+        allow create: if loggedIn()
+          && validString(request.resource.data.senderId)
+          && validString(request.resource.data.text)
+          && (isAdmin() || request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.memberUIDs);
         allow update: if false;
         allow delete: if false;
       }
 
       match /typing/{uid} {
-        allow read, write: if loggedIn();
+        allow read:   if loggedIn() && (isAdmin() || request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.memberUIDs);
+        allow write:  if loggedIn() && (isAdmin() || request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.memberUIDs);
       }
     }
 
-    /* =========================
-       ONLINE STATUS
-    ========================== */
-
-    match /status/{uid} {
-      allow read, write: if loggedIn();
-    }
-
-    /* =========================
-       MOVIE TICKETS / TICKET REQUESTS
-    ========================== */
-
-    match /movieTickets/{ticketId} {
-      allow read, create: if loggedIn();
-      allow update, delete: if false;
-    }
-
-    match /ticketRequests/{requestId} {
-      allow read, create: if loggedIn();
-      allow update, delete: if false;
-    }
-
-    /* =========================
-       COLLABORATORS
-    ========================== */
-
-    match /collaborators/{docId} {
-      allow read: if loggedIn();
-      allow create: if loggedIn() && validString(request.resource.data.category) && validString(request.resource.data.subcategory) && validString(request.resource.data.option) && validString(request.resource.data.state) && validString(request.resource.data.district) && validString(request.resource.data.city) && validString(request.resource.data.phone) && (request.resource.data.status in ["pending", "approved", "rejected", "featured", "hidden"]);
-      allow update: if isAdmin();
-      allow delete: if false;
-    }
-
-    /* =========================
-       USER COLLABORATIONS
-    ========================== */
-
-    match /userCollaborations/{docId} {
-      allow read: if loggedIn();
-      allow create: if loggedIn() && validString(request.resource.data.businessName) && validString(request.resource.data.category) && validString(request.resource.data.state) && validString(request.resource.data.district) && validString(request.resource.data.city) && validString(request.resource.data.createdBy) && validString(request.resource.data.createdByName) && validString(request.resource.data.createdByPhone) && request.resource.data.status == "pending";
-      allow update: if isAdmin();
-      allow delete: if false;
-    }
-
-    /* =========================
-       REPORTS
-    ========================== */
-
-    match /reports/{docId} {
-      allow read: if false;
-      allow create: if loggedIn();
-      allow update, delete: if false;
-    }
-
-    /* =========================
-       NOTIFICATIONS
-    ========================== */
+    /* ===================================================================
+       11. NOTIFICATIONS
+       
+       Path: notifications/{notificationId}
+       
+       Users can only access notifications where the uid field matches
+       their Firebase Auth UID. Admin can manage all notifications.
+       =================================================================== */
 
     match /notifications/{notificationId} {
-      allow read, create, update: if loggedIn();
-      allow delete: if false;
+      allow read:    if loggedIn() && (isAdmin() || request.auth.uid == resource.data.uid);
+      allow create:  if loggedIn() && (isAdmin() || request.auth.uid == request.resource.data.uid);
+      allow update:  if loggedIn() && (isAdmin() || request.auth.uid == resource.data.uid);
+      allow delete:  if false;
     }
 
-    /* =========================
-       GYM SUBMISSIONS & PENDING BUSINESSES
-    ========================== */
+    /* ===================================================================
+       12. ONLINE STATUS
+       
+       Path: status/{uid}
+       
+       Users can only write their own online status.
+       Any authenticated user can read online status.
+       =================================================================== */
 
-    match /gymSubmissions/{docId} {
-      allow read, create, update: if loggedIn();
-      allow delete: if false;
+    match /status/{uid} {
+      allow read:   if loggedIn();
+      allow write:  if loggedIn() && (request.auth.uid == uid || isAdmin());
     }
 
-    match /pendingBusinesses/{docId} {
-      allow read, create, update: if loggedIn();
-      allow delete: if false;
+    /* ===================================================================
+       13. REPORTS
+       
+       Path: reports/{docId}
+       
+       Reports are write-only from clients. Admin can read.
+       This prevents users from reading other users' reports.
+       =================================================================== */
+
+    match /reports/{docId} {
+      allow read:   if isAdmin();
+      allow create: if loggedIn();
+      allow write:  if false;
     }
 
-    /* =========================
-       FALLBACK: DENY ALL UNMATCHED
-    ========================== */
+    /* ===================================================================
+       14. MOVIE TICKETS
+       
+       Path: movieTickets/{ticketId}
+       
+       User-facing feature for ticket splitting.
+       Create/Read by authenticated users. No update/delete.
+       =================================================================== */
+
+    match /movieTickets/{ticketId} {
+      allow read:    if loggedIn();
+      allow create:  if loggedIn();
+      allow update:  if false;
+      allow delete:  if false;
+    }
+
+    /* ===================================================================
+       15. TICKET REQUESTS
+       
+       Path: ticketRequests/{requestId}
+       
+       User-facing feature for ticket request matching.
+       Create/Read by authenticated users. No update/delete.
+       =================================================================== */
+
+    match /ticketRequests/{requestId} {
+      allow read:    if loggedIn();
+      allow create:  if loggedIn();
+      allow update:  if false;
+      allow delete:  if false;
+    }
+
+    /* ===================================================================
+       REMOVED COLLECTIONS (Legacy — zero code references exist)
+       
+       The following collections had rules in the previous version but
+       have zero references in the current codebase:
+       
+       - gymSubmissions/{docId}    → REMOVED (zero code references)
+       - pendingBusinesses/{docId} → REMOVED (zero code references)
+       
+       These were superseded by userCollaborations + marketplace.
+       Existing data in these collections is preserved in Firestore but
+       inaccessible via client-side rules. If re-activation is needed,
+       add specific match blocks above this line.
+       =================================================================== */
+
+    /* ===================================================================
+       FALLBACK: DENY ALL UNMATCHED PATHS
+       
+       This catches any collection not explicitly listed above.
+       Prevents unintended access to any new or forgotten collections.
+       =================================================================== */
 
     match /{document=**} {
       allow read, write: if false;

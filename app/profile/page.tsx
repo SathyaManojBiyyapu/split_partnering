@@ -106,6 +106,25 @@ export default function ProfilePage() {
     try {
       setSaving(true);
 
+      // --- DIAGNOSTIC: Log auth before any action ---
+      console.log("[Profile Debug] auth.currentUser before reload:", auth.currentUser?.uid, auth.currentUser?.phoneNumber, auth.currentUser?.email);
+      console.log("[Profile Debug] providerData:", JSON.stringify(auth.currentUser?.providerData?.map(p => ({ providerId: p?.providerId, phoneNumber: p?.phoneNumber, uid: p?.uid }))));
+
+      // --- FIX: Force refresh Firebase Auth token to restore phoneNumber ---
+      // After page navigation, the persisted auth session may lose phoneNumber.
+      // Reloading the user and refreshing the ID token restores it from the server.
+      if (auth.currentUser) {
+        try {
+          await auth.currentUser.reload();
+          // Also force ID token refresh to propagate phoneNumber claim
+          await auth.currentUser.getIdToken(true);
+          console.log("[Profile Debug] auth.currentUser after reload:", auth.currentUser?.uid, auth.currentUser?.phoneNumber);
+          console.log("[Profile Debug] providerData after reload:", JSON.stringify(auth.currentUser?.providerData?.map(p => ({ providerId: p?.providerId, phoneNumber: p?.phoneNumber, uid: p?.uid }))));
+        } catch (reloadErr) {
+          console.warn("[Profile Debug] reload failed:", reloadErr);
+        }
+      }
+
       const currentUser = auth.currentUser;
       const authPhoneRaw = currentUser?.phoneNumber || null;
       const authPhone = authPhoneRaw ? authPhoneRaw.replace(/^\+91/, "").trim() : null;
@@ -182,7 +201,6 @@ export default function ProfilePage() {
         toast.error("Profile save failed: Permission denied. Please re-login and try again.");
       } else if (code === "not-found") {
         toast.error("Profile document not found. Creating now...");
-        // If updateDoc was used on a non-existent doc, we handle it above with setDoc
       } else {
         toast.error("Failed to save profile: " + (error?.message?.substring(0, 60) || "Unknown error"));
       }

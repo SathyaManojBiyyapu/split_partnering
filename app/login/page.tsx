@@ -89,18 +89,50 @@ export default function LoginPage() {
         return;
       }
 
-      await window.confirmationResult.confirm(otp);
+      // --- STEP 1: Confirm OTP ---
+      const credential = await window.confirmationResult.confirm(otp);
 
+      // --- STEP 2: Log auth state ---
+      console.log("[Login Debug] uid:", credential.user.uid);
+      console.log("[Login Debug] phoneNumber:", credential.user.phoneNumber);
+      console.log("[Login Debug] email:", credential.user.email);
+
+      // --- STEP 3: Normalize phone exactly as Firestore rules expect ---
+      const authPhone = credential.user.phoneNumber?.replace(/^\+91/, "").trim() ?? "";
+      const cleanPhone = phone.trim();
+      const docPath = "users/" + cleanPhone;
+      const expectedAuthPhone = authPhone; // This is what myPhone10() will return in rules
+      const ruleCheckPassed = cleanPhone === expectedAuthPhone;
+
+      console.log("[Login Debug] normalized authPhone:", `"${authPhone}"`);
+      console.log("[Login Debug] input phone:", `"${cleanPhone}"`);
+      console.log("[Login Debug] document path:", docPath);
+      console.log("[Login Debug] authPhone === cleanPhone:", ruleCheckPassed);
+      console.log("[Login Debug] Firestore rule check: phone(" + cleanPhone + ") == myPhone10()(" + authPhone + "):", ruleCheckPassed);
+
+      // --- STEP 4: Set localStorage ---
       localStorage.setItem("loggedIn", "true");
-      localStorage.setItem("phone", phone.trim());
+      localStorage.setItem("phone", cleanPhone);
       localStorage.removeItem("guest");
 
       toast.success("Login successful 🎉");
 
-      /* Post-login redirection */
-      const cleanPhone = phone.trim();
+      // --- STEP 5: First Firestore operation after login ---
+      console.log("[Firestore Read] path:", docPath);
       const userRef = doc(db, "users", cleanPhone);
-      const userSnap = await getDoc(userRef);
+
+      let userSnap;
+      try {
+        userSnap = await getDoc(userRef);
+        console.log("[Firestore Read Success] exists:", userSnap.exists());
+      } catch (fsError: any) {
+        console.error("[Firestore Read FAILED] code:", fsError.code);
+        console.error("[Firestore Read FAILED] message:", fsError.message);
+        console.error("[Firestore Read FAILED] path:", docPath);
+        console.error("[Firestore Read FAILED] operation: getDoc (read)");
+        throw fsError;
+      }
+
       const profileCompleted = userSnap.exists() && (userSnap.data() as any)?.profileCompleted === true;
       window.location.href = profileCompleted ? "/" : "/profile";
     } catch (err: any) {

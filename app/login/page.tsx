@@ -104,11 +104,21 @@ export default function LoginPage() {
       const profileCompleted = userSnap.exists() && (userSnap.data() as any)?.profileCompleted === true;
       window.location.href = profileCompleted ? "/" : "/profile";
     } catch (err: any) {
+      // --- DETAILED ERROR LOGGING (diagnostic) ---
+      console.log("[signInWithPhoneNumber Error Debug]");
+      console.log("  error.code:", err?.code || "N/A");
+      console.log("  error.message:", err?.message || "N/A");
+      console.log("  error.customData:", JSON.stringify(err?.customData || {}));
+      console.log("  error.toString():", err?.toString() || "N/A");
+      console.log("  Full error object:", err);
+      // --- END DIAGNOSTIC ---
+
       if (window.recaptchaVerifier) {
         try {
           window.recaptchaVerifier.reset();
         } catch (_) {}
       }
+
       const code = err?.code || "";
       const message = err?.message || err?.toString() || "Unknown error";
 
@@ -118,6 +128,10 @@ export default function LoginPage() {
         toast.error("Invalid phone number. Enter a valid 10-digit number.");
       } else if (code === "auth/too-many-requests") {
         toast.error("Too many attempts. Please try again later.");
+      } else if (code === "auth/code-expired") {
+        toast.error("OTP expired. Please request a new one.");
+        setOtpSent(false);
+        window.confirmationResult = null;
       } else {
         toast.error(`OTP failed: ${message.substring(0, 80)}`);
       }

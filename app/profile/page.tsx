@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { db, storage } from "@/firebase/config";
+import { db, storage, auth } from "@/firebase/config";
 import { doc, setDoc, getDoc } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { indiaStates } from "@/app/data/indiaStates";
@@ -24,7 +24,8 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [profileCompleted, setProfileCompleted] = useState(false);
 
-  const phone = typeof window !== "undefined" ? localStorage.getItem("phone") : null;
+  const rawPhone = typeof window !== "undefined" ? (localStorage.getItem("phone") || "") : "";
+  const phone = rawPhone.trim();
   const guest = typeof window !== "undefined" ? localStorage.getItem("guest") === "true" : false;
 
   const selectedStateDistricts = stateVal && districts ? (districts as any)[stateVal] || [] : [];
@@ -103,12 +104,48 @@ export default function ProfilePage() {
 
     try {
       setSaving(true);
-      const userRef = doc(db, "users", phone);
 
+      const currentUser = auth.currentUser;
+      const authPhoneRaw = currentUser?.phoneNumber || null;
+      const authPhone = authPhoneRaw ? authPhoneRaw.replace(/^\+91/, "").trim() : null;
+      const authUid = currentUser?.uid || null;
+
+      // Normalize: use auth phone if available, otherwise fall back to localStorage
+      const docPhone = authPhone || phone;
+
+      // Log diagnostic info to console
+      console.log("[Profile Save Debug]");
+      console.log("  auth.currentUser.uid:", authUid);
+      console.log("  auth.currentUser.phoneNumber:", authPhoneRaw);
+      console.log("  normalized authPhone:", authPhone);
+      console.log("  localStorage phone:", phone);
+      console.log("  doc ID to write:", docPhone);
+      console.log("  doc path:", "users/" + docPhone);
+
+      // Check if the document already exists
+      const userRef = doc(db, "users", docPhone);
+      const existingSnap = await getDoc(userRef);
+      const docExists = existingSnap.exists();
+      console.log("  document exists:", docExists);
+
+      // Check what the Firestore rule will check:
+      // rule: phone == myPhone10() where myPhone10() = phone_number.substring(3)
+      // If authPhoneRaw is null (Google-only user), myPhone10() returns ""
+      // So phone == "" will be false -> permission-denied
+      console.log("  will rule pass? phone(" + docPhone + ") == myPhone10()(" + authPhone + "):", docPhone === authPhone);
+
+      if (phone !== authPhone && currentUser) {
+        console.warn("  PHONE MISMATCH: localStorage phone differs from auth phone. Updating localStorage.");
+        if (authPhone) {
+          localStorage.setItem("phone", authPhone);
+        }
+      }
+
+      // Write: use setDoc with merge=true so it works whether exists or not
       await setDoc(
         userRef,
         {
-          phone,
+          phone: docPhone,
           name,
           city,
           district,
@@ -126,12 +163,28 @@ export default function ProfilePage() {
         { merge: true }
       );
 
+      if (docPhone !== phone) {
+        localStorage.setItem("phone", docPhone);
+      }
+
       toast.success("Profile saved successfully!");
       setProfileCompleted(true);
       window.location.href = "/categories";
-    } catch (error) {
-      console.error(error);
-      toast.error("Failed to save profile");
+    } catch (error: any) {
+      console.error("[Profile Save Error]");
+      console.error("  error.code:", error?.code || "N/A");
+      console.error("  error.message:", error?.message || String(error));
+      console.error("  full error:", error);
+
+      const code = error?.code || "";
+      if (code === "permission-denied") {
+        toast.error("Profile save failed: Permission denied. Please re-login and try again.");
+      } else if (code === "not-found") {
+        toast.error("Profile document not found. Creating now...");
+        // If updateDoc was used on a non-existent doc, we handle it above with setDoc
+      } else {
+        toast.error("Failed to save profile: " + (error?.message?.substring(0, 60) || "Unknown error"));
+      }
     } finally {
       setSaving(false);
     }

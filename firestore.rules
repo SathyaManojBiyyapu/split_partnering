@@ -48,6 +48,13 @@ service cloud.firestore {
         : "";
     }
 
+    /* For users authenticated without a phone number (e.g. Google Sign-In only),
+       grant profile access if they are the authenticated user.
+       The document ID for Google-only users is their Firebase Auth UID. */
+    function isOwnUid(phone) {
+      return request.auth.uid == phone || myPhone10() == phone;
+    }
+
     function validString(field) {
       return field is string && field.size() > 0;
     }

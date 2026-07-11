@@ -41,6 +41,20 @@ export default function ProfilePage() {
 
     const fetchProfile = async () => {
       try {
+        // KEY FIX: Force-refresh auth user BEFORE any Firestore operation.
+        // After page navigation, auth.currentUser.phoneNumber can be null even though
+        // the user is authenticated. This happens because Firebase Auth restores the
+        // session from persistence (localStorage/IndexedDB) which may not contain
+        // phone_number. reload() fetches the latest user data from the server.
+        // getIdToken(true) forces a fresh JWT that includes the phone_number claim,
+        // which Firestore rules need via request.auth.token.phone_number.
+        if (auth.currentUser) {
+          try {
+            await auth.currentUser.reload();
+            await auth.currentUser.getIdToken(true);
+          } catch (_) {}
+        }
+
         const userRef = doc(db, "users", phone);
         const snapshot = await getDoc(userRef);
 
@@ -106,23 +120,12 @@ export default function ProfilePage() {
     try {
       setSaving(true);
 
-      // --- DIAGNOSTIC: Log auth before any action ---
-      console.log("[Profile Debug] auth.currentUser before reload:", auth.currentUser?.uid, auth.currentUser?.phoneNumber, auth.currentUser?.email);
-      console.log("[Profile Debug] providerData:", JSON.stringify(auth.currentUser?.providerData?.map(p => ({ providerId: p?.providerId, phoneNumber: p?.phoneNumber, uid: p?.uid }))));
-
-      // --- FIX: Force refresh Firebase Auth token to restore phoneNumber ---
-      // After page navigation, the persisted auth session may lose phoneNumber.
-      // Reloading the user and refreshing the ID token restores it from the server.
+      // Force-refresh auth before save too
       if (auth.currentUser) {
         try {
           await auth.currentUser.reload();
-          // Also force ID token refresh to propagate phoneNumber claim
           await auth.currentUser.getIdToken(true);
-          console.log("[Profile Debug] auth.currentUser after reload:", auth.currentUser?.uid, auth.currentUser?.phoneNumber);
-          console.log("[Profile Debug] providerData after reload:", JSON.stringify(auth.currentUser?.providerData?.map(p => ({ providerId: p?.providerId, phoneNumber: p?.phoneNumber, uid: p?.uid }))));
-        } catch (reloadErr) {
-          console.warn("[Profile Debug] reload failed:", reloadErr);
-        }
+        } catch (_) {}
       }
 
       const currentUser = auth.currentUser;
@@ -133,7 +136,6 @@ export default function ProfilePage() {
       // Normalize: use auth phone if available, otherwise fall back to localStorage
       const docPhone = authPhone || phone;
 
-      // Log diagnostic info to console
       console.log("[Profile Save Debug]");
       console.log("  auth.currentUser.uid:", authUid);
       console.log("  auth.currentUser.phoneNumber:", authPhoneRaw);
@@ -142,26 +144,18 @@ export default function ProfilePage() {
       console.log("  doc ID to write:", docPhone);
       console.log("  doc path:", "users/" + docPhone);
 
-      // Check if the document already exists
       const userRef = doc(db, "users", docPhone);
       const existingSnap = await getDoc(userRef);
       const docExists = existingSnap.exists();
       console.log("  document exists:", docExists);
-
-      // Check what the Firestore rule will check:
-      // rule: phone == myPhone10() where myPhone10() = phone_number.substring(3)
-      // If authPhoneRaw is null (Google-only user), myPhone10() returns ""
-      // So phone == "" will be false -> permission-denied
       console.log("  will rule pass? phone(" + docPhone + ") == myPhone10()(" + authPhone + "):", docPhone === authPhone);
 
       if (phone !== authPhone && currentUser) {
-        console.warn("  PHONE MISMATCH: localStorage phone differs from auth phone. Updating localStorage.");
         if (authPhone) {
           localStorage.setItem("phone", authPhone);
         }
       }
 
-      // Write: use setDoc with merge=true so it works whether exists or not
       await setDoc(
         userRef,
         {
@@ -194,13 +188,10 @@ export default function ProfilePage() {
       console.error("[Profile Save Error]");
       console.error("  error.code:", error?.code || "N/A");
       console.error("  error.message:", error?.message || String(error));
-      console.error("  full error:", error);
 
       const code = error?.code || "";
       if (code === "permission-denied") {
         toast.error("Profile save failed: Permission denied. Please re-login and try again.");
-      } else if (code === "not-found") {
-        toast.error("Profile document not found. Creating now...");
       } else {
         toast.error("Failed to save profile: " + (error?.message?.substring(0, 60) || "Unknown error"));
       }
@@ -237,7 +228,6 @@ export default function ProfilePage() {
     <div className="text-white pt-32 flex flex-col items-center gap-5 px-6 pb-20">
       <h1 className="text-3xl font-bold text-[#D4AF37] mb-1">Your Profile</h1>
 
-      {/* Premium info card */}
       <div className="w-72 p-4 rounded-xl border border-[#D4AF37]/30 bg-gradient-to-br from-[#1a1500] to-black text-center">
         <p className="text-[#D4AF37] text-sm font-semibold">✦ Complete Your Location Profile ✦</p>
         <p className="text-gray-300 text-xs mt-2 leading-relaxed">
@@ -245,7 +235,6 @@ export default function ProfilePage() {
         </p>
       </div>
 
-      {/* Profile image */}
       <div className="relative">
         <img
           src={photoURL || "https://ui-avatars.com/api/?background=000000&color=D4AF37&name=User"}
@@ -254,7 +243,6 @@ export default function ProfilePage() {
         />
       </div>
 
-      {/* Image picker */}
       {!guest && (
         <label className="cursor-pointer text-sm text-[#D4AF37] underline">
           {uploadLoading ? "Uploading..." : "Upload Profile Photo"}
@@ -262,7 +250,6 @@ export default function ProfilePage() {
         </label>
       )}
 
-      {/* Profile strength */}
       <div className="w-72">
         <div className="flex justify-between text-xs mb-1 text-gray-400">
           <span>Profile Strength</span>
@@ -273,7 +260,6 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      {/* Note */}
       <div className="max-w-md text-center text-xs text-gray-400 mb-2">
         SplitPartnering is a{" "}
         <span className="text-[#D4AF37] font-semibold">partnering service</span>.
@@ -284,7 +270,6 @@ export default function ProfilePage() {
         {guest ? "Guest Mode: You can browse, but cannot save details." : "Keep your profile accurate. Partners trust verified details."}
       </p>
 
-      {/* Phone */}
       <div className="bg-black/50 border border-[#D4AF37]/30 px-4 py-2 rounded-lg w-72 text-center text-sm mb-2">
         Phone: <span className="text-[#D4AF37] font-semibold">{phone || "Guest"}</span>
       </div>
@@ -295,7 +280,6 @@ export default function ProfilePage() {
         </div>
       )}
 
-      {/* Name */}
       <input
         type="text"
         placeholder="Full Name"
@@ -311,7 +295,6 @@ export default function ProfilePage() {
         </div>
       )}
 
-      {/* Gender */}
       <select
         value={gender}
         onChange={(e) => setGender(e.target.value)}
@@ -330,7 +313,6 @@ export default function ProfilePage() {
         </div>
       )}
 
-      {/* College */}
       <input
         type="text"
         placeholder="College / Company"
@@ -340,7 +322,6 @@ export default function ProfilePage() {
         disabled={guest}
       />
 
-      {/* State dropdown */}
       <select
         value={stateVal}
         onChange={(e) => {
@@ -357,7 +338,6 @@ export default function ProfilePage() {
         ))}
       </select>
 
-      {/* District dropdown */}
       <select
         value={district}
         onChange={(e) => {
@@ -373,7 +353,6 @@ export default function ProfilePage() {
         ))}
       </select>
 
-      {/* City dropdown */}
       <select
         value={city}
         onChange={(e) => setCity(e.target.value)}
@@ -386,7 +365,6 @@ export default function ProfilePage() {
         ))}
       </select>
 
-      {/* Interests */}
       <input
         type="text"
         placeholder="Interests (Movies, Trips, Food...)"
@@ -396,7 +374,6 @@ export default function ProfilePage() {
         disabled={guest}
       />
 
-      {/* Bio */}
       <textarea
         placeholder="Short Bio"
         value={bio}
@@ -405,7 +382,6 @@ export default function ProfilePage() {
         disabled={guest}
       />
 
-      {/* Save */}
       {!guest && (
         <button
           onClick={saveProfile}
@@ -416,25 +392,20 @@ export default function ProfilePage() {
         </button>
       )}
 
-      {/* Verified badge */}
       <div className="text-green-400 text-xs mt-2">✅ Verified Partner Profile</div>
 
-      {/* Trust */}
       <div className="max-w-md text-center text-[11px] text-gray-400 mt-2">
         Your details help us suggest better partners in your city. Payments and purchases always happen directly between partners and providers.
       </div>
 
-      {/* Logout */}
       <button onClick={logout} className="text-red-400 underline text-sm mt-3">
         Logout
       </button>
 
-      {/* Admin */}
       <button onClick={() => (window.location.href = "/admin")} className="text-[10px] opacity-20 mt-1">
         admin
       </button>
 
-      {/* AI */}
       <button onClick={() => (window.location.href = "/ai")} className="mt-4 text-[#D4AF37] text-sm underline">
         Chat with AI 🤖
       </button>

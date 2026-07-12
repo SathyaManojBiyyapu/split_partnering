@@ -41,6 +41,7 @@ export default function Navbar() {
             height={36}
             priority
             className="block"
+            style={{ width: "auto", height: "auto" }}
           />
           <span className="font-heading text-base sm:text-lg tracking-wide text-white">
             Partner<span className="text-[#D4AF37]">Sync</span>

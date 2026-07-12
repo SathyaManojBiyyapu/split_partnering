@@ -56,6 +56,8 @@ const app =
 export const auth =
   getAuth(app);
 
+// Use getFirestore (no local persistence by default on Web SDK v10+)
+// Avoids Windows IndexedDB permission issues
 export const db =
   getFirestore(app);
 

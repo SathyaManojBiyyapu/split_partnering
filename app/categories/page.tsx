@@ -1,17 +1,17 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { db } from "@/firebase/config";
 import { collection, onSnapshot } from "firebase/firestore";
 import { motion, AnimatePresence } from "framer-motion";
+import CategoryImage from "@/app/components/ui/CategoryImage";
+import { getCategoryImage } from "@/app/data/categoryImages";
 
 const categories = [
   { 
     name: "Gym", 
     slug: "gym", 
-    image: "/gym.webp", 
     subtitle: "Shared memberships", 
     icon: "💪", 
     savings: "60%",
@@ -22,7 +22,6 @@ const categories = [
   { 
     name: "Fashion", 
     slug: "fashion", 
-    image: "/fashion.webp", 
     subtitle: "Group shopping deals", 
     icon: "👗", 
     savings: "40%",
@@ -33,7 +32,6 @@ const categories = [
   { 
     name: "Movies", 
     slug: "movies", 
-    image: "/movies.webp", 
     subtitle: "Movie ticket partnerships", 
     icon: "🎬", 
     savings: "50%",
@@ -44,7 +42,6 @@ const categories = [
   { 
     name: "Lenskart", 
     slug: "lenskart", 
-    image: "/lenskart.png", 
     subtitle: "Eyewear savings", 
     icon: "👓", 
     savings: "35%",
@@ -55,7 +52,6 @@ const categories = [
   { 
     name: "Local Travel", 
     slug: "local-travel", 
-    image: "/travel.webp", 
     subtitle: "Ride sharing", 
     icon: "🚗", 
     savings: "45%",
@@ -66,7 +62,6 @@ const categories = [
   { 
     name: "Events", 
     slug: "events", 
-    image: "/events.webp", 
     subtitle: "Group event access", 
     icon: "🎤", 
     savings: "30%",
@@ -77,7 +72,6 @@ const categories = [
   { 
     name: "Coupons", 
     slug: "coupons", 
-    image: "/coupons.webp", 
     subtitle: "Daily deals", 
     icon: "🎟️", 
     savings: "55%",
@@ -88,7 +82,6 @@ const categories = [
   { 
     name: "Villas", 
     slug: "villas", 
-    image: "/villas.webp", 
     subtitle: "Shared stays", 
     icon: "🏡", 
     savings: "40%",
@@ -99,7 +92,6 @@ const categories = [
   { 
     name: "Books", 
     slug: "books", 
-    image: "/books.webp", 
     subtitle: "Shared learning", 
     icon: "📚", 
     savings: "50%",
@@ -236,12 +228,13 @@ export default function CategoriesPage() {
                   {/* Category icon with image */}
                   <div className="flex items-center gap-3 mb-4">
                     <div className="w-12 h-12 rounded-xl overflow-hidden bg-gray-800 flex-shrink-0 border border-[#D4AF37]/20">
-                      <Image
-                        src={cat.image}
+                      <CategoryImage
+                        categorySlug={cat.slug}
                         alt={cat.name}
                         width={48}
                         height={48}
                         className="w-full h-full object-cover"
+                        fallbackIcon={cat.icon}
                       />
                     </div>
                     <div className="flex-1">

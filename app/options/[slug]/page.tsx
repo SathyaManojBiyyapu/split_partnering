@@ -1,13 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { useParams } from "next/navigation";
 import { useEffect, useState, useRef } from "react";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { db } from "@/firebase/config";
 import { motion } from "framer-motion";
 import { categoryData, Subcategory, slugToCategoryName } from "@/app/data/subcategories";
+import CategoryImage from "@/app/components/ui/CategoryImage";
 
 /* ---------------- ANIMATED COUNTER ---------------- */
 function AnimatedCounter({ target, suffix = "", prefix = "" }: { target: number; suffix?: string; prefix?: string }) {
@@ -179,12 +179,13 @@ export default function OptionsPage() {
       {/* ===== 1. CATEGORY BANNER ===== */}
       <section className="relative h-48 sm:h-56 md:h-64 overflow-hidden">
         <div className="absolute inset-0">
-          <Image
-            src={data.banner}
+          <CategoryImage
+            categorySlug={slug}
             alt={data.title}
             fill
             className="object-cover object-center"
             priority
+            fallbackIcon={data.icon}
           />
           <div className="absolute inset-0 bg-gradient-to-t from-black via-black/70 to-black/40" />
         </div>

@@ -78,7 +78,7 @@ service cloud.firestore {
     ========================== */
 
     match /groups/{groupId} {
-      allow read: if loggedIn();
+      allow read: if true;
       allow create: if loggedIn() && validString(request.resource.data.category) && validString(request.resource.data.option) && validNumber(request.resource.data.membersCount) && validNumber(request.resource.data.requiredSize) && validList(request.resource.data.members) && validList(request.resource.data.memberUIDs) && validString(request.resource.data.createdBy) && request.resource.data.membersCount >= 1 && request.resource.data.requiredSize >= 2;
       allow update: if loggedIn();
       allow delete: if false;

@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import CategoryImage from "@/app/components/ui/CategoryImage";
+import { getCategoryImage } from "@/app/data/categoryImages";
 
 type CategoryCard = {
   slug: string;
@@ -16,15 +18,15 @@ type CategoryCard = {
 };
 
 const categories: CategoryCard[] = [
-  { slug: "gym", label: "Gym", icon: "/gym.webp", savings: "60%", members: 3, required: 5, timeLeft: "2 Days", trending: true },
-  { slug: "fashion", label: "Fashion", icon: "/fashion.webp", savings: "40%", members: 2, required: 4, timeLeft: "3 Days", trending: true },
-  { slug: "movies", label: "Movies", icon: "/movies.webp", savings: "50%", members: 4, required: 5, timeLeft: "1 Day", trending: false },
-  { slug: "lenskart", label: "Lenskart", icon: "/lenskart.png", savings: "35%", members: 2, required: 4, timeLeft: "5 Days", trending: false },
-  { slug: "local-travel", label: "Local Travel", icon: "/travel.webp", savings: "45%", members: 1, required: 3, timeLeft: "4 Days", trending: true },
-  { slug: "events", label: "Events", icon: "/events.webp", savings: "30%", members: 3, required: 6, timeLeft: "6 Days", trending: false },
-  { slug: "coupons", label: "Coupons", icon: "/coupons.webp", savings: "55%", members: 2, required: 3, timeLeft: "2 Days", trending: false },
-  { slug: "villas", label: "Villas", icon: "/villas.webp", savings: "40%", members: 3, required: 6, timeLeft: "7 Days", trending: false },
-  { slug: "books", label: "Books", icon: "/books.webp", savings: "50%", members: 4, required: 5, timeLeft: "3 Days", trending: false },
+  { slug: "gym", label: "Gym", icon: "/images/categories/gym.webp", savings: "60%", members: 3, required: 5, timeLeft: "2 Days", trending: true },
+  { slug: "fashion", label: "Fashion", icon: "/images/categories/fashion.webp", savings: "40%", members: 2, required: 4, timeLeft: "3 Days", trending: true },
+  { slug: "movies", label: "Movies", icon: "/images/categories/movies.webp", savings: "50%", members: 4, required: 5, timeLeft: "1 Day", trending: false },
+  { slug: "lenskart", label: "Lenskart", icon: "/images/categories/lenskart.webp", savings: "35%", members: 2, required: 4, timeLeft: "5 Days", trending: false },
+  { slug: "local-travel", label: "Local Travel", icon: "/images/categories/local-travel.webp", savings: "45%", members: 1, required: 3, timeLeft: "4 Days", trending: true },
+  { slug: "events", label: "Events", icon: "/images/categories/events.webp", savings: "30%", members: 3, required: 6, timeLeft: "6 Days", trending: false },
+  { slug: "coupons", label: "Coupons", icon: "/images/categories/coupons.webp", savings: "55%", members: 2, required: 3, timeLeft: "2 Days", trending: false },
+  { slug: "villas", label: "Villas", icon: "/images/categories/villas.webp", savings: "40%", members: 3, required: 6, timeLeft: "7 Days", trending: false },
+  { slug: "books", label: "Books", icon: "/images/categories/books.webp", savings: "50%", members: 4, required: 5, timeLeft: "3 Days", trending: false },
 ];
 
 const filters = ["All", "Popular", "Trending", "Almost Full"] as const;

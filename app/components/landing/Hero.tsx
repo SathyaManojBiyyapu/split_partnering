@@ -21,10 +21,12 @@ const avatars = ["R", "P", "A", "N"];
 export default function Hero() {
   return (
     <section className="relative min-h-[60vh] sm:min-h-[70vh] flex items-center justify-center overflow-hidden">
-      {/* Subtle gold gradient overlay */}
-      <div className="absolute inset-0 bg-gradient-to-b from-[#D4AF37]/5 via-transparent to-transparent pointer-events-none" />
+      {/* Premium glow effects */}
+      <div className="hero-glow" style={{ top: '-10%', left: '-5%' }} />
+      <div className="hero-glow" style={{ bottom: '-20%', right: '-10%' }} />
+      <div className="absolute inset-0 hero-gradient pointer-events-none" />
 
-      <div className="relative z-10 max-w-5xl mx-auto text-center px-4 pt-12 sm:pt-16 pb-8">
+      <div className="relative z-10 max-w-5xl mx-auto text-center px-4 sm:px-6 pt-12 sm:pt-16 pb-8">
         <motion.div
           variants={staggerContainer}
           initial="hidden"

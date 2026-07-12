@@ -558,18 +558,18 @@ export default function DashboardPage() {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
-        className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-3"
+        className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-4"
       >
-        <div className="card-glass-premium p-4 text-center">
-          <p className="text-2xl font-bold text-blue-400">{activeMatches}</p>
+        <div className="card-glass-premium p-5 text-center hover:border-blue-500/30 transition-all duration-300">
+          <p className="text-3xl font-bold text-blue-400">{activeMatches}</p>
           <p className="text-xs text-gray-400 mt-1">Active Matches</p>
         </div>
-        <div className="card-glass-premium p-4 text-center">
-          <p className="text-2xl font-bold text-green-400">{readyMatches}</p>
+        <div className="card-glass-premium p-5 text-center hover:border-green-500/30 transition-all duration-300">
+          <p className="text-3xl font-bold text-green-400">{readyMatches}</p>
           <p className="text-xs text-gray-400 mt-1">Ready to Unlock</p>
         </div>
-        <div className="card-glass-premium p-4 text-center">
-          <p className="text-2xl font-bold text-[#D4AF37]">{nearbyPartners.length}</p>
+        <div className="card-glass-premium p-5 text-center hover:border-[#D4AF37]/30 transition-all duration-300">
+          <p className="text-3xl font-bold text-[#D4AF37]">{nearbyPartners.length}</p>
           <p className="text-xs text-gray-400 mt-1">Nearby Candidates</p>
         </div>
       </motion.div>
@@ -618,165 +618,107 @@ export default function DashboardPage() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: idx * 0.05 }}
-                className="card-premium p-5"
+                className="card-premium p-0 overflow-hidden"
               >
-                {/* Top: Title + Status Badge */}
-                <div className="flex justify-between items-start flex-wrap gap-3">
-                  <div className="flex-1 min-w-0">
-                    {/* Subcategory name - prominently displayed */}
-                    <h2 className="text-lg font-bold text-white font-heading">
-                      {getSubcategoryDisplayName(group.category, group.option)}
-                    </h2>
-                    {group.isPaid && <span className="badge-verified text-[10px]">✓ Verified</span>}
-                    {/* Category name */}
-                    <p className="text-xs text-gray-400 mt-0.5">
-                      Category: {getCategoryDisplayName(group.category)}
-                    </p>
-                  </div>
-                  <div className={`px-3 py-1.5 rounded-full text-xs font-bold shrink-0 ${statusInfo.color}`}>{statusInfo.label}</div>
-                </div>
-
-                {/* City + Collaborator (Business Name) */}
-                <div className="mt-3 space-y-1.5">
-                  {/* City */}
-                  <div className="flex items-center gap-2 text-xs text-gray-300">
-                    <span className="text-gray-500">📍</span>
-                    <span>City: {userProfile?.city || group.members[0]?.city || "Not set"}</span>
-                  </div>
-                  {/* Business name */}
-                  {(() => {
-                    const businessName = group.collaboratorBrand || group.collaboratorId || latestSelection?.collaboratorName || latestSelection?.collaboratorId || "";
-                    if (businessName) {
-                      const icon = getSubcategoryIcon(group.category, group.option);
-                      return (
-                        <div className="flex items-center gap-2 text-xs text-gray-300">
-                          <span className="text-gray-500">{icon}</span>
-                          <span>{getCategoryDisplayName(group.category)}: {businessName}</span>
-                        </div>
-                      );
-                    }
-                    // Fallback: use subcategory icon with the option name
-                    const icon = getSubcategoryIcon(group.category, group.option);
-                    const optionName = getSubcategoryDisplayName(group.category, group.option);
-                    return (
-                      <div className="flex items-center gap-2 text-xs text-gray-500">
-                        <span className="text-gray-500">{icon}</span>
-                        <span>{optionName}</span>
-                      </div>
-                    );
-                  })()}
-                </div>
-
-                {/* Progress & Waiting status */}
-                {!group.isPaid && (
-                  <div className="mt-3">
-                    <div className="flex items-center gap-2 text-xs">
-                      {isSearching ? (
-                        <span className="text-blue-400">🔍 Waiting for {required - matchingCount} more member{(required - matchingCount) > 1 ? "s" : ""}</span>
-                      ) : isReady ? (
-                        <span className="text-green-400">✅ Group Complete — Ready to Unlock</span>
-                      ) : (
-                        <span className="text-yellow-400">👥 Waiting for {required - matchingCount} more member{(required - matchingCount) > 1 ? "s" : ""}</span>
-                      )}
+                <div className="p-5">
+                  {/* Header: Title + Status */}
+                  <div className="flex items-start justify-between gap-3 mb-3">
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-base font-bold text-white font-heading leading-tight">
+                        {getSubcategoryDisplayName(group.category, group.option)}
+                      </h3>
+                      <p className="text-[11px] text-gray-400 mt-0.5">
+                        Category: {getCategoryDisplayName(group.category)}
+                      </p>
                     </div>
-                    {userProfile?.state ? (
-                      <ProgressBar current={matchingCount} max={required} status={expiry.status} />
-                    ) : (
-                      <ProgressBar current={group.membersCount} max={group.requiredSize} status={expiry.status} />
+                    <div className={`px-2.5 py-1 rounded-full text-[10px] font-bold shrink-0 ${statusInfo.color}`}>
+                      {statusInfo.label}
+                    </div>
+                  </div>
+
+                  {/* Divider */}
+                  <div className="section-divider-light mb-3" />
+
+                  {/* Info rows */}
+                  <div className="space-y-2 mb-3">
+                    <div className="flex items-center gap-2 text-xs">
+                      <svg className="w-3.5 h-3.5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                      <span className="text-gray-300">{userProfile?.city || group.members[0]?.city || "Not set"}</span>
+                    </div>
+                    {(() => {
+                      const businessName = group.collaboratorBrand || group.collaboratorId || latestSelection?.collaboratorName || latestSelection?.collaboratorId || "";
+                      if (businessName) {
+                        return (
+                          <div className="flex items-center gap-2 text-xs">
+                            <svg className="w-3.5 h-3.5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                            </svg>
+                            <span className="text-gray-300">{businessName}</span>
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
+                  </div>
+
+                  {/* Progress */}
+                  {!group.isPaid && (
+                    <div className="mb-3">
+                      <div className="flex items-center justify-between text-[11px] mb-1.5">
+                        <span className="text-gray-400">
+                          {isSearching ? (
+                            <span className="text-blue-400">🔍 Searching...</span>
+                          ) : isReady ? (
+                            <span className="text-green-400">✅ Group Complete</span>
+                          ) : (
+                            <span className="text-yellow-400">👥 Building group</span>
+                          )}
+                        </span>
+                        <span className="text-gray-500">{matchingCount}/{required} members</span>
+                      </div>
+                      <div className="progress-bar">
+                        <div
+                          className={`h-full rounded-full transition-all duration-700 ${isReady ? 'progress-complete' : expiry.status === 'expiring-soon' ? 'progress-expiring' : 'progress-active'}`}
+                          style={{ width: `${Math.min((matchingCount / required) * 100, 100)}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Created date */}
+                  <div className="text-[10px] text-gray-500">
+                    {group.createdAt?.seconds && (
+                      <span>Created: {formatDate(group.createdAt)}</span>
                     )}
                   </div>
-                )}
-
-                {/* Searching status box */}
-                {!group.isPaid && isSearching && (
-                  <div className="mt-3 rounded-xl border border-blue-500/20 bg-blue-500/5 p-3">
-                    <p className="text-blue-400 text-xs font-bold flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
-                      🔍 Searching for compatible partners...
-                    </p>
-                    <p className="mt-1 text-[10px] text-blue-300">Waiting for group completion</p>
-                  </div>
-                )}
-
-                {!group.isPaid && !isSearching && !isReady && (
-                  <div className="mt-3 rounded-xl border border-green-500/20 bg-green-500/5 p-3">
-                    <p className="text-green-400 text-xs font-bold flex items-center gap-2">✅ Candidate Found</p>
-                    <p className="mt-1 text-[10px] text-green-300">Waiting for {required - matchingCount} more member{(required - matchingCount) > 1 ? "s" : ""}</p>
-                  </div>
-                )}
-
-                {/* Ready state */}
-                {!group.isPaid && isReady && (
-                  <div className="mt-3 rounded-xl border border-green-500/30 bg-green-900/15 p-3">
-                    <p className="text-green-400 text-xs font-bold flex items-center gap-2">🎉 Match Complete</p>
-                    <p className="text-[10px] text-green-300 mt-0.5">All required members joined.</p>
-                  </div>
-                )}
-
-                {/* Paid members list */}
-                {group.isPaid && (
-                  <div className="mt-3 space-y-2">
-                    {group.members.map((m: any, i: number) => {
-                      const member = typeof m === "string" ? { name: "User", phone: m } : m;
-                      return (
-                        <div key={i} className="bg-black/40 rounded-xl p-3 flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full border border-[#D4AF37] overflow-hidden">
-                              {member.photoURL ? (
-                                <img src={member.photoURL} alt="user" className="w-full h-full object-cover" />
-                              ) : (
-                                <div className="w-full h-full flex items-center justify-center bg-gray-700 text-[#D4AF37] text-lg">
-                                  {member.name?.[0]?.toUpperCase() || "U"}
-                                </div>
-                              )}
-                            </div>
-                            <div>
-                              <p className="font-bold text-sm text-white">User: {generateUserId(member.phone || member.uid || "")}</p>
-                              <p className="text-xs text-green-400 mt-0.5">✓ Identity Revealed After Payment</p>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {/* Created date */}
-                <div className="mt-3 text-[10px] text-gray-500">
-                  {group.createdAt?.seconds && (
-                    <span>Created: {formatDate(group.createdAt)}</span>
-                  )}
                 </div>
 
-                {/* Action buttons */}
-                <div className="flex gap-3 mt-3 flex-wrap">
+                {/* Actions footer */}
+                <div className="border-t border-white/5 px-5 py-3 flex gap-2 flex-wrap bg-black/20">
                   {!group.isPaid ? (
                     isReady ? (
-                      <button
-                        onClick={() => (window.location.href = `/payment?groupId=${group.id}`)}
-                        className="px-5 py-2 rounded-xl bg-gradient-to-r from-[#D4AF37] to-[#E6C97A] text-black font-bold hover:scale-105 transition"
-                      >
+                      <button onClick={() => (window.location.href = `/payment?groupId=${group.id}`)}
+                        className="btn-primary text-xs px-4 py-2">
                         🔓 Unlock for ₹29
                       </button>
                     ) : (
-                      <button disabled className="px-5 py-2 rounded-xl bg-gray-800 text-gray-500 font-bold cursor-not-allowed">
-                        ⏳ Waiting for group completion
+                      <button disabled className="px-4 py-2 rounded-xl bg-gray-800 text-gray-500 text-xs font-bold cursor-not-allowed">
+                        ⏳ Waiting
                       </button>
                     )
                   ) : (
-                    <button
-                      onClick={() => router.push(`/chat/${group.id}`)}
-                      className="px-5 py-2 rounded-xl bg-purple-600 font-bold hover:scale-105 transition"
-                    >
+                    <button onClick={() => router.push(`/chat/${group.id}`)}
+                      className="px-4 py-2 rounded-xl bg-purple-600 text-xs font-bold hover:scale-105 transition">
                       💬 Open Chat
-                      {(unreadCounts[group.id] || 0) > 0 && <span className="ml-2 text-xs">💬 {unreadCounts[group.id]}</span>}
+                      {(unreadCounts[group.id] || 0) > 0 && <span className="ml-2">💬 {unreadCounts[group.id]}</span>}
                     </button>
                   )}
-                  <button
-                    onClick={() => deleteMatch(group.id)}
-                    className="px-5 py-2 rounded-xl bg-red-600/20 border border-red-500/30 text-red-400 font-bold hover:scale-105 transition"
-                  >
-                    ❌ Remove Match
+                  <button onClick={() => deleteMatch(group.id)}
+                    className="px-4 py-2 rounded-xl bg-red-600/15 border border-red-500/20 text-red-400 text-xs font-bold hover:scale-105 transition">
+                    ❌ Remove
                   </button>
                 </div>
               </motion.div>

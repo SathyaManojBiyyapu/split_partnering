@@ -29,11 +29,9 @@ import {
   computeCompatibility,
   generateUserId,
   formatDate,
-  getExpiryDateString,
-  getDaysRemaining,
-  getDaysSinceExpired,
   isGroupExpired,
 } from "@/app/data/matchExpiry";
+import { categoryData, slugToCategoryName, masterCategories } from "@/app/data/subcategories";
 
 type Group = {
   id: string;
@@ -45,6 +43,8 @@ type Group = {
   status: string;
   createdAt?: any;
   isPaid?: boolean;
+  collaboratorBrand?: string;
+  collaboratorId?: string;
 };
 
 type PartnerMatch = {
@@ -341,6 +341,51 @@ export default function DashboardPage() {
     loadNearby();
   }, [phone]);
 
+  /* Helper: resolve category display name */
+  function getCategoryDisplayName(slug: string): string {
+    const clean = slug.replace(/-/g, " ");
+    const catEntry = masterCategories[slug];
+    if (catEntry) return catEntry.name;
+    // Try to find via slugToCategoryName
+    const fromSlug = slugToCategoryName[slug];
+    if (fromSlug) return fromSlug;
+    return clean.replace(/\b\w/g, (c) => c.toUpperCase());
+  }
+
+  /* Helper: resolve subcategory display name */
+  function getSubcategoryDisplayName(categorySlug: string, optionSlug: string): string {
+    const cat = categoryData[categorySlug];
+    if (cat) {
+      const sub = cat.subcategories.find((s) => s.slug === optionSlug);
+      if (sub) return sub.name;
+    }
+    // Fallback: find in any masterCategories subcategory list
+    for (const [slug, entry] of Object.entries(masterCategories)) {
+      if (entry.subcategories.some((s) => s.toLowerCase().replace(/\s+/g, "-") === optionSlug.toLowerCase().replace(/\s+/g, "-"))) {
+        const match = entry.subcategories.find((s) => s.toLowerCase().replace(/\s+/g, "-") === optionSlug.toLowerCase().replace(/\s+/g, "-"));
+        if (match) return match;
+      }
+    }
+    return optionSlug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  }
+
+  /* Helper: get category icon */
+  function getCategoryIcon(slug: string): string {
+    const catEntry = masterCategories[slug];
+    if (catEntry) return catEntry.icon;
+    return "📁";
+  }
+
+  /* Helper: get icon for subcategory */
+  function getSubcategoryIcon(categorySlug: string, optionSlug: string): string {
+    const cat = categoryData[categorySlug];
+    if (cat) {
+      const sub = cat.subcategories.find((s) => s.slug === optionSlug);
+      if (sub) return sub.icon;
+    }
+    return "🏷️";
+  }
+
   /* Fetch groups */
   useEffect(() => {
     if (!phone) {
@@ -379,6 +424,8 @@ export default function DashboardPage() {
             status: data.status || "waiting",
             createdAt: data.createdAt,
             isPaid: paidGroups.has(docSnap.id),
+            collaboratorBrand: data.collaboratorBrand || "",
+            collaboratorId: data.collaboratorId || "",
           });
         });
 
@@ -573,95 +620,102 @@ export default function DashboardPage() {
                 transition={{ delay: idx * 0.05 }}
                 className="card-premium p-5"
               >
+                {/* Top: Title + Status Badge */}
                 <div className="flex justify-between items-start flex-wrap gap-3">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <h2 className="text-xl font-bold text-[#D4AF37]">{group.category} → {group.option}</h2>
-                      {group.isPaid && <span className="badge-verified text-[10px]">✓ Verified</span>}
-                    </div>
-                    {!group.isPaid && (
-                      <div className="mt-2">
-                        {isSearching ? (
-                          <div className="flex items-center gap-2 text-blue-400 text-xs">
-                            <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
-                            <span>🔍 Waiting for {required - matchingCount} more member{(required - matchingCount) > 1 ? "s" : ""}</span>
-                          </div>
-                        ) : isReady ? (
-                          <div className="flex items-center gap-2 text-green-400 text-xs">
-                            <span>✅ Group Complete — Ready to Unlock</span>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-2 text-yellow-400 text-xs">
-                            <span>👥 Building group — Waiting for {required - matchingCount} more member{(required - matchingCount) > 1 ? "s" : ""}</span>
-                          </div>
-                        )}
+                  <div className="flex-1 min-w-0">
+                    {/* Subcategory name - prominently displayed */}
+                    <h2 className="text-lg font-bold text-white font-heading">
+                      {getSubcategoryDisplayName(group.category, group.option)}
+                    </h2>
+                    {group.isPaid && <span className="badge-verified text-[10px]">✓ Verified</span>}
+                    {/* Category name */}
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      Category: {getCategoryDisplayName(group.category)}
+                    </p>
+                  </div>
+                  <div className={`px-3 py-1.5 rounded-full text-xs font-bold shrink-0 ${statusInfo.color}`}>{statusInfo.label}</div>
+                </div>
+
+                {/* City + Collaborator (Business Name) */}
+                <div className="mt-3 space-y-1.5">
+                  {/* City */}
+                  <div className="flex items-center gap-2 text-xs text-gray-300">
+                    <span className="text-gray-500">📍</span>
+                    <span>City: {userProfile?.city || group.members[0]?.city || "Not set"}</span>
+                  </div>
+                  {/* Business name */}
+                  {(() => {
+                    const businessName = group.collaboratorBrand || group.collaboratorId || latestSelection?.collaboratorName || latestSelection?.collaboratorId || "";
+                    if (businessName) {
+                      const icon = getSubcategoryIcon(group.category, group.option);
+                      return (
+                        <div className="flex items-center gap-2 text-xs text-gray-300">
+                          <span className="text-gray-500">{icon}</span>
+                          <span>{getCategoryDisplayName(group.category)}: {businessName}</span>
+                        </div>
+                      );
+                    }
+                    // Fallback: use subcategory icon with the option name
+                    const icon = getSubcategoryIcon(group.category, group.option);
+                    const optionName = getSubcategoryDisplayName(group.category, group.option);
+                    return (
+                      <div className="flex items-center gap-2 text-xs text-gray-500">
+                        <span className="text-gray-500">{icon}</span>
+                        <span>{optionName}</span>
                       </div>
-                    )}
+                    );
+                  })()}
+                </div>
+
+                {/* Progress & Waiting status */}
+                {!group.isPaid && (
+                  <div className="mt-3">
+                    <div className="flex items-center gap-2 text-xs">
+                      {isSearching ? (
+                        <span className="text-blue-400">🔍 Waiting for {required - matchingCount} more member{(required - matchingCount) > 1 ? "s" : ""}</span>
+                      ) : isReady ? (
+                        <span className="text-green-400">✅ Group Complete — Ready to Unlock</span>
+                      ) : (
+                        <span className="text-yellow-400">👥 Waiting for {required - matchingCount} more member{(required - matchingCount) > 1 ? "s" : ""}</span>
+                      )}
+                    </div>
                     {userProfile?.state ? (
                       <ProgressBar current={matchingCount} max={required} status={expiry.status} />
                     ) : (
                       <ProgressBar current={group.membersCount} max={group.requiredSize} status={expiry.status} />
                     )}
                   </div>
-                  <div className={`px-3 py-1.5 rounded-full text-xs font-bold ${statusInfo.color}`}>{statusInfo.label}</div>
-                </div>
+                )}
 
-                {/* Date & Expiry Info */}
-                <div className="mt-3 flex items-center justify-between text-[10px] text-gray-500">
-                  <div className="flex gap-3">
-                    {group.createdAt?.seconds && (
-                      <>
-                        <span>Created: {formatDate(group.createdAt)}</span>
-                        <span>Expires: {getExpiryDateString(group.createdAt)}</span>
-                      </>
-                    )}
-                  </div>
-                  <div>
-                    {isExpired(group.createdAt) ? (
-                      <span className="text-red-400 font-medium">⚠ Expired {getDaysSinceExpired(group.createdAt)}d ago</span>
-                    ) : group.createdAt?.seconds ? (
-                      <span className="text-gray-400">{getDaysRemaining(group.createdAt)}d remaining</span>
-                    ) : null}
-                  </div>
-                </div>
-
-                {!group.isPaid && (
-                  <div className="mt-4">
-                    {isReady ? (
-                      <div className="rounded-xl border border-green-500/30 bg-green-900/15 p-4">
-                        <p className="text-green-400 text-sm font-bold flex items-center gap-2">🎉 Match Complete</p>
-                        <p className="text-xs text-green-300 mt-1">All required members joined.</p>
-                        <div className="mt-2 space-y-1 text-xs text-gray-400">
-                          <p><span className="text-[#D4AF37]">Category:</span> {group.category}</p>
-                          <p><span className="text-[#D4AF37]">Subcategory:</span> {group.option}</p>
-                          <p><span className="text-[#D4AF37]">Members:</span> {matchingCount}/{required}</p>
-                          <p className="text-green-400 mt-1">✅ Ready for Unlock</p>
-                        </div>
-                      </div>
-                    ) : matchingCount > 1 ? (
-                      <div className="rounded-xl border border-green-500/20 bg-green-500/5 p-4">
-                        <p className="text-green-400 text-sm font-bold flex items-center gap-2">✅ Candidate Found</p>
-                        <div className="mt-2 space-y-1 text-xs text-gray-400">
-                          <p><span className="text-[#D4AF37]">Category:</span> {group.category}</p>
-                          <p><span className="text-[#D4AF37]">Subcategory:</span> {group.option}</p>
-                          <p><span className="text-[#D4AF37]">Match:</span> Same City ✓</p>
-                          <p><span className="text-[#D4AF37]">Needed:</span> {required - matchingCount} more member{(required - matchingCount) > 1 ? "s" : ""}</p>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4">
-                        <p className="text-blue-400 text-sm font-bold flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
-                          🔍 Searching for compatible partners...
-                        </p>
-                        <p className="mt-1 text-xs text-blue-300">Waiting for {required - matchingCount} more member{(required - matchingCount) > 1 ? "s" : ""}</p>
-                      </div>
-                    )}
+                {/* Searching status box */}
+                {!group.isPaid && isSearching && (
+                  <div className="mt-3 rounded-xl border border-blue-500/20 bg-blue-500/5 p-3">
+                    <p className="text-blue-400 text-xs font-bold flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
+                      🔍 Searching for compatible partners...
+                    </p>
+                    <p className="mt-1 text-[10px] text-blue-300">Waiting for group completion</p>
                   </div>
                 )}
 
+                {!group.isPaid && !isSearching && !isReady && (
+                  <div className="mt-3 rounded-xl border border-green-500/20 bg-green-500/5 p-3">
+                    <p className="text-green-400 text-xs font-bold flex items-center gap-2">✅ Candidate Found</p>
+                    <p className="mt-1 text-[10px] text-green-300">Waiting for {required - matchingCount} more member{(required - matchingCount) > 1 ? "s" : ""}</p>
+                  </div>
+                )}
+
+                {/* Ready state */}
+                {!group.isPaid && isReady && (
+                  <div className="mt-3 rounded-xl border border-green-500/30 bg-green-900/15 p-3">
+                    <p className="text-green-400 text-xs font-bold flex items-center gap-2">🎉 Match Complete</p>
+                    <p className="text-[10px] text-green-300 mt-0.5">All required members joined.</p>
+                  </div>
+                )}
+
+                {/* Paid members list */}
                 {group.isPaid && (
-                  <div className="mt-4 space-y-2">
+                  <div className="mt-3 space-y-2">
                     {group.members.map((m: any, i: number) => {
                       const member = typeof m === "string" ? { name: "User", phone: m } : m;
                       return (
@@ -687,7 +741,15 @@ export default function DashboardPage() {
                   </div>
                 )}
 
-                <div className="flex gap-3 mt-4 flex-wrap">
+                {/* Created date */}
+                <div className="mt-3 text-[10px] text-gray-500">
+                  {group.createdAt?.seconds && (
+                    <span>Created: {formatDate(group.createdAt)}</span>
+                  )}
+                </div>
+
+                {/* Action buttons */}
+                <div className="flex gap-3 mt-3 flex-wrap">
                   {!group.isPaid ? (
                     isReady ? (
                       <button

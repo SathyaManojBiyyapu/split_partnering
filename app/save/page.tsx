@@ -5,7 +5,7 @@ import {
   useState,
   useEffect,
 } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 
 import {
   useSearchParams,
@@ -31,9 +31,8 @@ import {
   getDoc,
 } from "firebase/firestore";
 
-import { partneringInfo } from "@/app/data/partneringInfo";
 import { getExpiryDate } from "@/app/data/matchExpiry";
-import { categoryData, slugToCategoryName } from "@/app/data/subcategories";
+import { categoryData, slugToCategoryName, masterCategories } from "@/app/data/subcategories";
 import MarketplaceGrid from "@/app/components/marketplace/MarketplaceGrid";
 import toast from "react-hot-toast";
 
@@ -474,6 +473,88 @@ function getSubcategoryName(categorySlug: string, optionSlug: string): string {
 }
 
 /* -----------------------------------------
+   SUBCATEGORY DESCRIPTIONS (per task spec)
+------------------------------------------ */
+
+function getSubcategoryDescription(categorySlug: string, optionSlug: string): string {
+  const descriptions: Record<string, Record<string, string>> = {
+    gym: {
+      split: "Share a gym membership with nearby people and split the monthly membership cost.",
+      supplements: "Buy supplements together in bulk and save with group pricing.",
+      trainer: "Share a certified personal trainer and split the training fees.",
+      pass: "Find someone to share short-term gym access and reduce day-pass costs.",
+      equipment: "Purchase fitness equipment together and unlock better bulk discounts.",
+    },
+    books: {
+      "book-exchange": "Exchange books with nearby readers instead of buying new ones.",
+      "second-hand": "Buy or sell quality used books within your city.",
+      competitive: "Share or purchase exam preparation books at lower prices.",
+      engineering: "Find engineering textbooks from nearby students.",
+      academic: "Reduce academic expenses by sharing educational books.",
+      novel: "Connect with readers to exchange novels and recommendations.",
+      "group-purchase": "Buy books together to receive bulk discounts.",
+    },
+    fashion: {
+      "group-shopping": "Shop together and unlock group offers and exclusive discounts.",
+      sneakers: "Find sneaker enthusiasts to purchase limited releases together.",
+    },
+    movies: {
+      "save-ticket": "Share movie ticket bookings to reduce individual ticket prices.",
+      "bulk-ticket": "Book multiple movie tickets together for group discounts.",
+    },
+    "local-travel": {
+      "trip-cost": "Split travel expenses with people going to the same destination.",
+      cab: "Share rides and fuel costs with nearby commuters.",
+      hotel: "Reduce accommodation expenses by sharing hotel rooms.",
+      "travel-group": "Join travelers visiting the same destination.",
+      "travel-partner": "Find trusted travel companions nearby.",
+      backpacking: "Connect with backpackers for affordable adventures.",
+    },
+    lenskart: {
+      eyeglasses: "Share eyewear offers and combo deals with others.",
+    },
+    events: {
+      passes: "Split event ticket costs and attend together.",
+    },
+    coupons: {
+      discounts: "Share discount coupons and maximize savings.",
+    },
+    villas: {
+      weekend: "Split villa rental costs with friends or nearby travelers.",
+    },
+  };
+
+  return descriptions[categorySlug]?.[optionSlug] || "";
+}
+
+/* -----------------------------------------
+   WHAT HAPPENS NEXT (per category)
+------------------------------------------ */
+
+function getWhatsNextText(categorySlug: string): string {
+  const texts: Record<string, string> = {
+    gym: "Choose a gym. Create your partner request. We'll match nearby users with the same gym and option.",
+    books: "Select your preferred book source. Create your partner request. We'll match you with nearby readers sharing the same interest.",
+    fashion: "Pick your preferred store or brand. Create your partner request. We'll match you with nearby shoppers.",
+    movies: "Select your preferred cinema. Create your partner request. We'll match you with nearby movie-goers.",
+    "local-travel": "Choose your route or destination. Create your partner request. We'll match you with nearby travelers.",
+    lenskart: "Select your preferred Lenskart store. Create your partner request. We'll match you with nearby eyewear shoppers.",
+    events: "Pick your event. Create your partner request. We'll match you with nearby attendees.",
+    coupons: "Select the coupon category. Create your partner request. We'll match you with nearby savers.",
+    villas: "Choose your villa or area. Create your partner request. We'll match you with nearby travelers.",
+  };
+  return texts[categorySlug] || "Select a business. Create your partner request. We'll match nearby users with the same interest.";
+}
+
+/* -----------------------------------------
+   HELPER: Get category icon
+------------------------------------------ */
+
+function getCategoryIcon(categorySlug: string): string {
+  return masterCategories[categorySlug]?.icon || "📋";
+}
+
+/* -----------------------------------------
    SAVE CONTENT
 ------------------------------------------ */
 
@@ -496,8 +577,11 @@ function SaveContent() {
   const [selectedCollaboratorId, setSelectedCollaboratorId] = useState<string | null>(null);
   const [selectedCollaboratorName, setSelectedCollaboratorName] = useState<string | null>(null);
 
-  const info = partneringInfo[category];
+  const categoryName = slugToCategoryName[category] || category.replace("-", " ");
   const subcategoryName = getSubcategoryName(category, option);
+  const description = getSubcategoryDescription(category, option);
+  const categoryIcon = getCategoryIcon(category);
+  const whatsNextText = getWhatsNextText(category);
 
   /* -------- MOUNT -------- */
   useEffect(() => {
@@ -681,11 +765,32 @@ function SaveContent() {
     <div className="min-h-screen pt-28 pb-16 px-4 sm:px-6 bg-black text-[#F5F5F5]">
       <div className="max-w-5xl mx-auto">
 
+        {/* BREADCRUMB */}
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
+          className="mb-6"
+        >
+          <nav className="flex items-center gap-2 text-xs sm:text-sm text-gray-500 font-medium">
+            <button
+              onClick={() => router.push("/categories")}
+              className="hover:text-[#D4AF37] transition-colors cursor-pointer"
+            >
+              {categoryIcon} {categoryName}
+            </button>
+            <span className="text-gray-600">{">"}</span>
+            <span className="text-[#D4AF37]">{subcategoryName}</span>
+            <span className="text-gray-600">{">"}</span>
+            <span className="text-white/60">Choose Business</span>
+          </nav>
+        </motion.div>
+
         {/* HEADING */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
+          transition={{ duration: 0.5, delay: 0.1 }}
         >
           <h1 className="font-heading text-2xl sm:text-3xl md:text-4xl mb-2 text-[#FFD166] leading-tight">
             Find Your Partner
@@ -709,7 +814,7 @@ function SaveContent() {
 
         {duplicateCategory && !existingGroup && activeSubcategories.length > 0 && (
           <div className="mb-4 border border-yellow-500/30 bg-yellow-500/10 rounded-xl p-4">
-            <p className="text-yellow-400 font-bold text-sm flex items-center gap-2">✅ Already Active in {category.replace("-", " ")}</p>
+            <p className="text-yellow-400 font-bold text-sm flex items-center gap-2">✅ Already Active in {categoryName}</p>
             <p className="text-gray-300 text-xs mt-1">You already have active requests in:</p>
             <div className="mt-2 flex flex-wrap gap-2">
               {activeSubcategories.map((sub) => (
@@ -720,15 +825,73 @@ function SaveContent() {
           </div>
         )}
 
-        {/* GENERIC MARKETPLACE GRID - works for ALL categories */}
+        {/* SELECTION INFO CARD */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.2 }}
+          className="mb-8"
+        >
+          <div className="relative overflow-hidden rounded-2xl border border-white/[0.08] bg-[#0A0A0A] p-5 sm:p-7">
+            {/* Left accent border */}
+            <div className="absolute left-0 top-4 bottom-4 w-0.5 bg-gradient-to-b from-[#D4AF37] via-[#E6C97A] to-[#D4AF37]/40 rounded-full" />
+
+            <div className="pl-5 sm:pl-6">
+              {/* Icon + Title row */}
+              <div className="flex items-center gap-3 sm:gap-4 mb-4">
+                <span className="text-3xl sm:text-4xl">{categoryIcon}</span>
+                <div>
+                  <p className="text-xs sm:text-sm text-gray-500 font-medium uppercase tracking-wider">{categoryName}</p>
+                  <h2 className="font-heading text-xl sm:text-2xl md:text-3xl text-white leading-tight mt-0.5">
+                    {subcategoryName}
+                  </h2>
+                </div>
+              </div>
+
+              {/* Description */}
+              {description && (
+                <p className="text-gray-400 text-sm sm:text-base leading-relaxed max-w-2xl">
+                  {description}
+                </p>
+              )}
+
+              {/* Details Grid */}
+              <div className="mt-6 space-y-3 border-t border-white/[0.06] pt-5">
+                <div className="flex items-center gap-3 text-sm">
+                  <span className="flex items-center justify-center w-5 h-5 rounded-full bg-[#D4AF37]/15 text-[#D4AF37] text-xs font-bold flex-shrink-0">✓</span>
+                  <span className="text-gray-500 text-xs sm:text-sm">Category</span>
+                  <span className="ml-auto text-white text-xs sm:text-sm font-medium">{categoryName}</span>
+                </div>
+
+                <div className="flex items-center gap-3 text-sm">
+                  <span className="flex items-center justify-center w-5 h-5 rounded-full bg-[#D4AF37]/15 text-[#D4AF37] text-xs font-bold flex-shrink-0">✓</span>
+                  <span className="text-gray-500 text-xs sm:text-sm">Selected Option</span>
+                  <span className="ml-auto text-[#D4AF37] text-xs sm:text-sm font-semibold">{subcategoryName}</span>
+                </div>
+
+                <div className="border-t border-white/[0.06] pt-4 mt-4">
+                  <div className="flex items-start gap-3">
+                    <span className="flex items-center justify-center w-5 h-5 rounded-full bg-[#D4AF37]/15 text-[#D4AF37] text-xs font-bold flex-shrink-0 mt-0.5">✓</span>
+                    <div>
+                      <p className="text-[#D4AF37] font-medium text-sm">What happens next?</p>
+                      <p className="text-gray-400 text-xs sm:text-sm mt-1 leading-relaxed">
+                        {whatsNextText}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+
+        {/* BUSINESS GRID */}
         <div className="mb-8">
           <MarketplaceGrid
             categorySlug={category}
             subcategory={subcategoryName}
             buttonLabel="Make Partner →"
             onMakePartner={async (business) => {
-              // Direct partner creation from marketplace business card click
-              // Bypasses state to avoid timing issues with setState
               if (!mounted) return;
               if (!phone) {
                 toast.error("Please login first");
@@ -795,24 +958,6 @@ function SaveContent() {
           />
         </div>
 
-        {/* HOW IT WORKS INFO */}
-        {info && (
-          <div className="mb-8 border border-white/10 p-5 sm:p-6 rounded-xl bg-white/[0.02]">
-            <h2 className="text-base font-semibold text-[#D4AF37] mb-2">{info.title}</h2>
-            {info.topLine && <p className="text-gray-400 text-sm mb-4">{info.topLine}</p>}
-            <ul className="space-y-3 text-sm">
-              {info.sections.map((sec: any, i: number) => (
-                <li key={i}>
-                  <span className="font-medium text-[#D4AF37]">{sec.title}</span>
-                  <div className="text-gray-400">{sec.text}</div>
-                  {sec.example && <div className="text-gray-500 text-xs mt-1">{sec.example}</div>}
-                </li>
-              ))}
-            </ul>
-            <p className="text-[10px] text-gray-500 mt-4 italic">SplitPartnering is a partnering service. We do not buy or sell products.</p>
-          </div>
-        )}
-
         {/* COLLABORATOR BRAND SELECTION */}
         <div className="mb-8">
           <CollaboratorBrandSelector
@@ -846,7 +991,7 @@ function SaveContent() {
 
         {/* BACK LINK */}
         <div className="mt-6 text-center">
-          <button onClick={() => router.push("/categories")} className="text-sm text-gray-400 hover:text-[#D4AF37] transition-colors">
+          <button onClick={() => router.push("/categories")} className="text-sm text-gray-400 hover:text-[#D4AF37] transition-colors cursor-pointer">
             ← Back to Categories
           </button>
         </div>

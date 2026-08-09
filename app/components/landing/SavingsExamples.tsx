@@ -3,65 +3,59 @@
 import Link from "next/link";
 import { motion } from "framer-motion";
 
-const realExamples = [
-  { name: "Netflix Premium", savings: "₹150/month", members: "4/5 Joined", icon: "🎬" },
-  { name: "Cult Fit Membership", savings: "₹500/month", members: "2/4 Joined", icon: "💪" },
-  { name: "Goa Trip Group", savings: "₹4,000", members: "3/6 Joined", icon: "✈️" },
-  { name: "Amazon Prime", savings: "₹100/month", members: "3/3 Joined", icon: "📦" },
-  { name: "Spotify Family", savings: "₹89/month", members: "5/6 Joined", icon: "🎵" },
+const benefits = [
+  { icon: "💪", title: "Gym Memberships", desc: "Split monthly membership fees with a partner and pay half.", saved: "Save up to 50%" },
+  { icon: "🎬", title: "Movie Tickets", desc: "Book together and unlock group pricing on tickets.", saved: "Save up to 40%" },
+  { icon: "✈️", title: "Travel Costs", desc: "Share flights, hotels, villas and ride costs with travelers.", saved: "Save up to 45%" },
+  { icon: "📺", title: "Subscriptions", desc: "Split streaming, software and productivity plans.", saved: "Save up to 70%" },
+  { icon: "👗", title: "Fashion & Brands", desc: "Combine purchases to reach group discount thresholds.", saved: "Save up to 40%" },
+  { icon: "📚", title: "Books & Learning", desc: "Share textbooks and courses with fellow learners.", saved: "Save up to 50%" },
 ];
 
 export default function SavingsExamples() {
   return (
-    <section className="py-12 px-4">
+    <section className="py-16 px-4">
       <div className="max-w-5xl mx-auto">
-        <h2 className="font-heading text-xl sm:text-2xl text-white mb-2 text-center">
-          Real Savings Examples
-        </h2>
-        <p className="text-gray-400 text-sm text-center mb-6">
-          See how much people are saving right now
-        </p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {realExamples.map((example, i) => (
+        <div className="text-center mb-10">
+          <h2 className="font-heading text-2xl sm:text-3xl text-white mb-2">
+            Split Costs. Save More.
+          </h2>
+          <p className="text-gray-400 text-sm sm:text-base max-w-xl mx-auto">
+            Partnering turns regular expenses into shared savings across every category.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {benefits.map((benefit, i) => (
             <motion.div
-              key={i}
+              key={benefit.title}
               initial={{ opacity: 0, y: 15 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ delay: i * 0.08 }}
-              className="group p-4 rounded-xl bg-white/[0.02] border border-white/10 hover:border-[#D4AF37]/20 transition-all duration-300"
+              className="group p-6 rounded-xl bg-white/[0.02] border border-white/10 hover:border-[#D4AF37]/20 transition-all duration-300"
             >
-              <div className="flex items-center gap-3 mb-3">
-                <span className="text-2xl">{example.icon}</span>
-                <h3 className="text-white font-medium text-sm">{example.name}</h3>
-              </div>
-              <div className="space-y-1.5 text-xs text-gray-400">
-                <p>
-                  Save:{" "}
-                  <span className="text-green-400 font-bold">{example.savings}</span>
-                </p>
-                <p>
-                  Members:{" "}
-                  <span className="text-[#D4AF37]">{example.members}</span>
-                </p>
-                <div className="w-full h-1.5 bg-gray-800 rounded-full overflow-hidden mt-2">
-                  <motion.div
-                    className="h-full bg-green-500 rounded-full"
-                    initial={{ width: "0%" }}
-                    whileInView={{ width: `${(parseInt(example.members) / 6) * 100}%` }}
-                    viewport={{ once: true }}
-                    transition={{ duration: 0.8, delay: i * 0.1 }}
-                  />
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-11 h-11 rounded-full bg-[#D4AF37]/10 border border-[#D4AF37]/20 flex items-center justify-center flex-shrink-0">
+                  <span className="text-lg">{benefit.icon}</span>
                 </div>
+                <h3 className="text-white font-medium text-sm">{benefit.title}</h3>
               </div>
-              <Link
-                href="/categories"
-                className="mt-3 inline-block text-[10px] text-[#D4AF37] hover:text-[#E6C97A] transition-colors"
-              >
-                Join Group →
-              </Link>
+              <p className="text-xs text-gray-400 leading-relaxed mb-3">
+                {benefit.desc}
+              </p>
+              <p className="text-xs font-bold text-green-400">{benefit.saved}</p>
             </motion.div>
           ))}
+        </div>
+
+        <div className="text-center mt-10">
+          <Link
+            href="/categories"
+            className="btn-primary text-sm inline-block"
+          >
+            Start Saving Today
+          </Link>
         </div>
       </div>
     </section>

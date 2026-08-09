@@ -4,32 +4,23 @@ import { NextResponse } from "next/server";
 import Razorpay from "razorpay";
 
 /* =========================
+   FIXED ACTIVATION PRICE
+========================== */
+const ACTIVATION_PRICE = 29;
+
+/* =========================
    GET RAZORPAY INSTANCE
-========================= */
+========================== */
 
 function getRazorpay(): Razorpay {
-
   const keyId =
-    process.env
-      .NEXT_PUBLIC_RAZORPAY_KEY_ID ||
+    process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID ||
+    process.env.RAZORPAY_KEY_ID;
 
-    process.env
-      .RAZORPAY_KEY_ID;
-
-  const keySecret =
-    process.env
-      .RAZORPAY_KEY_SECRET;
-      if (
-        !keyId ||
-        !keySecret
-      ) {
-      
-        throw new Error(
-          `Missing Razorpay keys:
-           keyId=${keyId}
-           keySecret=${keySecret}`
-        );
-      }
+  const keySecret = process.env.RAZORPAY_KEY_SECRET;
+  if (!keyId || !keySecret) {
+    throw new Error("Missing Razorpay keys");
+  }
 
   // Block production startup with test keys
   if (
@@ -43,145 +34,82 @@ function getRazorpay(): Razorpay {
   }
 
   return new Razorpay({
-
-    key_id:
-      keyId,
-
-    key_secret:
-      keySecret,
+    key_id: keyId,
+    key_secret: keySecret,
   });
 }
 
 /* =========================
    CREATE ORDER API
-========================= */
+   NOTE: The amount is HARDCODED server-side.
+   Client-supplied amounts are IGNORED to prevent payment bypass.
+========================== */
 
-export async function POST(
-  req: Request
-) {
-
+export async function POST(req: Request) {
   try {
+    const razorpay = getRazorpay();
 
-    const razorpay =
-      getRazorpay();
+    const body = await req.json();
+    const { groupId, uid } = body;
 
-    const body =
-      await req.json();
-
-    const {
-      amount,
-      groupId,
-      uid,
-    } = body;
-
-    /* =========================
-       VALIDATION
-    ========================= */
-
-    if (
-      !amount
-    ) {
-
+    if (!groupId || !uid) {
       return NextResponse.json(
-        {
-          error:
-            "Missing amount",
-        },
-        {
-          status: 400,
-        }
+        { error: "Missing required fields" },
+        { status: 400 }
       );
     }
 
-    const finalAmount =
-      Number(amount);
+    // Verify the user is actually a member of this group before creating an order
+    const { adminDb } = await import("@/firebase/admin");
+    const groupRef = adminDb.collection("groups").doc(groupId);
+    const groupSnap = await groupRef.get();
 
-    if (
-      isNaN(
-        finalAmount
-      ) ||
-
-      finalAmount < 1
-    ) {
-
+    if (!groupSnap.exists) {
       return NextResponse.json(
-        {
-          error:
-            "Invalid payment amount",
-        },
-        {
-          status: 400,
-        }
+        { error: "Group not found" },
+        { status: 404 }
+      );
+    }
+
+    const group = groupSnap.data();
+    const members = group?.members || [];
+    const memberUIDs = group?.memberUIDs || [];
+    const isMember = members.some((m: any) => m?.phone === uid || m?.uid === uid) || memberUIDs.includes(uid);
+
+    if (!isMember) {
+      return NextResponse.json(
+        { error: "You are not a member of this group" },
+        { status: 403 }
       );
     }
 
     /* =========================
-       CREATE ORDER
+       CREATE ORDER — fixed ₹29
     ========================= */
 
-    const order =
-      await razorpay.orders.create({
-
-        amount:
-          Math.round(
-            finalAmount *
-              100
-          ),
-
-        currency:
-          "INR",
-
-        receipt:
-          `grp_${Date.now()}`,
-
-        notes: {
-
-          uid:
-            uid || "",
-
-          groupId:
-            groupId || "",
-
-          platform:
-            "partnersync",
-        },
-      });
-
-    /* =========================
-       SUCCESS
-    ========================= */
-
-    return NextResponse.json({
-
-      success:
-        true,
-
-      id:
-        order.id,
-
-      amount:
-        order.amount,
-
-      currency:
-        order.currency,
+    const order = await razorpay.orders.create({
+      amount: ACTIVATION_PRICE * 100,
+      currency: "INR",
+      receipt: `grp_${Date.now()}`,
+      notes: {
+        uid: uid || "",
+        groupId: groupId || "",
+        platform: "partnersync",
+        amount: String(ACTIVATION_PRICE),
+      },
     });
 
+    return NextResponse.json({
+      success: true,
+      id: order.id,
+      amount: order.amount,
+      currency: order.currency,
+    });
   } catch (error: any) {
-
-    console.error(
-      "FULL Razorpay order creation error:",  
-      JSON.stringify(error, null, 2)
-    );
-
+    console.error("Razorpay order creation error:", error?.message || error);
     return NextResponse.json(
-      {
-        error:
-          error?.message ||
-          "Razorpay order creation failed",
-      },
-      {
-        status: 500,
-      }
+      { error: error?.message || "Razorpay order creation failed" },
+      { status: 500 }
     );
   }
 }

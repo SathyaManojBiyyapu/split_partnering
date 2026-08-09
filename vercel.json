@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cleanup-expired-groups",
+      "schedule": "0 * * * *"
+    }
+  ]
+}

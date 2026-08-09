@@ -106,9 +106,9 @@ function PaymentContent() {
     return authPhone || null;
   };
 
-  /* FIXED PRICE */
-
+  /* FIXED PRICE — amount is hardcoded server-side to prevent payment bypass */
   const PRICE = 29;
+  const displayPrice = PRICE;
 
   const stripeEnabled =
     process.env
@@ -411,9 +411,6 @@ function PaymentContent() {
 
               body: JSON.stringify(
                 {
-                  amount:
-                    PRICE,
-
                   groupId,
 
                   uid:
@@ -544,9 +541,6 @@ function PaymentContent() {
               body:
                 JSON.stringify(
                   {
-                    amount:
-                      PRICE,
-
                     groupId,
 
                     uid:

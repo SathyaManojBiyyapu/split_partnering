@@ -31,7 +31,6 @@ import {
   getDoc,
 } from "firebase/firestore";
 
-import { getExpiryDate } from "@/app/data/matchExpiry";
 import { categoryData, slugToCategoryName, masterCategories } from "@/app/data/subcategories";
 import MarketplaceGrid from "@/app/components/marketplace/MarketplaceGrid";
 import toast from "react-hot-toast";
@@ -202,6 +201,9 @@ async function createOrJoinGroup(
   const newGroupRef = doc(groupsRef);
   const required = getRequiredSize(option);
 
+  // expiresAt = 24 hours from now (server-side cleanup uses createdAt as source of truth)
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
   await setDoc(newGroupRef, {
     category,
     option,
@@ -218,7 +220,7 @@ async function createOrJoinGroup(
     createdBy: cleanPhone,
     totalPaid: 0,
     revenue: 0,
-    expiresAt: getExpiryDate(category),
+    expiresAt,
   });
 
   return { status: "created", membersCount: 1, groupId: newGroupRef.id };

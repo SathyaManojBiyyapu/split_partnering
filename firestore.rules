@@ -12,6 +12,10 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function isAdmin() {
+      return loggedIn() && request.auth.token.email == 'sathyamanojbiyyapu@gmail.com';
+    }
+
     function validString(field) {
       return field is string && field.size() > 0;
     }
@@ -24,20 +28,33 @@ service cloud.firestore {
       return field is list;
     }
 
+    // Get the user's phone from auth token (phone_number claim) or fallback
+    function myPhone() {
+      return request.auth.token.phone_number != null
+        ? request.auth.token.phone_number.replace('+91', '')
+        : null;
+    }
+
+    // Check if the request is for the authenticated user's own document
+    function isOwnDoc(phone) {
+      return loggedIn() && (phone == myPhone() || phone == request.auth.uid);
+    }
+
     /* =========================
        USER PROFILES
        Document ID: phone number
+       Users can only read/write their OWN profile.
     ========================== */
 
     match /users/{phone} {
-      allow read: if loggedIn();
-      allow create: if loggedIn() && validString(request.resource.data.phone);
-      allow update: if loggedIn();
+      allow read: if loggedIn() && (isOwnDoc(phone) || isAdmin());
+      allow create: if loggedIn() && isOwnDoc(phone) && validString(request.resource.data.phone);
+      allow update: if loggedIn() && isOwnDoc(phone);
       allow delete: if false;
     }
 
     /* =========================
-       CATEGORY SYSTEM
+       CATEGORY SYSTEM (public read)
     ========================== */
 
     match /categories/{categoryId} {
@@ -52,109 +69,125 @@ service cloud.firestore {
     /* =========================
        MARKETPLACE (SCOPE-BASED)
        Path: marketplace/{categorySlug}/businesses/{businessId}
-       This is the ONLY marketplace path used by the codebase.
+       Read: any logged-in user (public marketplace)
+       Write: admin only
     ========================== */
 
     match /marketplace/{categorySlug}/businesses/{businessId} {
       allow read: if loggedIn();
-      allow create: if loggedIn();
-      allow update: if loggedIn();
+      allow create: if isAdmin();
+      allow update: if isAdmin();
       allow delete: if false;
     }
 
     /* =========================
        USER SELECTIONS
+       Users can only read/write their OWN selections.
     ========================== */
 
     match /selections/{docId} {
-      allow read: if loggedIn();
-      allow create: if loggedIn() && validString(request.resource.data.uid) && validString(request.resource.data.phone) && validString(request.resource.data.category);
-      allow update: if loggedIn();
+      allow read: if loggedIn() && (request.resource == null || isOwnDoc(request.resource.data.phone) || isOwnDoc(request.resource.data.uid) || isAdmin());
+      allow create: if loggedIn() && validString(request.resource.data.uid) && validString(request.resource.data.phone) && validString(request.resource.data.category) && (isOwnDoc(request.resource.data.phone) || isOwnDoc(request.resource.data.uid));
+      allow update: if loggedIn() && (isOwnDoc(resource.data.phone) || isOwnDoc(resource.data.uid) || isAdmin());
       allow delete: if false;
     }
 
     /* =========================
        GROUP MATCHING
+       Read: any logged-in user (needed for matching)
+       Create: logged-in user
+       Update: admin only (prevents membership manipulation)
     ========================== */
 
     match /groups/{groupId} {
-      allow read: if true;
+      allow read: if loggedIn();
       allow create: if loggedIn() && validString(request.resource.data.category) && validString(request.resource.data.option) && validNumber(request.resource.data.membersCount) && validNumber(request.resource.data.requiredSize) && validList(request.resource.data.members) && validList(request.resource.data.memberUIDs) && validString(request.resource.data.createdBy) && request.resource.data.membersCount >= 1 && request.resource.data.requiredSize >= 2;
-      allow update: if loggedIn();
+      allow update: if isAdmin();
       allow delete: if false;
     }
 
     /* =========================
        MATCH REQUESTS
+       Users can read their own requests; admin can read all.
     ========================== */
 
     match /matchRequests/{docId} {
-      allow read: if loggedIn();
-      allow create: if loggedIn() && request.resource.data.userA is map && request.resource.data.userB is map && validString(request.resource.data.userA.phone) && validString(request.resource.data.userB.phone) && validString(request.resource.data.status);
-      allow update: if loggedIn();
+      allow read: if loggedIn() && (isOwnDoc(resource.data.userA.phone) || isOwnDoc(resource.data.userB.phone) || isAdmin());
+      allow create: if loggedIn() && request.resource.data.userA is map && request.resource.data.userB is map && validString(request.resource.data.userA.phone) && validString(request.resource.data.userB.phone) && validString(request.resource.data.status) && (isOwnDoc(request.resource.data.userA.phone) || isOwnDoc(request.resource.data.userB.phone));
+      allow update: if isAdmin();
       allow delete: if false;
     }
 
     /* =========================
        PAYMENTS
+       Users can read their OWN payments only.
+       Create: logged-in user (own payment)
+       Update: admin only (prevents client-side payment manipulation)
     ========================== */
 
     match /payments/{paymentId} {
-      allow read: if loggedIn();
-      allow create: if loggedIn() && validString(request.resource.data.uid) && validNumber(request.resource.data.amount);
-      allow update: if false;
+      allow read: if loggedIn() && (isOwnDoc(resource.data.uid) || isOwnDoc(resource.data.phone) || isAdmin());
+      allow create: if loggedIn() && validString(request.resource.data.uid) && validNumber(request.resource.data.amount) && (isOwnDoc(request.resource.data.uid) || isOwnDoc(request.resource.data.phone));
+      allow update: if isAdmin();
       allow delete: if false;
     }
 
     /* =========================
        CHAT SYSTEM
+       Users can only read/write chats they are members of.
     ========================== */
 
     match /chats/{chatId} {
-      allow read: if loggedIn();
+      allow read: if loggedIn() && (resource.data.memberUIDs != null && (resource.data.memberUIDs.hasAny([request.auth.uid, myPhone()]) || isAdmin()));
       allow create: if loggedIn() && validList(request.resource.data.memberUIDs);
-      allow update: if loggedIn();
+      allow update: if loggedIn() && (resource.data.memberUIDs != null && (resource.data.memberUIDs.hasAny([request.auth.uid, myPhone()]) || isAdmin()));
       allow delete: if false;
 
       match /messages/{messageId} {
-        allow read: if loggedIn();
-        allow create: if loggedIn() && validString(request.resource.data.senderId) && validString(request.resource.data.text);
+        allow read: if loggedIn() && (get(/databases/$(database)/documents/chats/$(chatId)).data.memberUIDs != null && (get(/databases/$(database)/documents/chats/$(chatId)).data.memberUIDs.hasAny([request.auth.uid, myPhone()]) || isAdmin()));
+        allow create: if loggedIn() && validString(request.resource.data.senderId) && validString(request.resource.data.text) && (get(/databases/$(database)/documents/chats/$(chatId)).data.memberUIDs != null && (get(/databases/$(database)/documents/chats/$(chatId)).data.memberUIDs.hasAny([request.auth.uid, myPhone()]) || isAdmin()));
         allow update: if false;
         allow delete: if false;
       }
 
       match /typing/{uid} {
-        allow read: if loggedIn();
-        allow write: if loggedIn();
+        allow read: if loggedIn() && (get(/databases/$(database)/documents/chats/$(chatId)).data.memberUIDs != null && (get(/databases/$(database)/documents/chats/$(chatId)).data.memberUIDs.hasAny([request.auth.uid, myPhone()]) || isAdmin()));
+        allow write: if loggedIn() && (get(/databases/$(database)/documents/chats/$(chatId)).data.memberUIDs != null && (get(/databases/$(database)/documents/chats/$(chatId)).data.memberUIDs.hasAny([request.auth.uid, myPhone()]) || isAdmin()));
       }
     }
 
     /* =========================
        ONLINE STATUS
+       Users can only write their OWN status.
     ========================== */
 
     match /status/{uid} {
       allow read: if loggedIn();
-      allow write: if loggedIn();
+      allow write: if loggedIn() && (uid == request.auth.uid || uid == myPhone());
     }
 
     /* =========================
        MOVIE TICKETS
+       Read: logged-in users
+       Create: logged-in user
+       Update: admin only
     ========================== */
 
     match /movieTickets/{ticketId} {
       allow read: if loggedIn();
       allow create: if loggedIn();
-      allow update: if false;
+      allow update: if isAdmin();
       allow delete: if false;
     }
 
     /* =========================
        TICKET REQUESTS
+       Read: admin only (contains buyer phone)
+       Create: logged-in user
     ========================== */
 
     match /ticketRequests/{requestId} {
-      allow read: if loggedIn();
+      allow read: if isAdmin();
       allow create: if loggedIn();
       allow update: if false;
       allow delete: if false;
@@ -162,21 +195,26 @@ service cloud.firestore {
 
     /* =========================
        COLLABORATORS
+       Read: logged-in users
+       Create: logged-in user
+       Update: admin only
     ========================== */
 
     match /collaborators/{docId} {
       allow read: if loggedIn();
       allow create: if loggedIn() && validString(request.resource.data.category) && validString(request.resource.data.subcategory) && validString(request.resource.data.option) && validString(request.resource.data.state) && validString(request.resource.data.district) && validString(request.resource.data.city) && validString(request.resource.data.phone) && (request.resource.data.status in ["pending", "approved", "rejected", "featured", "hidden"]);
-      allow update: if loggedIn();
+      allow update: if isAdmin();
       allow delete: if false;
     }
 
     /* =========================
        REPORTS
+       Create: logged-in user
+       Read: admin only
     ========================== */
 
     match /reports/{docId} {
-      allow read: if false;
+      allow read: if isAdmin();
       allow create: if loggedIn();
       allow update: if false;
       allow delete: if false;
@@ -184,23 +222,55 @@ service cloud.firestore {
 
     /* =========================
        USER COLLABORATIONS
+       Read: admin only (contains user contact info)
+       Create: logged-in user
+       Update: admin only
     ========================== */
 
     match /userCollaborations/{docId} {
-      allow read: if loggedIn();
+      allow read: if isAdmin();
       allow create: if loggedIn() && validString(request.resource.data.businessName) && validString(request.resource.data.category) && validString(request.resource.data.state) && validString(request.resource.data.district) && validString(request.resource.data.city) && validString(request.resource.data.createdBy) && validString(request.resource.data.createdByName) && validString(request.resource.data.createdByPhone) && request.resource.data.status == "pending";
-      allow update: if loggedIn();
+      allow update: if isAdmin();
       allow delete: if false;
     }
 
     /* =========================
        NOTIFICATIONS
+       Users can only read/write their OWN notifications.
     ========================== */
 
     match /notifications/{notificationId} {
-      allow read: if loggedIn();
+      allow read: if loggedIn() && (isOwnDoc(resource.data.uid) || isAdmin());
+      allow create: if loggedIn() && (isOwnDoc(request.resource.data.uid) || isAdmin());
+      allow update: if loggedIn() && (isOwnDoc(resource.data.uid) || isAdmin());
+      allow delete: if false;
+    }
+
+    /* =========================
+       GYM SUBMISSIONS
+       Read: admin only
+       Create: logged-in user
+       Update: admin only
+    ========================== */
+
+    match /gymSubmissions/{docId} {
+      allow read: if isAdmin();
       allow create: if loggedIn();
-      allow update: if loggedIn();
+      allow update: if isAdmin();
+      allow delete: if false;
+    }
+
+    /* =========================
+       PENDING BUSINESSES
+       Read: admin only
+       Create: logged-in user
+       Update: admin only
+    ========================== */
+
+    match /pendingBusinesses/{docId} {
+      allow read: if isAdmin();
+      allow create: if loggedIn();
+      allow update: if isAdmin();
       allow delete: if false;
     }
 

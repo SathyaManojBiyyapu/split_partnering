@@ -5,10 +5,12 @@ import crypto from "crypto";
 
 import { adminDb, adminTimestamp } from "@/firebase/admin";
 
+const ACTIVATION_PRICE = 29;
+
 /* =========================
    VERIFY RAZORPAY WEBHOOK
    SIGNATURE
-========================= */
+========================== */
 
 function verifyWebhookSignature(
   rawBody: string,
@@ -25,7 +27,7 @@ function verifyWebhookSignature(
 
 /* =========================
    MARK GROUP MEMBER PAID
-========================= */
+========================== */
 
 async function markMemberPaid(
   groupId: string,
@@ -52,7 +54,7 @@ async function markMemberPaid(
 
 /* =========================
    UPDATE PAYMENT DOCUMENT
-========================= */
+========================== */
 
 async function finalizePayment(
   groupId: string,
@@ -80,7 +82,7 @@ async function finalizePayment(
 
 /* =========================
    WEBHOOK HANDLER
-========================= */
+========================== */
 
 export async function POST(req: Request) {
   try {
@@ -130,6 +132,16 @@ export async function POST(req: Request) {
         console.warn(
           "Webhook payment.captured missing groupId/uid in notes:",
           payment.id
+        );
+        return NextResponse.json({ received: true, skipped: true });
+      }
+
+      // ============================================================
+      // VERIFY AMOUNT — only finalize if the payment is exactly ₹29
+      // ============================================================
+      if (payment.amount !== ACTIVATION_PRICE * 100) {
+        console.warn(
+          `Webhook payment amount mismatch: expected ${ACTIVATION_PRICE * 100}, got ${payment.amount} for payment ${payment.id}`
         );
         return NextResponse.json({ received: true, skipped: true });
       }

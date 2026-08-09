@@ -3,7 +3,6 @@
 import "./globals.css";
 
 import Navbar from "./components/Navbar";
-import Sidebar from "./components/Sidebar";
 import Footer from "./components/Footer";
 import SupportButton from "./components/SupportButton";
 
@@ -69,6 +68,9 @@ function AuthGuard({
     "/my-details",
     "/dashboard",
     "/save",
+    "/find-partners",
+    "/create-group",
+    "/notifications",
   ];
 
   useEffect(() => {
@@ -126,6 +128,25 @@ export default function RootLayout({
         "font-sans"
       )}
     >
+      <head>
+        <title>PartnerSync — Split Costs. Save Money Together.</title>
+        <meta name="description" content="PartnerSync helps people find compatible partners to split the cost of memberships, tickets, travel, subscriptions and more." />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <link rel="icon" href="/logo.png" />
+        <link rel="canonical" href="https://partnering.in" />
+        <meta property="og:type" content="website" />
+        <meta property="og:site_name" content="PartnerSync" />
+        <meta property="og:title" content="PartnerSync — Split Costs Together" />
+        <meta property="og:description" content="PartnerSync helps people find compatible partners to split the cost of memberships, tickets, travel, subscriptions and more." />
+        <meta property="og:url" content="https://partnering.in" />
+        <meta property="og:image" content="https://partnering.in/logo.png" />
+        <meta name="twitter:card" content="summary" />
+        <meta name="twitter:title" content="PartnerSync — Split Costs Together" />
+        <meta name="twitter:description" content="Find trusted people nearby to split memberships, tickets, travel, subscriptions and more." />
+        <meta name="twitter:image" content="https://partnering.in/logo.png" />
+        <meta name="author" content="PartnerSync Digital Services Private Limited" />
+        <meta name="robots" content="index, follow" />
+      </head>
       <body
         suppressHydrationWarning
         className="bg-black text-white font-body"
@@ -133,9 +154,6 @@ export default function RootLayout({
         <AuthProvider>
           {/* NAVBAR */}
           <Navbar />
-
-          {/* SIDEBAR */}
-          <Sidebar />
 
           {/* ORGANIZATION SCHEMA (JSON-LD) */}
           <script

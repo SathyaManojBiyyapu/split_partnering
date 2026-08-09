@@ -9,6 +9,7 @@ import { indiaStates } from "@/app/data/indiaStates";
 import { districts } from "@/app/data/districts";
 import { citiesByDistrict } from "@/app/data/cities";
 import toast from "react-hot-toast";
+import Link from "next/link";
 
 export default function ProfilePage() {
   const [name, setName] = useState("");
@@ -24,6 +25,13 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [profileCompleted, setProfileCompleted] = useState(false);
+  const [paymentVerified, setPaymentVerified] = useState(false);
+  const [completedPartnerships, setCompletedPartnerships] = useState(0);
+  const [notificationPrefs, setNotificationPrefs] = useState({
+    matchAlerts: true,
+    paymentAlerts: true,
+    chatAlerts: true,
+  });
 
   const rawPhone = typeof window !== "undefined" ? (localStorage.getItem("phone") || "") : "";
   const phone = rawPhone.trim();
@@ -41,13 +49,7 @@ export default function ProfilePage() {
 
     const fetchProfile = async () => {
       try {
-        // KEY FIX: Force-refresh auth user BEFORE any Firestore operation.
-        // After page navigation, auth.currentUser.phoneNumber can be null even though
-        // the user is authenticated. This happens because Firebase Auth restores the
-        // session from persistence (localStorage/IndexedDB) which may not contain
-        // phone_number. reload() fetches the latest user data from the server.
-        // getIdToken(true) forces a fresh JWT that includes the phone_number claim,
-        // which Firestore rules need via request.auth.token.phone_number.
+        // Force-refresh auth user BEFORE any Firestore operation
         if (auth.currentUser) {
           try {
             await auth.currentUser.reload();
@@ -70,7 +72,18 @@ export default function ProfilePage() {
           setCollege(data.college || "");
           setPhotoURL(data.photoURL || "");
           setProfileCompleted(data.profileCompleted === true);
+          setPaymentVerified(data.paymentVerified === true);
         }
+
+        // Count completed partnerships from paid payments
+        const { collection, query, where, getDocs } = await import("firebase/firestore");
+        const paymentsQuery = query(
+          collection(db, "payments"),
+          where("uid", "==", phone),
+          where("status", "==", "paid")
+        );
+        const paySnap = await getDocs(paymentsQuery);
+        setCompletedPartnerships(paySnap.size);
       } catch (error) {
         console.error(error);
       }
@@ -133,29 +146,9 @@ export default function ProfilePage() {
       const authPhone = authPhoneRaw ? authPhoneRaw.replace(/^\+91/, "").trim() : null;
       const authUid = currentUser?.uid || null;
 
-      // Normalize: use auth phone if available, otherwise fall back to localStorage
       const docPhone = authPhone || phone;
 
-      console.log("[Profile Save Debug]");
-      console.log("  auth.currentUser.uid:", authUid);
-      console.log("  auth.currentUser.phoneNumber:", authPhoneRaw);
-      console.log("  normalized authPhone:", authPhone);
-      console.log("  localStorage phone:", phone);
-      console.log("  doc ID to write:", docPhone);
-      console.log("  doc path:", "users/" + docPhone);
-
       const userRef = doc(db, "users", docPhone);
-      const existingSnap = await getDoc(userRef);
-      const docExists = existingSnap.exists();
-      console.log("  document exists:", docExists);
-      console.log("  will rule pass? phone(" + docPhone + ") == myPhone10()(" + authPhone + "):", docPhone === authPhone);
-
-      if (phone !== authPhone && currentUser) {
-        if (authPhone) {
-          localStorage.setItem("phone", authPhone);
-        }
-      }
-
       await setDoc(
         userRef,
         {
@@ -171,8 +164,9 @@ export default function ProfilePage() {
           photoURL,
           verified: true,
           profileCompleted: true,
-          profileStrength: [name, city, gender, bio, interests, college, photoURL].filter(Boolean).length * 15,
           updatedAt: new Date(),
+          // Notification preferences (user-editable)
+          notificationPrefs,
         },
         { merge: true }
       );
@@ -183,12 +177,7 @@ export default function ProfilePage() {
 
       toast.success("Profile saved successfully!");
       setProfileCompleted(true);
-      window.location.href = "/categories";
     } catch (error: any) {
-      console.error("[Profile Save Error]");
-      console.error("  error.code:", error?.code || "N/A");
-      console.error("  error.message:", error?.message || String(error));
-
       const code = error?.code || "";
       if (code === "permission-denied") {
         toast.error("Profile save failed: Permission denied. Please re-login and try again.");
@@ -225,189 +214,287 @@ export default function ProfilePage() {
   const profileStrength = [name, city, gender, bio, interests, college, photoURL].filter(Boolean).length * 15;
 
   return (
-    <div className="text-white pt-32 flex flex-col items-center gap-5 px-6 pb-20">
+    <div className="text-white pt-28 flex flex-col items-center gap-8 px-6 pb-20 max-w-3xl mx-auto">
       <h1 className="text-3xl font-bold text-[#D4AF37] mb-1">Your Profile</h1>
 
-      <div className="w-72 p-4 rounded-xl border border-[#D4AF37]/30 bg-gradient-to-br from-[#1a1500] to-black text-center">
-        <p className="text-[#D4AF37] text-sm font-semibold">✦ Complete Your Location Profile ✦</p>
-        <p className="text-gray-300 text-xs mt-2 leading-relaxed">
-          Complete your location profile to receive accurate local matches and better partnership opportunities.
-        </p>
-      </div>
+      {/* ===== PROFILE INFORMATION ===== */}
+      <section className="w-full card-premium p-6">
+        <h2 className="text-lg font-semibold text-[#FFD166] mb-4">Profile Information</h2>
 
-      <div className="relative">
-        <img
-          src={photoURL || "https://ui-avatars.com/api/?background=000000&color=D4AF37&name=User"}
-          alt="Profile"
-          className="w-28 h-28 rounded-full border-4 border-[#D4AF37] object-cover shadow-lg"
-        />
-      </div>
+        <div className="flex flex-col items-center gap-4 mb-6">
+          <div className="relative">
+            <img
+              src={photoURL || "https://ui-avatars.com/api/?background=000000&color=D4AF37&name=User"}
+              alt="Profile"
+              className="w-28 h-28 rounded-full border-4 border-[#D4AF37] object-cover shadow-lg"
+            />
+          </div>
+          {!guest && (
+            <label className="cursor-pointer text-sm text-[#D4AF37] underline">
+              {uploadLoading ? "Uploading..." : "Upload Profile Photo"}
+              <input type="file" accept="image/*" hidden onChange={handleImageUpload} />
+            </label>
+          )}
 
-      {!guest && (
-        <label className="cursor-pointer text-sm text-[#D4AF37] underline">
-          {uploadLoading ? "Uploading..." : "Upload Profile Photo"}
-          <input type="file" accept="image/*" hidden onChange={handleImageUpload} />
-        </label>
-      )}
-
-      <div className="w-72">
-        <div className="flex justify-between text-xs mb-1 text-gray-400">
-          <span>Profile Strength</span>
-          <span>{profileStrength}%</span>
+          <div className="w-full max-w-xs">
+            <div className="flex justify-between text-xs mb-1 text-gray-400">
+              <span>Profile Strength</span>
+              <span>{profileStrength}%</span>
+            </div>
+            <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden">
+              <div className="h-full bg-[#D4AF37]" style={{ width: `${profileStrength}%` }} />
+            </div>
+          </div>
         </div>
-        <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden">
-          <div className="h-full bg-[#D4AF37]" style={{ width: `${profileStrength}%` }} />
+
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs text-gray-400 mb-1.5">Full Name</label>
+            <input
+              type="text"
+              placeholder="Full Name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="input w-full"
+              disabled={guest}
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs text-gray-400 mb-1.5">Gender</label>
+            <select
+              value={gender}
+              onChange={(e) => setGender(e.target.value)}
+              className="input w-full bg-black"
+              disabled={guest}
+            >
+              <option value="">Select Gender</option>
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs text-gray-400 mb-1.5">College / Company</label>
+            <input
+              type="text"
+              placeholder="College / Company"
+              value={college}
+              onChange={(e) => setCollege(e.target.value)}
+              className="input w-full"
+              disabled={guest}
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs text-gray-400 mb-1.5">Interests (Movies, Trips, Food...)</label>
+            <input
+              type="text"
+              placeholder="Interests"
+              value={interests}
+              onChange={(e) => setInterests(e.target.value)}
+              className="input w-full"
+              disabled={guest}
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs text-gray-400 mb-1.5">Short Bio</label>
+            <textarea
+              placeholder="Short Bio"
+              value={bio}
+              onChange={(e) => setBio(e.target.value)}
+              className="input w-full h-20 resize-none"
+              disabled={guest}
+            />
+          </div>
         </div>
-      </div>
+      </section>
 
-      <div className="max-w-md text-center text-xs text-gray-400 mb-2">
-        SplitPartnering is a{" "}
-        <span className="text-[#D4AF37] font-semibold">partnering service</span>.
-        We help people find partners to share costs and access group benefits.
-      </div>
+      {/* ===== LOCATION ===== */}
+      <section className="w-full card-premium p-6">
+        <h2 className="text-lg font-semibold text-[#FFD166] mb-4">Location</h2>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs text-gray-400 mb-1.5">State</label>
+            <select
+              value={stateVal}
+              onChange={(e) => {
+                setStateVal(e.target.value);
+                setDistrict("");
+                setCity("");
+              }}
+              className="input w-full bg-black"
+              disabled={guest}
+            >
+              <option value="">Select State</option>
+              {indiaStates.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </div>
 
-      <p className="text-gray-400 text-sm mb-2">
-        {guest ? "Guest Mode: You can browse, but cannot save details." : "Keep your profile accurate. Partners trust verified details."}
-      </p>
+          <div>
+            <label className="block text-xs text-gray-400 mb-1.5">District</label>
+            <select
+              value={district}
+              onChange={(e) => {
+                setDistrict(e.target.value);
+                setCity("");
+              }}
+              className="input w-full bg-black"
+              disabled={guest || !stateVal}
+            >
+              <option value="">Select District</option>
+              {selectedStateDistricts.map((d: string) => (
+                <option key={d} value={d}>{d}</option>
+              ))}
+            </select>
+          </div>
 
-      <div className="bg-black/50 border border-[#D4AF37]/30 px-4 py-2 rounded-lg w-72 text-center text-sm mb-2">
-        Phone: <span className="text-[#D4AF37] font-semibold">{phone || "Guest"}</span>
-      </div>
-
-      {profileCompleted && (
-        <div className="text-[10px] text-yellow-400 text-center -mt-3 mb-1">
-          Contact Admin if corrections are required.
+          <div>
+            <label className="block text-xs text-gray-400 mb-1.5">City</label>
+            <select
+              value={city}
+              onChange={(e) => setCity(e.target.value)}
+              className="input w-full bg-black"
+              disabled={guest || !district}
+            >
+              <option value="">Select City</option>
+              {selectedDistrictCities.map((c: string) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
         </div>
-      )}
+      </section>
 
-      <input
-        type="text"
-        placeholder="Full Name"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        className={`input w-72 border-[#D4AF37]/30 focus:border-[#D4AF37] ${profileCompleted ? "opacity-60 cursor-not-allowed" : ""}`}
-        disabled={guest || profileCompleted}
-      />
-
-      {profileCompleted && name && (
-        <div className="text-[10px] text-yellow-400 text-center -mt-3">
-          Contact Admin if corrections are required.
+      {/* ===== NOTIFICATION PREFERENCES ===== */}
+      <section className="w-full card-premium p-6">
+        <h2 className="text-lg font-semibold text-[#FFD166] mb-4">Notification Preferences</h2>
+        <div className="space-y-3">
+          {[
+            { key: "matchAlerts", label: "Match Alerts", desc: "New compatible partners found" },
+            { key: "paymentAlerts", label: "Payment Alerts", desc: "Payment success / failure updates" },
+            { key: "chatAlerts", label: "Chat Alerts", desc: "New messages in unlocked chats" },
+          ].map((pref) => (
+            <label key={pref.key} className="flex items-center justify-between gap-4 bg-white/[0.03] border border-white/10 rounded-xl p-4 cursor-pointer">
+              <div>
+                <p className="text-sm font-medium text-white">{pref.label}</p>
+                <p className="text-xs text-gray-500">{pref.desc}</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={(notificationPrefs as any)[pref.key]}
+                onChange={(e) =>
+                  setNotificationPrefs((prev) => ({ ...prev, [pref.key]: e.target.checked }))
+                }
+                disabled={guest}
+                className="w-5 h-5 accent-[#D4AF37]"
+              />
+            </label>
+          ))}
         </div>
-      )}
+      </section>
 
-      <select
-        value={gender}
-        onChange={(e) => setGender(e.target.value)}
-        className={`input w-72 border-[#D4AF37]/30 focus:border-[#D4AF37] bg-black ${profileCompleted ? "opacity-60 cursor-not-allowed" : ""}`}
-        disabled={guest || profileCompleted}
-      >
-        <option value="">Select Gender</option>
-        <option value="Male">Male</option>
-        <option value="Female">Female</option>
-        <option value="Other">Other</option>
-      </select>
-
-      {profileCompleted && gender && (
-        <div className="text-[10px] text-yellow-400 text-center -mt-3">
-          Contact Admin if corrections are required.
+      {/* ===== VERIFICATION STATUS ===== */}
+      <section className="w-full card-premium p-6">
+        <h2 className="text-lg font-semibold text-[#FFD166] mb-4">Verification Status</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="p-4 rounded-xl bg-green-500/5 border border-green-500/20 flex items-center gap-3">
+            <span className="text-2xl">📱</span>
+            <div>
+              <p className="text-sm font-medium text-white">Phone Verified</p>
+              <p className="text-xs text-green-400">✓ Active</p>
+            </div>
+          </div>
+          <div className={`p-4 rounded-xl flex items-center gap-3 ${paymentVerified ? "bg-green-500/5 border border-green-500/20" : "bg-white/[0.02] border border-white/10"}`}>
+            <span className="text-2xl">💳</span>
+            <div>
+              <p className="text-sm font-medium text-white">Payment Verified</p>
+              <p className={`text-xs ${paymentVerified ? "text-green-400" : "text-gray-500"}`}>
+                {paymentVerified ? "✓ Active" : "Verified after first payment"}
+              </p>
+            </div>
+          </div>
+          <div className="p-4 rounded-xl bg-white/[0.02] border border-white/10 flex items-center gap-3">
+            <span className="text-2xl">⭐</span>
+            <div>
+              <p className="text-sm font-medium text-white">Partner Rating</p>
+              <p className="text-xs text-gray-500">Coming soon</p>
+            </div>
+          </div>
+          <Link href="/trust-safety" className="p-4 rounded-xl bg-white/[0.02] border border-white/10 flex items-center gap-3 hover:border-[#D4AF37]/30 transition">
+            <span className="text-2xl">🛡️</span>
+            <div>
+              <p className="text-sm font-medium text-white">Trust & Safety</p>
+              <p className="text-xs text-gray-500">View settings →</p>
+            </div>
+          </Link>
         </div>
-      )}
+      </section>
 
-      <input
-        type="text"
-        placeholder="College / Company"
-        value={college}
-        onChange={(e) => setCollege(e.target.value)}
-        className="input w-72 border-[#D4AF37]/30 focus:border-[#D4AF37]"
-        disabled={guest}
-      />
+      {/* ===== PARTNER ACTIVITY ===== */}
+      <section className="w-full card-premium p-6">
+        <h2 className="text-lg font-semibold text-[#FFD166] mb-4">Partner Activity</h2>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="p-4 rounded-xl bg-blue-500/5 border border-blue-500/20 text-center">
+            <p className="text-2xl font-bold text-blue-400">{completedPartnerships}</p>
+            <p className="text-xs text-gray-400 mt-1">Completed Partnerships</p>
+          </div>
+          <div className="p-4 rounded-xl bg-[#D4AF37]/5 border border-[#D4AF37]/20 text-center">
+            <p className="text-2xl font-bold text-[#D4AF37]">{profileCompleted ? "✓" : "—"}</p>
+            <p className="text-xs text-gray-400 mt-1">Profile Status</p>
+          </div>
+        </div>
+      </section>
 
-      <select
-        value={stateVal}
-        onChange={(e) => {
-          setStateVal(e.target.value);
-          setDistrict("");
-          setCity("");
-        }}
-        className="input w-72 border-[#D4AF37]/30 focus:border-[#D4AF37] bg-black"
-        disabled={guest}
-      >
-        <option value="">Select State</option>
-        {indiaStates.map((s) => (
-          <option key={s} value={s}>{s}</option>
-        ))}
-      </select>
+      {/* ===== ACCOUNT SETTINGS ===== */}
+      <section className="w-full card-premium p-6">
+        <h2 className="text-lg font-semibold text-[#FFD166] mb-4">Account Settings</h2>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between bg-white/[0.03] border border-white/10 rounded-xl p-4">
+            <div>
+              <p className="text-sm font-medium text-white">Phone</p>
+              <p className="text-xs text-gray-500">+91 {phone || "Not set"}</p>
+            </div>
+            <span className="text-xs text-green-400 font-medium">✓ Verified</span>
+          </div>
+          <div className="flex items-center justify-between bg-white/[0.03] border border-white/10 rounded-xl p-4">
+            <div>
+              <p className="text-sm font-medium text-white">User ID</p>
+              <p className="text-xs text-gray-500 font-mono">PS-{(phone || "").replace(/\D/g, "").slice(-5) || "00000"}</p>
+            </div>
+            <span className="text-[10px] text-gray-600">System-generated</span>
+          </div>
+          <div className="flex items-center justify-between bg-white/[0.03] border border-white/10 rounded-xl p-4">
+            <div>
+              <p className="text-sm font-medium text-white">Privacy</p>
+              <p className="text-xs text-gray-500">Manage trust, reporting & blocking</p>
+            </div>
+            <Link href="/trust-safety" className="text-xs text-[#D4AF37] hover:underline">
+              Manage →
+            </Link>
+          </div>
+        </div>
+      </section>
 
-      <select
-        value={district}
-        onChange={(e) => {
-          setDistrict(e.target.value);
-          setCity("");
-        }}
-        className="input w-72 border-[#D4AF37]/30 focus:border-[#D4AF37] bg-black"
-        disabled={guest || !stateVal}
-      >
-        <option value="">Select District</option>
-        {selectedStateDistricts.map((d: string) => (
-          <option key={d} value={d}>{d}</option>
-        ))}
-      </select>
-
-      <select
-        value={city}
-        onChange={(e) => setCity(e.target.value)}
-        className="input w-72 border-[#D4AF37]/30 focus:border-[#D4AF37] bg-black"
-        disabled={guest || !district}
-      >
-        <option value="">Select City</option>
-        {selectedDistrictCities.map((c: string) => (
-          <option key={c} value={c}>{c}</option>
-        ))}
-      </select>
-
-      <input
-        type="text"
-        placeholder="Interests (Movies, Trips, Food...)"
-        value={interests}
-        onChange={(e) => setInterests(e.target.value)}
-        className="input w-72 border-[#D4AF37]/30 focus:border-[#D4AF37]"
-        disabled={guest}
-      />
-
-      <textarea
-        placeholder="Short Bio"
-        value={bio}
-        onChange={(e) => setBio(e.target.value)}
-        className="input w-72 h-20 resize-none border-[#D4AF37]/30 focus:border-[#D4AF37]"
-        disabled={guest}
-      />
-
+      {/* ===== ACTIONS ===== */}
       {!guest && (
         <button
           onClick={saveProfile}
           disabled={saving}
-          className="btn-primary mt-2 disabled:opacity-50"
+          className="btn-primary w-full max-w-xs disabled:opacity-50"
         >
           {saving ? "Saving..." : "Save Profile"}
         </button>
       )}
 
-      <div className="text-green-400 text-xs mt-2">✅ Verified Partner Profile</div>
-
-      <div className="max-w-md text-center text-[11px] text-gray-400 mt-2">
-        Your details help us suggest better partners in your city. Payments and purchases always happen directly between partners and providers.
-      </div>
+      <div className="text-green-400 text-xs">✅ Verified Partner Profile</div>
 
       <button onClick={logout} className="text-red-400 underline text-sm mt-3">
         Logout
-      </button>
-
-      <button onClick={() => (window.location.href = "/admin")} className="text-[10px] opacity-20 mt-1">
-        admin
-      </button>
-
-      <button onClick={() => (window.location.href = "/ai")} className="mt-4 text-[#D4AF37] text-sm underline">
-        Chat with AI 🤖
       </button>
     </div>
   );

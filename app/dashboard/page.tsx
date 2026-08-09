@@ -15,10 +15,8 @@ import {
   arrayRemove,
   addDoc,
   serverTimestamp,
-  query,
-  where,
 } from "firebase/firestore";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import DashboardSkeleton from "@/app/components/dashboard/DashboardSkeleton";
 import StatsCards from "@/app/components/dashboard/StatsCards";
 import EmptyState from "@/app/components/dashboard/EmptyState";
@@ -29,7 +27,6 @@ import {
   computeCompatibility,
   generateUserId,
   formatDate,
-  isGroupExpired,
 } from "@/app/data/matchExpiry";
 import { categoryData, slugToCategoryName, masterCategories } from "@/app/data/subcategories";
 
@@ -73,6 +70,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [latestSelection, setLatestSelection] = useState<any>(null);
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
+  const [paidStats, setPaidStats] = useState({ count: 0, total: 0 });
 
   const rawPhone = typeof window !== "undefined" ? localStorage.getItem("phone") : null;
   const phone = rawPhone?.trim() || null;
@@ -80,18 +78,7 @@ export default function DashboardPage() {
 
   const [userProfile, setUserProfile] = useState<any>(null);
   const [nearbyPartners, setNearbyPartners] = useState<PartnerMatch[]>([]);
-
-  const [now, setNow] = useState<number>(0);
-
-  useEffect(() => {
-    setNow(Date.now());
-  }, []);
   const [startingMatch, setStartingMatch] = useState<string | null>(null);
-
-  useEffect(() => {
-    const interval = setInterval(() => setNow(Date.now()), 60000);
-    return () => clearInterval(interval);
-  }, []);
 
   function computeGroupMatch(
     groupMembers: any[],
@@ -114,51 +101,6 @@ export default function DashboardPage() {
       }
     }
     return { matchingCount: count, matchLevel: count > 1 ? "same-city" : "none" };
-  }
-
-  function ProgressBar({ current, max, status, isComplete }: { current: number; max: number; status?: string; isComplete?: boolean }) {
-    const percent = Math.min((current / max) * 100, 100);
-    let barClass = "progress-active";
-    if (status === "expiring-soon") barClass = "progress-expiring";
-    if (status === "expired" || percent >= 100 || isComplete) barClass = "progress-complete";
-
-    return (
-      <div className="mt-2">
-        <div className="w-full h-2.5 bg-gray-800 rounded-full overflow-hidden">
-          <div
-            className={`h-full rounded-full transition-all duration-700 ${barClass}`}
-            style={{ width: `${percent}%` }}
-          />
-        </div>
-        <p className="text-[10px] text-gray-500 mt-0.5">
-          {isComplete || current >= max ? (
-            <span className="text-green-400">{current} of {max} members joined — 100% complete</span>
-          ) : (
-            <span>{current} of {max} members joined — {Math.round(percent)}% complete</span>
-          )}
-        </p>
-      </div>
-    );
-  }
-
-  function ExpiryIndicator({ createdAt }: { createdAt: any }) {
-    const expiry = getExpiryStatus(createdAt);
-    if (expiry.status === "expired") return null;
-    const barColor = expiry.status === "expiring-soon" ? "progress-expiring" : "progress-active";
-
-    return (
-      <div className="mt-2 bg-black/30 rounded-lg p-2">
-        <div className="flex justify-between items-center mb-1">
-          <span className="text-[10px] text-gray-400">⏱ Match Duration</span>
-          <span className={`text-[10px] font-medium ${expiry.status === "expiring-soon" ? "text-orange-400" : "text-gray-300"}`}>
-            {expiry.label}
-          </span>
-        </div>
-        <div className="w-full h-1.5 bg-gray-800 rounded-full overflow-hidden">
-          <div className={`h-full rounded-full transition-all duration-700 ${barColor}`} style={{ width: `${expiry.progress}%` }} />
-        </div>
-      </div>
-    );
   }
 
   function getGroupStatus(group: Group, matchingCount: number, required: number): { color: string; label: string } {
@@ -215,7 +157,7 @@ export default function DashboardPage() {
         updatedAt: serverTimestamp(),
       };
 
-      const matchRef = await addDoc(collection(db, "matchRequests"), matchData);
+      await addDoc(collection(db, "matchRequests"), matchData);
       toast.success(`✅ Match request sent to ${partner.userId}`);
     } catch (err: any) {
       console.error("Match error:", err);
@@ -224,6 +166,7 @@ export default function DashboardPage() {
     setStartingMatch(null);
   }, [phone, userProfile, myUserId]);
 
+  /* Load user profile + nearby partners (preserves existing matching rules) */
   useEffect(() => {
     if (!phone) return;
     const loadNearby = async () => {
@@ -236,7 +179,6 @@ export default function DashboardPage() {
         if (!me.state) return;
 
         const usersSnap = await getDocs(collection(db, "users"));
-
         const selectionsSnap = await getDocs(collection(db, "selections"));
         const latestSelectionByPhone: Record<string, any> = {};
         selectionsSnap.forEach((sDoc) => {
@@ -346,7 +288,6 @@ export default function DashboardPage() {
     const clean = slug.replace(/-/g, " ");
     const catEntry = masterCategories[slug];
     if (catEntry) return catEntry.name;
-    // Try to find via slugToCategoryName
     const fromSlug = slugToCategoryName[slug];
     if (fromSlug) return fromSlug;
     return clean.replace(/\b\w/g, (c) => c.toUpperCase());
@@ -359,7 +300,6 @@ export default function DashboardPage() {
       const sub = cat.subcategories.find((s) => s.slug === optionSlug);
       if (sub) return sub.name;
     }
-    // Fallback: find in any masterCategories subcategory list
     for (const [slug, entry] of Object.entries(masterCategories)) {
       if (entry.subcategories.some((s) => s.toLowerCase().replace(/\s+/g, "-") === optionSlug.toLowerCase().replace(/\s+/g, "-"))) {
         const match = entry.subcategories.find((s) => s.toLowerCase().replace(/\s+/g, "-") === optionSlug.toLowerCase().replace(/\s+/g, "-"));
@@ -369,24 +309,7 @@ export default function DashboardPage() {
     return optionSlug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
   }
 
-  /* Helper: get category icon */
-  function getCategoryIcon(slug: string): string {
-    const catEntry = masterCategories[slug];
-    if (catEntry) return catEntry.icon;
-    return "📁";
-  }
-
-  /* Helper: get icon for subcategory */
-  function getSubcategoryIcon(categorySlug: string, optionSlug: string): string {
-    const cat = categoryData[categorySlug];
-    if (cat) {
-      const sub = cat.subcategories.find((s) => s.slug === optionSlug);
-      if (sub) return sub.icon;
-    }
-    return "🏷️";
-  }
-
-  /* Fetch groups */
+  /* Fetch groups + paid stats */
   useEffect(() => {
     if (!phone) {
       setLoading(false);
@@ -396,12 +319,17 @@ export default function DashboardPage() {
       try {
         const paymentsSnap = await getDocs(collection(db, "payments"));
         const paidGroups = new Set<string>();
+        let paidCount = 0;
+        let paidTotal = 0;
         paymentsSnap.forEach((p) => {
           const pdata = p.data();
           if (pdata.uid === phone && (pdata.status === "paid" || pdata.paid === true)) {
             paidGroups.add(pdata.groupId);
+            paidCount++;
+            paidTotal += Number(pdata.amount || 29);
           }
         });
+        setPaidStats({ count: paidCount, total: paidTotal });
 
         const groups: Group[] = [];
         snapshot.forEach((docSnap) => {
@@ -510,6 +438,15 @@ export default function DashboardPage() {
   if (loading) return <DashboardSkeleton />;
 
   const activeMatches = matches.filter(g => !isExpired(g.createdAt)).length;
+  const pendingRequests = matches.filter(g => {
+    if (isExpired(g.createdAt)) return false;
+    if (g.isPaid) return false;
+    if (!userProfile?.state) return g.membersCount < g.requiredSize;
+    const info = computeGroupMatch(g.members, g.category, g.option);
+    return info.matchingCount < g.requiredSize;
+  }).length;
+  const completedPartnerships = paidStats.count;
+  const totalSavings = paidStats.total;
   const readyMatches = matches.filter(g => {
     if (isExpired(g.createdAt)) return false;
     if (g.isPaid) return false;
@@ -517,6 +454,141 @@ export default function DashboardPage() {
     const info = computeGroupMatch(g.members, g.category, g.option);
     return info.matchingCount >= g.requiredSize;
   }).length;
+
+  const pendingGroups = matches.filter(g => !isExpired(g.createdAt) && !g.isPaid && !(userProfile?.state ? computeGroupMatch(g.members, g.category, g.option).matchingCount >= g.requiredSize : g.membersCount >= g.requiredSize));
+  const readyGroups = matches.filter(g => !isExpired(g.createdAt) && !g.isPaid && (userProfile?.state ? computeGroupMatch(g.members, g.category, g.option).matchingCount >= g.requiredSize : g.membersCount >= g.requiredSize));
+  const completedGroups = matches.filter(g => g.isPaid || g.status === "completed" || (isExpired(g.createdAt) && g.isPaid));
+
+  /* Group card renderer */
+  const renderGroupCard = (group: Group, idx: number, section: "pending" | "ready" | "completed") => {
+    const matchInfo = userProfile?.state
+      ? computeGroupMatch(group.members, group.category, group.option)
+      : { matchingCount: 0, matchLevel: "none" as const };
+    const matchingCount = section === "completed" ? group.membersCount : matchInfo.matchingCount;
+    const required = group.requiredSize;
+    const isSearching = matchingCount <= 1;
+    const expiry = getExpiryStatus(group.createdAt);
+    const statusInfo = getGroupStatus(group, matchingCount, required);
+    const isPaid = group.isPaid || section === "completed";
+    const businessName = group.collaboratorBrand || group.collaboratorId || latestSelection?.collaboratorName || latestSelection?.collaboratorId || "";
+
+    return (
+      <motion.div
+        key={group.id}
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: idx * 0.05 }}
+        className="card-premium p-0 overflow-hidden"
+      >
+        <div className="p-5">
+          {/* Header: Title + Status */}
+          <div className="flex items-start justify-between gap-3 mb-3">
+            <div className="flex-1 min-w-0">
+              <h3 className="text-base font-bold text-white font-heading leading-tight">
+                {getSubcategoryDisplayName(group.category, group.option)}
+              </h3>
+              <p className="text-[11px] text-gray-400 mt-0.5">
+                Category: {getCategoryDisplayName(group.category)}
+              </p>
+              {businessName && (
+                <p className="text-[11px] text-gray-400 mt-0.5">🏪 {businessName}</p>
+              )}
+            </div>
+            <div className={`px-2.5 py-1 rounded-full text-[10px] font-bold shrink-0 ${statusInfo.color}`}>
+              {statusInfo.label}
+            </div>
+          </div>
+
+          {/* Divider */}
+          <div className="section-divider-light mb-3" />
+
+          {/* Location */}
+          <div className="flex items-center gap-2 text-xs mb-3">
+            <svg className="w-3.5 h-3.5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            <span className="text-gray-300">{userProfile?.city || group.members[0]?.city || "Not set"}</span>
+          </div>
+
+          {/* Progress */}
+          {!isPaid && (
+            <div className="mb-3">
+              <div className="flex items-center justify-between text-[11px] mb-1.5">
+                <span className="text-gray-400">
+                  {isSearching ? (
+                    <span className="text-blue-400">🔍 Searching...</span>
+                  ) : matchingCount >= required ? (
+                    <span className="text-green-400">✅ Group Complete</span>
+                  ) : (
+                    <span className="text-yellow-400">👥 Building group</span>
+                  )}
+                </span>
+                <span className="text-gray-500">{matchingCount}/{required} members</span>
+              </div>
+              <div className="progress-bar">
+                <div
+                  className={`h-full rounded-full transition-all duration-700 ${matchingCount >= required ? 'progress-complete' : expiry.status === 'expiring-soon' ? 'progress-expiring' : 'progress-active'}`}
+                  style={{ width: `${Math.min((matchingCount / required) * 100, 100)}%` }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Payment status */}
+          <div className="flex items-center gap-2 text-[11px] mb-2">
+            {isPaid ? (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                💳 Payment: Completed
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">
+                💳 Payment: Pending
+              </span>
+            )}
+            {isPaid ? (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                💬 Chat: Unlocked
+              </span>
+            ) : null}
+          </div>
+
+          {/* Created date */}
+          <div className="text-[10px] text-gray-500">
+            {group.createdAt?.seconds && (
+              <span>Created: {formatDate(group.createdAt)}</span>
+            )}
+          </div>
+        </div>
+
+        {/* Actions footer */}
+        <div className="border-t border-white/5 px-5 py-3 flex gap-2 flex-wrap bg-black/20">
+          {!isPaid ? (
+            matchingCount >= required ? (
+              <button onClick={() => (window.location.href = `/payment?groupId=${group.id}`)}
+                className="btn-primary text-xs px-4 py-2">
+                🔓 Unlock for ₹29
+              </button>
+            ) : (
+              <button disabled className="px-4 py-2 rounded-xl bg-gray-800 text-gray-500 text-xs font-bold cursor-not-allowed">
+                ⏳ Waiting for members
+              </button>
+            )
+          ) : (
+            <button onClick={() => router.push(`/chat/${group.id}`)}
+              className="px-4 py-2 rounded-xl bg-purple-600 text-xs font-bold hover:scale-105 transition">
+              💬 Open Chat
+              {(unreadCounts[group.id] || 0) > 0 && <span className="ml-2">💬 {unreadCounts[group.id]}</span>}
+            </button>
+          )}
+          <button onClick={() => deleteMatch(group.id)}
+            className="px-4 py-2 rounded-xl bg-red-600/15 border border-red-500/20 text-red-400 text-xs font-bold hover:scale-105 transition">
+            ❌ Remove
+          </button>
+        </div>
+      </motion.div>
+    );
+  };
 
   return (
     <div className="pt-28 px-6 max-w-5xl mx-auto text-white pb-mobile-cta">
@@ -528,54 +600,38 @@ export default function DashboardPage() {
         My Partners
       </motion.h1>
 
-      {(() => {
-        const activeNonExpired = matches.filter(g => !isExpired(g.createdAt) && !g.isPaid);
-        const latestActive = activeNonExpired.length > 0
-          ? activeNonExpired.reduce((a, b) => ((a.createdAt?.seconds || 0) > (b.createdAt?.seconds || 0) ? a : b))
-          : null;
+      <p className="text-gray-400 text-sm mt-2">
+        <span className="text-gray-500">Your ID: {myUserId}</span>
+      </p>
 
-        return (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mt-2">
-            <p className="text-gray-400 text-sm">
-              <span className="text-gray-500">Your ID: {myUserId}</span>
-            </p>
-            {latestActive && (
-              <div className="mt-2 bg-gradient-to-r from-[#D4AF37]/10 to-transparent rounded-xl p-3 border border-[#D4AF37]/20">
-                <p className="text-xs text-gray-400">Current Active Match</p>
-                <p className="text-[#D4AF37] font-bold text-sm mt-0.5">
-                  {latestActive.category} → {latestActive.option}
-                </p>
-                <p className="text-xs text-gray-500 mt-1">
-                  Started: {latestActive.createdAt?.seconds ? new Date(latestActive.createdAt.seconds * 1000).toLocaleDateString() : "Just now"}
-                </p>
-              </div>
-            )}
-          </motion.div>
-        );
-      })()}
-
+      {/* Top statistics */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
-        className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-4"
+        className="mt-6 grid grid-cols-2 sm:grid-cols-4 gap-4"
       >
         <div className="card-glass-premium p-5 text-center hover:border-blue-500/30 transition-all duration-300">
           <p className="text-3xl font-bold text-blue-400">{activeMatches}</p>
           <p className="text-xs text-gray-400 mt-1">Active Matches</p>
         </div>
+        <div className="card-glass-premium p-5 text-center hover:border-yellow-500/30 transition-all duration-300">
+          <p className="text-3xl font-bold text-yellow-400">{pendingRequests}</p>
+          <p className="text-xs text-gray-400 mt-1">Pending Requests</p>
+        </div>
         <div className="card-glass-premium p-5 text-center hover:border-green-500/30 transition-all duration-300">
-          <p className="text-3xl font-bold text-green-400">{readyMatches}</p>
-          <p className="text-xs text-gray-400 mt-1">Ready to Unlock</p>
+          <p className="text-3xl font-bold text-green-400">{completedPartnerships}</p>
+          <p className="text-xs text-gray-400 mt-1">Completed Partnerships</p>
         </div>
         <div className="card-glass-premium p-5 text-center hover:border-[#D4AF37]/30 transition-all duration-300">
-          <p className="text-3xl font-bold text-[#D4AF37]">{nearbyPartners.length}</p>
-          <p className="text-xs text-gray-400 mt-1">Nearby Candidates</p>
+          <p className="text-3xl font-bold text-[#D4AF37]">₹{totalSavings.toLocaleString()}</p>
+          <p className="text-xs text-gray-400 mt-1">Total Savings</p>
         </div>
       </motion.div>
 
       <StatsCards activeMatches={activeMatches} readyMatches={readyMatches} nearbyCount={nearbyPartners.length} />
 
+      {/* Empty state */}
       {matches.length === 0 && (
         <>
           <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="mt-8 card-glass-premium p-8 text-center max-w-lg mx-auto">
@@ -593,140 +649,62 @@ export default function DashboardPage() {
               Expected Match: <span className="text-[#D4AF37] font-medium">2-6 Hours</span>
             </p>
             <p className="text-xs text-gray-500">👥 {nearbyPartners.length} People Currently Searching</p>
-            <Link href="/categories" className="mt-6 inline-block btn-primary text-sm">Explore Categories</Link>
+            <div className="mt-6 flex flex-wrap justify-center gap-3">
+              <Link href="/find-partners" className="btn-primary text-sm">Find Partners</Link>
+              <Link href="/create-group" className="px-6 py-3 rounded-xl border border-white/20 text-sm font-semibold hover:bg-white/5 transition">
+                Create Group
+              </Link>
+            </div>
           </motion.div>
           <EmptyState nearbyCount={nearbyPartners.length} />
         </>
       )}
 
+      {/* Sections */}
       {matches.length > 0 && (
-        <div className="mt-6 space-y-5">
-          {matches.map((group, idx) => {
-            const matchInfo = userProfile?.state
-              ? computeGroupMatch(group.members, group.category, group.option)
-              : { matchingCount: 0, matchLevel: "none" as const };
-            const matchingCount = matchInfo.matchingCount;
-            const required = group.requiredSize;
-            const isReady = userProfile?.state ? matchingCount >= required : group.membersCount >= group.requiredSize;
-            const isSearching = matchingCount <= 1;
-            const expiry = getExpiryStatus(group.createdAt);
-            const statusInfo = getGroupStatus(group, matchingCount, required);
+        <div className="mt-6 space-y-8">
+          {/* Pending Requests */}
+          {pendingGroups.length > 0 && (
+            <div>
+              <h2 className="text-lg font-semibold text-[#FFD166] mb-4 flex items-center gap-2">
+                <span className="text-yellow-400">⏳</span> Pending Requests
+                <span className="text-xs text-gray-500 font-normal">({pendingGroups.length})</span>
+              </h2>
+              <div className="space-y-4">
+                {pendingGroups.map((group, idx) => renderGroupCard(group, idx, "pending"))}
+              </div>
+            </div>
+          )}
 
-            return (
-              <motion.div
-                key={group.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: idx * 0.05 }}
-                className="card-premium p-0 overflow-hidden"
-              >
-                <div className="p-5">
-                  {/* Header: Title + Status */}
-                  <div className="flex items-start justify-between gap-3 mb-3">
-                    <div className="flex-1 min-w-0">
-                      <h3 className="text-base font-bold text-white font-heading leading-tight">
-                        {getSubcategoryDisplayName(group.category, group.option)}
-                      </h3>
-                      <p className="text-[11px] text-gray-400 mt-0.5">
-                        Category: {getCategoryDisplayName(group.category)}
-                      </p>
-                    </div>
-                    <div className={`px-2.5 py-1 rounded-full text-[10px] font-bold shrink-0 ${statusInfo.color}`}>
-                      {statusInfo.label}
-                    </div>
-                  </div>
+          {/* Active Partnerships */}
+          {readyGroups.length > 0 && (
+            <div>
+              <h2 className="text-lg font-semibold text-[#FFD166] mb-4 flex items-center gap-2">
+                <span className="text-green-400">✅</span> Active Partnerships
+                <span className="text-xs text-gray-500 font-normal">({readyGroups.length})</span>
+              </h2>
+              <div className="space-y-4">
+                {readyGroups.map((group, idx) => renderGroupCard(group, idx, "ready"))}
+              </div>
+            </div>
+          )}
 
-                  {/* Divider */}
-                  <div className="section-divider-light mb-3" />
-
-                  {/* Info rows */}
-                  <div className="space-y-2 mb-3">
-                    <div className="flex items-center gap-2 text-xs">
-                      <svg className="w-3.5 h-3.5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                      </svg>
-                      <span className="text-gray-300">{userProfile?.city || group.members[0]?.city || "Not set"}</span>
-                    </div>
-                    {(() => {
-                      const businessName = group.collaboratorBrand || group.collaboratorId || latestSelection?.collaboratorName || latestSelection?.collaboratorId || "";
-                      if (businessName) {
-                        return (
-                          <div className="flex items-center gap-2 text-xs">
-                            <svg className="w-3.5 h-3.5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                            </svg>
-                            <span className="text-gray-300">{businessName}</span>
-                          </div>
-                        );
-                      }
-                      return null;
-                    })()}
-                  </div>
-
-                  {/* Progress */}
-                  {!group.isPaid && (
-                    <div className="mb-3">
-                      <div className="flex items-center justify-between text-[11px] mb-1.5">
-                        <span className="text-gray-400">
-                          {isSearching ? (
-                            <span className="text-blue-400">🔍 Searching...</span>
-                          ) : isReady ? (
-                            <span className="text-green-400">✅ Group Complete</span>
-                          ) : (
-                            <span className="text-yellow-400">👥 Building group</span>
-                          )}
-                        </span>
-                        <span className="text-gray-500">{matchingCount}/{required} members</span>
-                      </div>
-                      <div className="progress-bar">
-                        <div
-                          className={`h-full rounded-full transition-all duration-700 ${isReady ? 'progress-complete' : expiry.status === 'expiring-soon' ? 'progress-expiring' : 'progress-active'}`}
-                          style={{ width: `${Math.min((matchingCount / required) * 100, 100)}%` }}
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Created date */}
-                  <div className="text-[10px] text-gray-500">
-                    {group.createdAt?.seconds && (
-                      <span>Created: {formatDate(group.createdAt)}</span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Actions footer */}
-                <div className="border-t border-white/5 px-5 py-3 flex gap-2 flex-wrap bg-black/20">
-                  {!group.isPaid ? (
-                    isReady ? (
-                      <button onClick={() => (window.location.href = `/payment?groupId=${group.id}`)}
-                        className="btn-primary text-xs px-4 py-2">
-                        🔓 Unlock for ₹29
-                      </button>
-                    ) : (
-                      <button disabled className="px-4 py-2 rounded-xl bg-gray-800 text-gray-500 text-xs font-bold cursor-not-allowed">
-                        ⏳ Waiting
-                      </button>
-                    )
-                  ) : (
-                    <button onClick={() => router.push(`/chat/${group.id}`)}
-                      className="px-4 py-2 rounded-xl bg-purple-600 text-xs font-bold hover:scale-105 transition">
-                      💬 Open Chat
-                      {(unreadCounts[group.id] || 0) > 0 && <span className="ml-2">💬 {unreadCounts[group.id]}</span>}
-                    </button>
-                  )}
-                  <button onClick={() => deleteMatch(group.id)}
-                    className="px-4 py-2 rounded-xl bg-red-600/15 border border-red-500/20 text-red-400 text-xs font-bold hover:scale-105 transition">
-                    ❌ Remove
-                  </button>
-                </div>
-              </motion.div>
-            );
-          })}
+          {/* Completed Partnerships */}
+          {completedGroups.length > 0 && (
+            <div>
+              <h2 className="text-lg font-semibold text-[#FFD166] mb-4 flex items-center gap-2">
+                <span className="text-emerald-400">🏆</span> Completed Partnerships
+                <span className="text-xs text-gray-500 font-normal">({completedGroups.length})</span>
+              </h2>
+              <div className="space-y-4">
+                {completedGroups.map((group, idx) => renderGroupCard(group, idx, "completed"))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
+      {/* Nearby Candidates */}
       {userProfile?.state && nearbyPartners.length > 0 && (
         <div className="mt-12 mb-16">
           <motion.h2 initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="text-2xl font-bold text-[#D4AF37] mb-1">
@@ -748,13 +726,6 @@ export default function DashboardPage() {
               const isSameState = partner.state && userProfile?.state && partner.state === userProfile.state;
               const isSameCategory = partner.category && userProfile?.category && partner.category === userProfile.category;
               const isSameSubcategory = partner.option && userProfile?.option && partner.option === userProfile.option;
-              const isPerfectMatch = isSameState && isSameCity && isSameCategory && isSameSubcategory;
-
-              const matchBadges: { icon: string; label: string; color: string }[] = [];
-              if (isPerfectMatch) matchBadges.push({ icon: "🏆", label: "Perfect Match", color: "text-yellow-400 bg-yellow-500/10" });
-              if (isSameCity) matchBadges.push({ icon: "📍", label: "Same City", color: "text-green-400 bg-green-500/10" });
-              if (isSameCategory) matchBadges.push({ icon: "🎯", label: "Same Category", color: "text-blue-400 bg-blue-500/10" });
-              if (isSameSubcategory) matchBadges.push({ icon: "🤝", label: "Same Subcategory", color: "text-purple-400 bg-purple-500/10" });
 
               const whyReasons: string[] = [];
               if (isSameState && partner.state) whyReasons.push(`✓ Same State (${partner.state})`);
@@ -819,7 +790,6 @@ export default function DashboardPage() {
                         <span className="w-1.5 h-1.5 rounded-full bg-orange-400 animate-pulse" />
                         Active in {partner.category || ""}{partner.option ? ` → ${partner.option}` : ""}
                       </div>
-                      <div className="mt-1 text-[9px] text-gray-600">👤 Partner since {partner.joinedDate || "Recently"}</div>
                       {whyReasons.length > 0 && (
                         <div className="mt-2 border border-green-500/10 bg-green-500/5 rounded-lg p-2">
                           <p className="text-[9px] text-green-400 font-medium mb-1">🎯 Why this match?</p>
@@ -840,15 +810,10 @@ export default function DashboardPage() {
                         {startingMatch === partner.uid ? "Sending..." : "Start Match"}
                       </button>
                       <button
-                        onClick={() => {
-                          const reason = prompt(`Report user ${partner.userId}?\n\nReason for report:`);
-                          if (reason) {
-                            window.location.href = `mailto:support@partnersync.in?subject=Report User - ${partner.userId}&body=Reported User: ${partner.userId} (${partner.phone})%0D%0ACategory: ${partner.category}%0D%0AReason: ${encodeURIComponent(reason)}`;
-                          }
-                        }}
-                        className="px-3 py-1.5 rounded-lg text-[9px] bg-red-600/10 border border-red-500/20 text-red-400 hover:bg-red-600/20 transition"
+                        onClick={() => router.push("/find-partners")}
+                        className="px-3 py-1.5 rounded-lg text-[9px] bg-blue-600/10 border border-blue-500/20 text-blue-400 hover:bg-blue-600/20 transition"
                       >
-                        🚩 Report
+                        View All
                       </button>
                     </div>
                   </div>
@@ -856,21 +821,12 @@ export default function DashboardPage() {
               );
             })}
           </div>
-
-          <div className="mt-8 glass-strong rounded-xl p-4">
-            <h4 className="text-xs font-semibold text-gray-300 mb-2">Matching Priority</h4>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[10px]">
-              <div className="text-green-400">📍 Same City — 90% Compatible</div>
-              <div className="text-blue-400">📍 Same State — 50% Compatible</div>
-              <div className="text-gray-400">📍 Other — 25% Compatible</div>
-            </div>
-          </div>
         </div>
       )}
 
       <div className="sticky-bottom-cta">
-        <Link href="/categories" className="block w-full text-center py-3 rounded-xl font-bold bg-gradient-to-r from-[#D4AF37] to-[#E6C97A] text-black text-sm">
-          Explore Categories
+        <Link href="/find-partners" className="block w-full text-center py-3 rounded-xl font-bold bg-gradient-to-r from-[#D4AF37] to-[#E6C97A] text-black text-sm">
+          Find Partners
         </Link>
       </div>
     </div>

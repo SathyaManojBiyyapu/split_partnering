@@ -110,10 +110,29 @@ export default function AdminPage() {
   ---------------------------------------- */
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (user) => {
-      if (user?.email === "sathyamanojbiyyapu@gmail.com") {
-        setAuthorized(true);
-      } else {
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      try {
+        if (user) {
+          // Server-side verification is the source of truth
+          const idToken = await user.getIdToken();
+          const res = await fetch("/api/verify-admin", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ idToken }),
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            setAuthorized(true);
+          } else {
+            setAuthorized(false);
+            router.push("/");
+          }
+        } else {
+          setAuthorized(false);
+          router.push("/");
+        }
+      } catch (err) {
+        console.error("Admin verification error:", err);
         setAuthorized(false);
         router.push("/");
       }
@@ -683,15 +702,54 @@ export default function AdminPage() {
             {groups.length === 0 ? (
               <div className="text-center text-gray-400 py-8">No groups found</div>
             ) : (
-              groups.map((g) => (
+              groups.map((g) => {
+                const paidCount = (g.membersDetailed || []).filter((m: any) => m.paid).length;
+                const paidMembers = (g.membersDetailed || []).filter((m: any) => m.paid).length === (g.membersDetailed || []).length;
+                const expiryTime = g.createdAt?.seconds
+                  ? new Date((g.createdAt.seconds + 12 * 24 * 60 * 60) * 1000).toLocaleDateString()
+                  : "N/A";
+                return (
                 <div key={g.id} className="p-4 bg-[#0c0c0c] border border-[#FFD166]/20 rounded-xl">
+                  {/* Group ID + status */}
                   <div className="flex justify-between items-center flex-wrap gap-2">
-                    <p className="text-base sm:text-lg font-bold text-[#FFD166]">{g.category} → {g.option}</p>
-                    <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${
-                      g.status === "completed" ? "bg-green-600" : g.status === "ready" ? "bg-blue-600" : "bg-yellow-500 text-black"
-                    }`}>{g.status}</span>
+                    <div>
+                      <p className="text-base sm:text-lg font-bold text-[#FFD166]">{g.category} → {g.option}</p>
+                      <p className="text-[9px] text-gray-500 font-mono mt-0.5">ID: {g.id}</p>
+                    </div>
+                    <div className="flex gap-2 flex-wrap">
+                      <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${
+                        g.status === "completed" ? "bg-green-600" : g.status === "ready" ? "bg-blue-600" : "bg-yellow-500 text-black"
+                      }`}>{g.status}</span>
+                      {/* Payment status */}
+                      <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${
+                        paidMembers ? "bg-emerald-600" : paidCount > 0 ? "bg-amber-600" : "bg-red-700"
+                      }`}>
+                        {paidMembers ? "All Paid" : paidCount > 0 ? `${paidCount}/${g.membersCount || 0} Paid` : "Not Paid"}
+                      </span>
+                    </div>
                   </div>
-                  <p className="text-xs text-gray-400 mt-1">{g.membersCount}/{g.requiredSize} members · {formatDateTime(g.createdAt)}</p>
+
+                  {/* Meta row: location, members, created, expiry */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3 text-[10px]">
+                    <div className="bg-black/40 rounded p-2">
+                      <p className="text-gray-500">Location</p>
+                      <p className="text-white">{g.membersDetailed?.[0]?.city || g.city || "N/A"}{g.membersDetailed?.[0]?.state ? `, ${g.membersDetailed[0].state}` : ""}</p>
+                    </div>
+                    <div className="bg-black/40 rounded p-2">
+                      <p className="text-gray-500">Members</p>
+                      <p className="text-white">{g.membersCount || 0}/{g.requiredSize || 0}</p>
+                    </div>
+                    <div className="bg-black/40 rounded p-2">
+                      <p className="text-gray-500">Created</p>
+                      <p className="text-white">{formatDateTime(g.createdAt)}</p>
+                    </div>
+                    <div className="bg-black/40 rounded p-2">
+                      <p className="text-gray-500">Expiry</p>
+                      <p className="text-white">{expiryTime}</p>
+                    </div>
+                  </div>
+
+                  {/* Members */}
                   <div className="mt-3 space-y-2">
                     {(g.membersDetailed || []).map((m: any, i: number) => (
                       <div key={i} className="flex items-center gap-3 bg-black/40 p-2 rounded">
@@ -702,22 +760,25 @@ export default function AdminPage() {
                           <p className="text-xs font-medium text-white">{m.name}</p>
                           <p className="text-[10px] text-gray-400">{m.phone}</p>
                         </div>
-                        <span className={`text-[10px] font-bold ${m.paid ? "text-green-400" : "text-red-400"}`}>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${m.paid ? "bg-emerald-600/20 text-green-400" : "bg-red-600/20 text-red-400"}`}>
                           {m.paid ? "Paid" : "Not Paid"}
                         </span>
                         <button
                           onClick={() => window.open(`https://wa.me/91${m.phone}`)}
                           className="text-green-400 text-sm"
+                          title="Contact via WhatsApp"
                         >🟢</button>
                       </div>
                     ))}
                   </div>
+
                   <div className="flex gap-2 mt-3">
                     <button onClick={() => markGroupCompleted(g.id)} className="px-2 py-1 bg-blue-600 rounded text-[10px]">Complete</button>
                     <button onClick={() => deleteGroup(g.id)} className="px-2 py-1 bg-red-600 rounded text-[10px]">Delete</button>
                   </div>
                 </div>
-              ))
+                );
+              })
             )}
           </div>
         )}

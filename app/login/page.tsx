@@ -12,6 +12,7 @@ import { auth, googleProvider } from "@/firebase/config";
 import { db } from "@/firebase/config";
 import { doc, getDoc } from "firebase/firestore";
 import toast from "react-hot-toast";
+import Seo from "@/app/components/Seo";
 
 declare global {
   interface Window {
@@ -269,6 +270,11 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen pt-20 sm:pt-28 flex flex-col items-center text-white relative overflow-hidden">
+      <Seo
+        title="Login"
+        description="Login to PartnerSync to find compatible partners and split the cost of memberships, tickets, travel, subscriptions and more."
+        canonicalPath="/login"
+      />
       {/* Background glow */}
       <div className="hero-glow" style={{ top: '-20%', left: '50%', transform: 'translateX(-50%)' }} />
       <div className="hero-gradient absolute inset-0 pointer-events-none" />

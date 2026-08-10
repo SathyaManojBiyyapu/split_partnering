@@ -15,6 +15,7 @@ import {
   computeCompatibility,
   generateUserId,
 } from "@/app/data/matchExpiry";
+import Seo from "@/app/components/Seo";
 
 type PartnerMatch = {
   uid: string;
@@ -295,6 +296,11 @@ export default function FindPartnersPage() {
 
   return (
     <div className="min-h-screen pt-28 px-4 sm:px-6 max-w-6xl mx-auto text-white pb-mobile-cta">
+      <Seo
+        title="Find Partners"
+        description="Find trusted people nearby to split memberships, tickets, travel, subscriptions and more. Smart matching based on location and interests."
+        canonicalPath="/find-partners"
+      />
       <div className="mb-8">
         <h1 className="text-3xl sm:text-4xl font-bold text-[#D4AF37]">Find Partners</h1>
         <p className="text-gray-400 text-sm mt-2">

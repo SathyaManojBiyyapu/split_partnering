@@ -108,7 +108,6 @@ function PaymentContent() {
 
   /* FIXED PRICE — amount is hardcoded server-side to prevent payment bypass */
   const PRICE = 29;
-  const displayPrice = PRICE;
 
   const stripeEnabled =
     process.env
@@ -799,10 +798,10 @@ function PaymentContent() {
         className="
           bg-black/40
           backdrop-blur-lg
-          p-10
+          p-6 sm:p-10
           rounded-2xl
           shadow-2xl
-          w-[420px]
+          w-full max-w-[420px]
           border border-[#E6C972]/30
         "
       >

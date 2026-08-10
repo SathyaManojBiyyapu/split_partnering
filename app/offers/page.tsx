@@ -6,6 +6,7 @@ import { db } from "@/firebase/config";
 import { collection, getDocs } from "firebase/firestore";
 import { motion } from "framer-motion";
 import { categoryData, masterCategories } from "@/app/data/subcategories";
+import Seo from "@/app/components/Seo";
 
 type OfferItem = {
   id: string;
@@ -119,6 +120,11 @@ export default function OffersPage() {
 
   return (
     <main className="min-h-screen pt-28 pb-32 px-4 sm:px-6 bg-black text-center pb-mobile-cta">
+      <Seo
+        title="Offers & Savings"
+        description="Discover verified savings opportunities across Gym, Fashion, Movies, Travel, Events, Books, Subscriptions and Coupons on PartnerSync."
+        canonicalPath="/offers"
+      />
       <div className="max-w-6xl mx-auto">
         {/* Heading */}
         <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="mb-8">

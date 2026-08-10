@@ -6,6 +6,7 @@ import { db } from "@/firebase/config";
 import { collection, onSnapshot } from "firebase/firestore";
 import { motion, AnimatePresence } from "framer-motion";
 import CategoryImage from "@/app/components/ui/CategoryImage";
+import Seo from "@/app/components/Seo";
 
 type Category = {
   name: string;
@@ -71,6 +72,11 @@ export default function CategoriesPage() {
 
   return (
     <main className="min-h-screen pt-28 pb-32 px-4 sm:px-6 bg-black text-center pb-mobile-cta">
+      <Seo
+        title="Categories"
+        description="Explore PartnerSync categories — Gym, Movies, Travel, Events, Fashion, Books, Subscriptions and Coupons. Find partners to split costs."
+        canonicalPath="/categories"
+      />
       {/* ===== HEADING ===== */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}

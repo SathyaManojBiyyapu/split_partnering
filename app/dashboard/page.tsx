@@ -29,6 +29,7 @@ import {
   formatDate,
 } from "@/app/data/matchExpiry";
 import { categoryData, slugToCategoryName, masterCategories } from "@/app/data/subcategories";
+import Seo from "@/app/components/Seo";
 
 type Group = {
   id: string;
@@ -592,6 +593,11 @@ export default function DashboardPage() {
 
   return (
     <div className="pt-28 px-6 max-w-5xl mx-auto text-white pb-mobile-cta">
+      <Seo
+        title="My Partners"
+        description="View your active matches, pending requests, and completed partnerships on PartnerSync."
+        canonicalPath="/dashboard"
+      />
       <motion.h1
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}

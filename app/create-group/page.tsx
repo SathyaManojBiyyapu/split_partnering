@@ -19,6 +19,7 @@ import {
 } from "firebase/firestore";
 import { categoryData, slugToCategoryName, masterCategories } from "@/app/data/subcategories";
 import toast from "react-hot-toast";
+import Seo from "@/app/components/Seo";
 
 /* -----------------------------------------
    GROUP SIZE (preserved from save/page.tsx)
@@ -379,6 +380,11 @@ function CreateGroupContent() {
 
   return (
     <div className="min-h-screen pt-28 pb-16 px-4 sm:px-6 bg-black text-[#F5F5F5]">
+      <Seo
+        title="Create a Group"
+        description="Create a PartnerSync group to split costs with compatible people nearby. Choose a category, set your location, and start saving together."
+        canonicalPath="/create-group"
+      />
       <div className="max-w-2xl mx-auto">
         {/* HEADING */}
         <motion.div

@@ -5,6 +5,7 @@ import "./globals.css";
 import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
 import SupportButton from "./components/SupportButton";
+import ErrorBoundary from "./components/ErrorBoundary";
 
 import {
   AuthProvider,
@@ -200,7 +201,9 @@ export default function RootLayout({
 
           {/* MAIN CONTENT */}
           <main className="bg-black min-h-screen">
-            <AuthGuard>{children}</AuthGuard>
+            <ErrorBoundary>
+              <AuthGuard>{children}</AuthGuard>
+            </ErrorBoundary>
           </main>
 
           {/* FLOATING SUPPORT BUTTON */}

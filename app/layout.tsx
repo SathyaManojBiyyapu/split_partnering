@@ -6,6 +6,7 @@ import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
 import SupportButton from "./components/SupportButton";
 import ErrorBoundary from "./components/ErrorBoundary";
+import GoldDotsBackground from "./components/GoldDotsBackground";
 
 import {
   AuthProvider,
@@ -150,8 +151,9 @@ export default function RootLayout({
       </head>
       <body
         suppressHydrationWarning
-        className="bg-black text-white font-body"
+        className="text-white font-body"
       >
+        <GoldDotsBackground />
         <AuthProvider>
           {/* NAVBAR */}
           <Navbar />
@@ -200,7 +202,7 @@ export default function RootLayout({
           />
 
           {/* MAIN CONTENT */}
-          <main className="bg-black min-h-screen">
+          <main className="relative z-[1] min-h-screen">
             <ErrorBoundary>
               <AuthGuard>{children}</AuthGuard>
             </ErrorBoundary>

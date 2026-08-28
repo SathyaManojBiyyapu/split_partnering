@@ -10,7 +10,7 @@ import Seo from "@/app/components/Seo";
 
 export default function HomePage() {
   return (
-    <main className="min-h-screen bg-black text-white font-body pb-mobile-cta">
+    <main className="min-h-screen text-white font-body pb-mobile-cta">
       <Seo
         title="PartnerSync"
         description="PartnerSync helps people find compatible partners to split the cost of memberships, tickets, travel, subscriptions and more."

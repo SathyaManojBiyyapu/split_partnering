@@ -3,11 +3,10 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState, useRef } from "react";
-import { collection, onSnapshot, query, where } from "firebase/firestore";
-import { db } from "@/firebase/config";
 import { motion } from "framer-motion";
 import { categoryData, Subcategory, slugToCategoryName } from "@/app/data/subcategories";
 import CategoryImage from "@/app/components/ui/CategoryImage";
+import CompatibilityInsight from "@/app/components/ui/CompatibilityInsight";
 
 /* ---------------- ANIMATED COUNTER ---------------- */
 function AnimatedCounter({ target, suffix = "", prefix = "" }: { target: number; suffix?: string; prefix?: string }) {
@@ -139,26 +138,6 @@ export default function OptionsPage() {
   const slug = params?.slug as string;
   const data = categoryData[slug];
 
-  const [groupCounts, setGroupCounts] = useState<Record<string, number>>({});
-  const [activeSearches, setActiveSearches] = useState(0);
-
-  useEffect(() => {
-    const unsub = onSnapshot(collection(db, "groups"), (snapshot) => {
-      const counts: Record<string, number> = {};
-      snapshot.forEach((docSnap) => {
-        const d = docSnap.data() as any;
-        if (d.category?.toLowerCase() === slug) {
-          const opt = d.option || "unknown";
-          counts[opt] = (counts[opt] || 0) + 1;
-        }
-      });
-      setGroupCounts(counts);
-      const total = Object.values(counts).reduce((a: number, b: number) => a + b, 0);
-      setActiveSearches(total);
-    });
-    return () => unsub();
-  }, [slug]);
-
   if (!data) {
     return (
       <div className="min-h-screen pt-32 px-6 bg-black text-[#F5F5F5]">
@@ -264,125 +243,12 @@ export default function OptionsPage() {
         </div>
       </section>
 
-      {/* ===== 5. ACTIVE GROUPS SECTION ===== */}
-      {activeSearches > 0 && (
-        <section className="px-4 pb-12">
-          <div className="max-w-5xl mx-auto">
-            <h2 className="font-heading text-lg sm:text-xl text-[#FFD166] mb-1">
-              🤝 Active Groups
-            </h2>
-            <p className="text-gray-400 text-xs mb-4">
-              {activeSearches} active groups in {data.title}
-            </p>
-            <div className="glass-strong rounded-2xl p-4">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-green-500/20 to-emerald-500/10 border border-green-500/30 flex items-center justify-center">
-                  <span className="text-xl">👥</span>
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-white">{activeSearches} People Currently Matching</p>
-                  <p className="text-[10px] text-gray-400">Real-time active searches in this category</p>
-                </div>
-                <Link
-                  href="/dashboard"
-                  className="ml-auto text-xs px-3 py-2 rounded-lg bg-[#D4AF37]/10 border border-[#D4AF37]/30 text-[#FFD166] hover:bg-[#D4AF37]/20 transition"
-                >
-                  View All
-                </Link>
-              </div>
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* ===== 6. HOW IT WORKS ===== */}
-      <section className="px-4 pb-12">
-        <div className="max-w-5xl mx-auto">
-          <h2 className="font-heading text-lg sm:text-xl text-[#FFD166] mb-1 text-center">
-            How It Works
-          </h2>
-          <p className="text-gray-400 text-xs mb-6 text-center">
-            Simple steps to start saving
-          </p>
-
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {[
-              { step: "1", icon: "🎯", title: "Choose", desc: "Pick a subcategory" },
-              { step: "2", icon: "🔗", title: "Match", desc: "Find nearby partners" },
-              { step: "3", icon: "🤝", title: "Connect", desc: "Form your group" },
-              { step: "4", icon: "💰", title: "Save", desc: "Split & save money" },
-            ].map((item, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, y: 10 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: i * 0.1 }}
-                className="text-center"
-              >
-                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#D4AF37]/20 to-[#E6C97A]/10 border border-[#D4AF37]/30 flex items-center justify-center mx-auto mb-2">
-                  <span className="text-lg">{item.icon}</span>
-                </div>
-                <div className="text-[10px] text-[#FFD166] font-bold mb-0.5">Step {item.step}</div>
-                <div className="text-xs text-white font-medium">{item.title}</div>
-                <div className="text-[9px] text-gray-500">{item.desc}</div>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ===== 7. SUCCESS STORIES ===== */}
-      <section className="px-4 pb-12">
-        <div className="max-w-5xl mx-auto">
-          <h2 className="font-heading text-lg sm:text-xl text-[#FFD166] mb-1 text-center">
-            ⭐ Success Stories
-          </h2>
-          <p className="text-gray-400 text-xs mb-6 text-center">
-            Real people saving money in {data.title}
-          </p>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            {data.successStories.map((story, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, x: -10 }}
-                whileInView={{ opacity: 1, x: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: i * 0.1 }}
-                className="card-glass-premium p-4 flex items-center gap-3"
-              >
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#D4AF37] to-[#E6C97A] flex items-center justify-center text-black font-bold text-sm flex-shrink-0">
-                  {story.name[0]}
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-white">{story.name}</p>
-                  <p className="text-xs font-bold text-green-400">Saved {story.saved}</p>
-                </div>
-                <span className="ml-auto text-lg">{story.icon}</span>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ===== 8. FIND PARTNERS CTA ===== */}
-      <section className="px-4 pb-16">
-        <div className="max-w-2xl mx-auto text-center">
-          <h2 className="font-heading text-xl sm:text-2xl text-[#FFD166] mb-3">
-            Ready to Start Saving?
-          </h2>
-          <p className="text-gray-400 text-xs mb-6">
-            Join {totalSearching} people searching in {data.title} right now
-          </p>
-          <Link
-            href={`/save?category=${slug}&option=${data.subcategories[0]?.slug || ""}`}
-            className="btn-primary text-sm"
-          >
-            Find Partners Now →
-          </Link>
-        </div>
-      </section>
+      {/* ===== 5. COMPATIBILITY / MATCHING INSIGHT ===== */}
+      <CompatibilityInsight
+        slug={slug}
+        categoryTitle={data.title}
+        ctaHref={`/save?category=${slug}&option=${data.subcategories[0]?.slug || ""}`}
+      />
 
       {/* ===== BACK LINK ===== */}
       <div className="px-4 pb-8 text-center">

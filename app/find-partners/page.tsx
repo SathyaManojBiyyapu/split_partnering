@@ -62,6 +62,15 @@ export default function FindPartnersPage() {
   const rawPhone = typeof window !== "undefined" ? localStorage.getItem("phone") : null;
   const phone = rawPhone?.trim() || null;
 
+  function getMatchTier(partner: any, user: any): { tier: number; label: string } {
+    if (!user?.state) return { tier: 5, label: "Other Users" };
+    const sameCity = partner.city && user.city && partner.city === user.city;
+    const sameState = partner.state && user.state && partner.state === user.state;
+    if (sameCity) return { tier: 1, label: "Same City" };
+    if (sameState) return { tier: 2, label: "Same State" };
+    return { tier: 3, label: "Other" };
+  }
+
   /* ---------- Load user profile + partners (preserves existing matching rules) ---------- */
   useEffect(() => {
     if (!phone) {
@@ -169,15 +178,6 @@ export default function FindPartnersPage() {
 
     loadPartners();
   }, [phone]);
-
-  function getMatchTier(partner: any, user: any): { tier: number; label: string } {
-    if (!user?.state) return { tier: 5, label: "Other Users" };
-    const sameCity = partner.city && user.city && partner.city === user.city;
-    const sameState = partner.state && user.state && partner.state === user.state;
-    if (sameCity) return { tier: 1, label: "Same City" };
-    if (sameState) return { tier: 2, label: "Same State" };
-    return { tier: 3, label: "Other" };
-  }
 
   const startMatch = useCallback(async (partner: PartnerMatch) => {
     if (!phone || !userProfile) return;

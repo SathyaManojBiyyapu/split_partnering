@@ -99,7 +99,7 @@ export function getAvailableCities(): string[] {
 
 export function searchGyms(query: string, city?: string): GymData[] {
   const q = query.toLowerCase().trim();
-  let source = city && city !== "All" ? getGymsByCity(city) : allGyms;
+  const source = city && city !== "All" ? getGymsByCity(city) : allGyms;
   if (!q) return source;
   return source.filter((gym) => gym.name.toLowerCase().includes(q));
 }

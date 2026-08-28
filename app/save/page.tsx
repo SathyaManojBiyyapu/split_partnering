@@ -18,16 +18,12 @@ import {
 } from "@/firebase/config";
 
 import {
-  addDoc,
   collection,
-  serverTimestamp,
   query,
   where,
   getDocs,
   doc,
   updateDoc,
-  arrayUnion,
-  setDoc,
   getDoc,
 } from "firebase/firestore";
 
@@ -106,124 +102,42 @@ async function createOrJoinGroup(
   collaboratorId?: string,
   collaboratorName?: string
 ) {
-  const cleanPhone = rawPhone.trim();
   const currentUser = auth.currentUser;
   if (!currentUser) {
     throw new Error("User not authenticated");
   }
+  const cleanPhone = rawPhone.trim();
 
-  const userRef = doc(db, "users", cleanPhone);
-  const userSnap = await getDoc(userRef);
-  const userData = userSnap.exists() ? userSnap.data() : {};
+  // Request a fresh ID token for the server to validate.
+  const idToken = await currentUser.getIdToken();
 
-  const groupsRef = collection(db, "groups");
-  const q = query(
-    groupsRef,
-    where("category", "==", category),
-    where("option", "==", option)
-  );
-  const snap = await getDocs(q);
-
-  const memberObject = {
-    uid: cleanPhone,
-    phone: cleanPhone,
-    maskedPhone: maskPhone(cleanPhone),
-    name: userData.name || currentUser.displayName || "User",
-    gender: userData.gender || "",
-    photoURL: userData.photoURL || "",
-    joinedAt: new Date(),
-    online: true,
-    paid: false,
-    state: userData.state || "",
-    district: userData.district || "",
-    city: userData.city || "",
-  };
-
-  for (const gdoc of snap.docs) {
-    const g = gdoc.data();
-    const members = Array.isArray(g.members) ? g.members : [];
-    const required = g.requiredSize || getRequiredSize(option);
-
-    const alreadyExists = members.some((m: any) => {
-      if (typeof m === "string") return m.trim() === cleanPhone;
-      return m?.phone?.trim() === cleanPhone;
-    });
-
-    if (alreadyExists) {
-      return { status: "already", membersCount: members.length, groupId: gdoc.id };
-    }
-
-    if (members.length < required) {
-      const gRef = doc(db, "groups", gdoc.id);
-      const updatedCount = members.length + 1;
-
-      await updateDoc(gRef, {
-        members: arrayUnion(memberObject),
-        memberUIDs: arrayUnion(cleanPhone),
-        membersCount: updatedCount,
-        updatedAt: serverTimestamp(),
-        lastActivityAt: serverTimestamp(),
-        status: updatedCount >= required ? "ready" : "waiting",
-      });
-
-      if (updatedCount >= required) {
-        await updateDoc(gRef, { readyAt: serverTimestamp() });
-        if (typeof window !== "undefined") {
-          toast.success("🎉 Your group is now ready!");
-        }
-
-        const chatsRef = collection(db, "chats");
-        const qChat = query(chatsRef, where("groupId", "==", gdoc.id));
-        const chatSnap = await getDocs(qChat);
-
-        if (chatSnap.empty) {
-          await addDoc(chatsRef, {
-            groupId: gdoc.id,
-            createdAt: serverTimestamp(),
-            members: Array.isArray(g.members) ? [...g.members, memberObject] : [memberObject],
-            memberUIDs: g.memberUIDs ? [...g.memberUIDs, cleanPhone] : [cleanPhone],
-            lastMessage: "",
-            lastMessageAt: serverTimestamp(),
-            unreadCounts: {},
-            isActive: true,
-          });
-        }
-      }
-
-      return {
-        status: updatedCount >= required ? "ready" : "joined",
-        membersCount: updatedCount,
-        groupId: gdoc.id,
-      };
-    }
-  }
-
-  const newGroupRef = doc(groupsRef);
-  const required = getRequiredSize(option);
-
-  // expiresAt = 24 hours from now (server-side cleanup uses createdAt as source of truth)
-  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-
-  await setDoc(newGroupRef, {
-    category,
-    option,
-    collaboratorBrand: collaboratorName || "",
-    collaboratorId: collaboratorId || "",
-    members: [memberObject],
-    memberUIDs: [cleanPhone],
-    membersCount: 1,
-    requiredSize: required,
-    status: "waiting",
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-    lastActivityAt: serverTimestamp(),
-    createdBy: cleanPhone,
-    totalPaid: 0,
-    revenue: 0,
-    expiresAt,
+  const res = await fetch("/api/join-group", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${idToken}`,
+    },
+    body: JSON.stringify({
+      phone: cleanPhone,
+      category,
+      option,
+      collaboratorId: collaboratorId || "",
+      collaboratorName: collaboratorName || "",
+    }),
   });
 
-  return { status: "created", membersCount: 1, groupId: newGroupRef.id };
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    throw new Error(data?.error || `Matching failed (${res.status})`);
+  }
+
+  return {
+    status: data.status || "created",
+    membersCount: Number(data.membersCount) || 1,
+    groupId: data.groupId || "",
+    requiredSize: Number(data.requiredSize) || getRequiredSize(option),
+  };
 }
 
 /* -----------------------------------------
@@ -715,34 +629,6 @@ function SaveContent() {
         selectedCollaboratorName || undefined
       );
 
-      if (phone) {
-        try {
-          const userRef = doc(db, "users", phone);
-          await updateDoc(userRef, {
-            category: category.replace("-", " "),
-            option: option,
-            updatedAt: serverTimestamp(),
-          });
-        } catch (err) {
-          console.warn("Could not update user category:", err);
-        }
-      }
-
-      await addDoc(collection(db, "selections"), {
-        uid: phone,
-        groupId: result.groupId,
-        phone,
-        maskedPhone: maskPhone(phone),
-        userName: userName || "Anonymous",
-        category,
-        option,
-        collaboratorId: selectedCollaboratorId || "",
-        collaboratorName: selectedCollaboratorName || "",
-        paid: false,
-        status: result.status,
-        createdAt: serverTimestamp(),
-      });
-
       toast.success(`Partner saved! Status: ${result.status}`);
       router.push("/dashboard");
     } catch (error: any) {
@@ -916,34 +802,6 @@ function SaveContent() {
                   collaboratorId,
                   collaboratorName
                 );
-
-                if (phone) {
-                  try {
-                    const userRef = doc(db, "users", phone);
-                    await updateDoc(userRef, {
-                      category: category.replace("-", " "),
-                      option: option,
-                      updatedAt: serverTimestamp(),
-                    });
-                  } catch (err) {
-                    console.warn("Could not update user category:", err);
-                  }
-                }
-
-                await addDoc(collection(db, "selections"), {
-                  uid: phone,
-                  groupId: result.groupId,
-                  phone,
-                  maskedPhone: maskPhone(phone),
-                  userName: userName || "Anonymous",
-                  category,
-                  option,
-                  collaboratorId,
-                  collaboratorName,
-                  paid: false,
-                  status: result.status,
-                  createdAt: serverTimestamp(),
-                });
 
                 toast.success(`Partner saved! Status: ${result.status}`);
                 router.push("/dashboard");

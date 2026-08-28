@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { db } from "@/firebase/config";
+import { auth, db } from "@/firebase/config";
+import { onAuthStateChanged } from "firebase/auth";
 import { collection, onSnapshot } from "firebase/firestore";
 import { motion, AnimatePresence } from "framer-motion";
 import CategoryImage from "@/app/components/ui/CategoryImage";
@@ -35,20 +36,49 @@ export default function CategoriesPage() {
   const [activeFilter, setActiveFilter] = useState<FilterOption>("All");
   const [searchQuery, setSearchQuery] = useState("");
 
-  /* Fetch group counts per category — real Firestore data */
+  /* Fetch group counts per category — real Firestore data.
+     NOTE: firestore.rules only allow `groups` reads for logged-in users, so the
+     listener is attached ONLY when authenticated. Guests skip it entirely
+     (counts stay empty => "Be the first!" state) instead of triggering a
+     permission-denied listener error. Error callback prevents uncaught errors. */
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, "groups"), (snapshot) => {
-      const counts: Record<string, number> = {};
-      snapshot.forEach((docSnap) => {
-        const data = docSnap.data() as any;
-        const cat = data.category;
-        if (cat) {
-          counts[cat] = (counts[cat] || 0) + 1;
+    let unsub: (() => void) | null = null;
+
+    const unsubAuth = onAuthStateChanged(auth, (user) => {
+      // Detach any previous listener before (re)attaching
+      if (unsub) {
+        unsub();
+        unsub = null;
+      }
+
+      if (!user) {
+        setGroupCounts({});
+        return;
+      }
+
+      unsub = onSnapshot(
+        collection(db, "groups"),
+        (snapshot) => {
+          const counts: Record<string, number> = {};
+          snapshot.forEach((docSnap) => {
+            const data = docSnap.data() as any;
+            const cat = data.category;
+            if (cat) {
+              counts[cat] = (counts[cat] || 0) + 1;
+            }
+          });
+          setGroupCounts(counts);
+        },
+        (err) => {
+          console.warn("Group counts listener error:", err);
         }
-      });
-      setGroupCounts(counts);
+      );
     });
-    return () => unsub();
+
+    return () => {
+      if (unsub) unsub();
+      unsubAuth();
+    };
   }, []);
 
   /* Filter categories */

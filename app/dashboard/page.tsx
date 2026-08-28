@@ -10,6 +10,8 @@ import {
   getDocs,
   getDoc,
   doc,
+  query,
+  where,
   updateDoc,
   deleteDoc,
   arrayRemove,
@@ -316,9 +318,15 @@ export default function DashboardPage() {
       setLoading(false);
       return;
     }
-    const unsub = onSnapshot(collection(db, "groups"), async (snapshot) => {
-      try {
-        const paymentsSnap = await getDocs(collection(db, "payments"));
+    // Constrained to the current user's payments — firestore.rules only allow
+    // reading payments where uid/phone matches the authenticated user.
+    const unsub = onSnapshot(
+      collection(db, "groups"),
+      async (snapshot) => {
+        try {
+          const paymentsSnap = await getDocs(
+            query(collection(db, "payments"), where("uid", "==", phone))
+          );
         const paidGroups = new Set<string>();
         let paidCount = 0;
         let paidTotal = 0;
@@ -375,7 +383,12 @@ export default function DashboardPage() {
         console.error(err);
       }
       setLoading(false);
-    });
+      },
+      (err) => {
+        console.error("Groups listener error:", err);
+        setLoading(false);
+      }
+    );
     return () => unsub();
   }, [phone]);
 

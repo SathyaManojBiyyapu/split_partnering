@@ -214,6 +214,8 @@ export function subscribeToUserCollaborations(
       collaborations.push({ id: d.id, ...(d.data() as any) } as UserCollaboration);
     });
     callback(collaborations);
+  }, (err: any) => {
+    console.error("User collaborations listener error:", err);
   });
 
   return unsub;
@@ -239,6 +241,8 @@ export function subscribeToCollaborationsByStatus(
       collaborations.push({ id: d.id, ...(d.data() as any) } as UserCollaboration);
     });
     callback(collaborations);
+  }, (err: any) => {
+    console.error("Collaborations by status listener error:", err);
   });
 
   return unsub;

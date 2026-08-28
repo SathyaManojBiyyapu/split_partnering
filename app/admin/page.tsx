@@ -174,6 +174,8 @@ export default function AdminPage() {
       });
       gs.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
       setGroups(gs);
+    }, (err) => {
+      console.error("Admin groups listener error:", err);
     });
 
     // Match Requests
@@ -183,6 +185,9 @@ export default function AdminPage() {
         const reqs: any[] = [];
         snapshot.forEach((d) => reqs.push({ id: d.id, ...d.data() }));
         setMatchRequests(reqs);
+      },
+      (err) => {
+        console.error("Admin matchRequests listener error:", err);
       }
     );
 
@@ -191,6 +196,8 @@ export default function AdminPage() {
       const ps: any[] = [];
       snapshot.forEach((d) => ps.push({ id: d.id, ...d.data() }));
       setPayments(ps);
+    }, (err) => {
+      console.error("Admin payments listener error:", err);
     });
 
     // Users
@@ -199,6 +206,8 @@ export default function AdminPage() {
       snapshot.forEach((d) => us.push({ id: d.id, ...d.data() }));
       setUserDocs(us);
       setAllUsers(us.filter(u => u.profileCompleted));
+    }, (err) => {
+      console.error("Admin users listener error:", err);
     });
 
     // Collaborators
@@ -208,6 +217,9 @@ export default function AdminPage() {
         const cols: any[] = [];
         snapshot.forEach((d) => cols.push({ id: d.id, ...d.data() }));
         setCollaborators(cols);
+      },
+      (err) => {
+        console.error("Admin collaborators listener error:", err);
       }
     );
 
@@ -218,6 +230,9 @@ export default function AdminPage() {
         const subs: any[] = [];
         snapshot.forEach((d) => subs.push({ id: d.id, ...d.data() }));
         setGymSubmissions(subs);
+      },
+      (err) => {
+        console.error("Admin gymSubmissions listener error:", err);
       }
     );
 
@@ -228,6 +243,9 @@ export default function AdminPage() {
         const pends: any[] = [];
         snapshot.forEach((d) => pends.push({ id: d.id, ...d.data() }));
         setPendingBusinesses(pends);
+      },
+      (err) => {
+        console.error("Admin pendingBusinesses listener error:", err);
       }
     );
 

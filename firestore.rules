@@ -43,11 +43,14 @@ service cloud.firestore {
     /* =========================
        USER PROFILES
        Document ID: phone number
-       Users can only read/write their OWN profile.
+       - get (single doc fetch): only your OWN profile (or admin).
+       - list (collection queries): any logged-in user — required for
+         partner matching on /dashboard and /find-partners.
     ========================== */
 
     match /users/{phone} {
-      allow read: if loggedIn() && (isOwnDoc(phone) || isAdmin());
+      allow get: if loggedIn() && (isOwnDoc(phone) || isAdmin());
+      allow list: if loggedIn();
       allow create: if loggedIn() && isOwnDoc(phone) && validString(request.resource.data.phone);
       allow update: if loggedIn() && isOwnDoc(phone);
       allow delete: if false;

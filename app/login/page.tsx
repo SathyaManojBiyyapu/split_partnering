@@ -167,35 +167,42 @@ export default function LoginPage() {
       }
       // ================ END BACKEND AUTH DIAGNOSTIC ================
 
+      // --- STEP 5: Authentication is COMPLETE. ---
+      // Firebase already confirmed the OTP and established the session.
+      // Everything below only decides WHERE to navigate and must never
+      // fail the login or block the redirect.
       localStorage.setItem("loggedIn", "true");
       localStorage.setItem("phone", phone.trim());
       localStorage.removeItem("guest");
 
       toast.success("Login successful 🎉");
 
-      // --- STEP 5: First Firestore operation after login ---
+      // Best-effort profile lookup to pick the destination ("/" for completed
+      // profiles, "/profile" for new/incomplete users). A Firestore failure
+      // here is NOT a login failure — log it and navigate anyway.
       const cleanPhone = phone.trim();
-      const docPath = "users/" + cleanPhone;
-      console.log("================ FIRESTORE ======================");
-      console.log("document path:", docPath);
-      const userRef = doc(db, "users", cleanPhone);
-
-      let userSnap;
+      let destination = "/profile";
       try {
-        userSnap = await getDoc(userRef);
+        const docPath = "users/" + cleanPhone;
+        console.log("================ FIRESTORE ======================");
+        console.log("document path:", docPath);
+        const userRef = doc(db, "users", cleanPhone);
+        const userSnap = await getDoc(userRef);
         console.log("getDoc SUCCESS, exists:", userSnap.exists());
         console.log("===============================================");
+        if (userSnap.exists() && (userSnap.data() as any)?.profileCompleted === true) {
+          destination = "/";
+        }
       } catch (fsError: any) {
-        console.error("getDoc FAILED");
-        console.error("code:", fsError.code);
-        console.error("message:", fsError.message);
-        console.error("stack:", fsError.stack);
+        console.warn(
+          "Post-login profile lookup failed (login still succeeded):",
+          fsError?.code,
+          fsError?.message
+        );
         console.log("===============================================");
-        throw fsError;
       }
 
-      const profileCompleted = userSnap.exists() && (userSnap.data() as any)?.profileCompleted === true;
-      window.location.href = profileCompleted ? "/" : "/profile";
+      window.location.href = destination;
     } catch (err: any) {
       // --- DETAILED ERROR LOGGING (diagnostic) ---
       console.log("[signInWithPhoneNumber Error Debug]");
@@ -255,11 +262,23 @@ export default function LoginPage() {
 
       toast.success("Google login successful 🎉");
 
-      /* Post-login redirection */
-      const gUserRef = doc(db, "users", auth.currentUser?.uid || user.uid);
-      const gUserSnap = await getDoc(gUserRef);
-      const gProfileCompleted = gUserSnap.exists() && (gUserSnap.data() as any)?.profileCompleted === true;
-      window.location.href = gProfileCompleted ? "/" : "/profile";
+      /* Post-login redirection — authentication is already complete, so this
+         lookup is best-effort only and must never fail the login. */
+      let gDestination = "/profile";
+      try {
+        const gUserRef = doc(db, "users", auth.currentUser?.uid || user.uid);
+        const gUserSnap = await getDoc(gUserRef);
+        if (gUserSnap.exists() && (gUserSnap.data() as any)?.profileCompleted === true) {
+          gDestination = "/";
+        }
+      } catch (gFsError: any) {
+        console.warn(
+          "Post-login profile lookup failed (login still succeeded):",
+          gFsError?.code,
+          gFsError?.message
+        );
+      }
+      window.location.href = gDestination;
     } catch (err) {
       console.error("Firebase Auth Error:", err);
       toast.error("Google login failed ❌");

@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/cleanup-expired-groups",
-      "schedule": "0 * * * *"
+      "schedule": "0 0 * * *"
     }
   ]
 }

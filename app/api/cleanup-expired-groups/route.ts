@@ -2,7 +2,28 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
+import { timingSafeEqual } from "crypto";
 import { adminDb, adminTimestamp } from "@/firebase/admin";
+
+/**
+ * CRON AUTH: Vercel Cron automatically sends
+ *   Authorization: Bearer <CRON_SECRET>
+ * when the CRON_SECRET environment variable is set on the Vercel project.
+ * Any request without the exact secret is rejected. The secret is never
+ * logged and never included in any response body.
+ */
+function isCronAuthorized(req: Request): boolean {
+  const secret = process.env.CRON_SECRET;
+  if (!secret) return false; // secure default: no secret configured → deny all
+
+  const header = req.headers.get("authorization") || "";
+  const expected = `Bearer ${secret}`;
+
+  const a = Buffer.from(header);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b); // timing-safe comparison
+}
 
 /**
  * SERVER-SIDE automatic group expiration.
@@ -14,12 +35,20 @@ import { adminDb, adminTimestamp } from "@/firebase/admin";
  * so it is NOT dependent on any frontend timer.
  *
  * Safety:
+ * - Protected: requires Authorization: Bearer <CRON_SECRET>.
  * - Only marks groups as "expired" — does NOT hard-delete (preserves audit/payment records).
  * - Only touches groups where NO member has paid (paid: true).
  * - Only touches groups with status "waiting" or "ready" (never "completed").
  * - Uses server-side timestamps for createdAt comparison.
  */
-export async function GET() {
+export async function GET(req: Request) {
+  if (!isCronAuthorized(req)) {
+    return NextResponse.json(
+      { error: "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     const now = Date.now();
     const EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours

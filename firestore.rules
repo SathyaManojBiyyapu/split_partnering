@@ -35,9 +35,15 @@ service cloud.firestore {
         : null;
     }
 
-    // Check if the request is for the authenticated user's own document
+    // Check if the request is for the authenticated user's own document.
+    // Accepts all equivalent own-phone forms: 10-digit, +91-prefixed, or the
+    // Firebase Auth UID. Never grants access to another user's document.
     function isOwnDoc(phone) {
-      return loggedIn() && (phone == myPhone() || phone == request.auth.uid);
+      return loggedIn() && (
+        phone == myPhone() ||
+        phone == request.auth.token.phone_number ||
+        phone == request.auth.uid
+      );
     }
 
     /* =========================

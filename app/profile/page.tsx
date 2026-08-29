@@ -3,8 +3,9 @@
 import { useState, useEffect } from "react";
 import { db, storage, auth } from "@/firebase/config";
 import { signOut } from "firebase/auth";
-import { doc, setDoc, getDoc } from "firebase/firestore";
+import { doc, setDoc } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { resolveExistingUserDoc } from "@/app/lib/userLookup";
 import { indiaStates } from "@/app/data/indiaStates";
 import { districts } from "@/app/data/districts";
 import { citiesByDistrict } from "@/app/data/cities";
@@ -57,11 +58,17 @@ export default function ProfilePage() {
           } catch (_) {}
         }
 
-        const userRef = doc(db, "users", phone);
-        const snapshot = await getDoc(userRef);
+        // Find the EXISTING member doc regardless of its ID format
+        // (10-digit phone, +91 phone, raw stored value, or Firebase UID).
+        const resolved = await resolveExistingUserDoc(phone);
 
-        if (snapshot.exists()) {
-          const data = snapshot.data() as any;
+        if (resolved) {
+          // Existing member: align localStorage with the ACTUAL doc ID so all
+          // later reads/writes hit the same existing document.
+          if (resolved.docId !== phone) {
+            localStorage.setItem("phone", resolved.docId);
+          }
+          const data = resolved.data as any;
           setName(data.name || "");
           setCity(data.city || "");
           setDistrict(data.district || "");
@@ -146,22 +153,31 @@ export default function ProfilePage() {
       const authPhone = authPhoneRaw ? authPhoneRaw.replace(/^\+91/, "").trim() : null;
       const authUid = currentUser?.uid || null;
 
-      const docPhone = authPhone || phone;
+      // Resolve the EXISTING member doc first so we update it in place instead
+      // of creating a duplicate/new document for a phone that already exists.
+      const resolved = await resolveExistingUserDoc(phone);
+      const docPhone = resolved?.docId || authPhone || phone;
+      const existingData: Record<string, any> = resolved?.data || {};
+
+      // Never overwrite an existing saved value with an empty/default one:
+      // empty form fields fall back to whatever the existing doc already has.
+      const pick = (value: string, key: string) =>
+        value && value.trim() !== "" ? value : existingData[key] ?? "";
 
       const userRef = doc(db, "users", docPhone);
       await setDoc(
         userRef,
         {
           phone: docPhone,
-          name,
-          city,
-          district,
-          state: stateVal,
-          gender,
-          bio,
-          interests,
-          college,
-          photoURL,
+          name: pick(name, "name"),
+          city: pick(city, "city"),
+          district: pick(district, "district"),
+          state: pick(stateVal, "state"),
+          gender: pick(gender, "gender"),
+          bio: pick(bio, "bio"),
+          interests: pick(interests, "interests"),
+          college: pick(college, "college"),
+          photoURL: photoURL || existingData.photoURL || "",
           verified: true,
           profileCompleted: true,
           updatedAt: new Date(),

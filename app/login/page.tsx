@@ -9,8 +9,7 @@ import {
 } from "firebase/auth";
 
 import { auth, googleProvider } from "@/firebase/config";
-import { db } from "@/firebase/config";
-import { doc, getDoc } from "firebase/firestore";
+import { resolveExistingUserDoc } from "@/app/lib/userLookup";
 import toast from "react-hot-toast";
 import Seo from "@/app/components/Seo";
 
@@ -177,21 +176,23 @@ export default function LoginPage() {
 
       toast.success("Login successful 🎉");
 
-      // Best-effort profile lookup to pick the destination ("/" for completed
-      // profiles, "/profile" for new/incomplete users). A Firestore failure
-      // here is NOT a login failure — log it and navigate anyway.
-      const cleanPhone = phone.trim();
+      // Best-effort EXISTING-MEMBER lookup to pick the destination ("/" for
+      // completed profiles, "/profile" for new/incomplete users). The resolver
+      // checks every own-phone identifier form (10-digit, +91, raw, uid), so
+      // members stored under any of these doc ID shapes are recognized. A
+      // Firestore failure here is NOT a login failure — log it and navigate.
       let destination = "/profile";
       try {
-        const docPath = "users/" + cleanPhone;
-        console.log("================ FIRESTORE ======================");
-        console.log("document path:", docPath);
-        const userRef = doc(db, "users", cleanPhone);
-        const userSnap = await getDoc(userRef);
-        console.log("getDoc SUCCESS, exists:", userSnap.exists());
-        console.log("===============================================");
-        if (userSnap.exists() && (userSnap.data() as any)?.profileCompleted === true) {
-          destination = "/";
+        const resolved = await resolveExistingUserDoc(phone);
+        if (resolved) {
+          // Existing member: remember the ACTUAL doc ID so every later page
+          // (profile/dashboard/find-partners) reads the same existing doc.
+          if (resolved.docId !== localStorage.getItem("phone")) {
+            localStorage.setItem("phone", resolved.docId);
+          }
+          if (resolved.data?.profileCompleted === true) {
+            destination = "/";
+          }
         }
       } catch (fsError: any) {
         console.warn(
@@ -199,7 +200,6 @@ export default function LoginPage() {
           fsError?.code,
           fsError?.message
         );
-        console.log("===============================================");
       }
 
       window.location.href = destination;
@@ -266,10 +266,12 @@ export default function LoginPage() {
          lookup is best-effort only and must never fail the login. */
       let gDestination = "/profile";
       try {
-        const gUserRef = doc(db, "users", auth.currentUser?.uid || user.uid);
-        const gUserSnap = await getDoc(gUserRef);
-        if (gUserSnap.exists() && (gUserSnap.data() as any)?.profileCompleted === true) {
+        const gResolved = await resolveExistingUserDoc(null);
+        if (gResolved && gResolved.data?.profileCompleted === true) {
           gDestination = "/";
+          if (gResolved.docId !== localStorage.getItem("phone")) {
+            localStorage.setItem("phone", gResolved.docId);
+          }
         }
       } catch (gFsError: any) {
         console.warn(

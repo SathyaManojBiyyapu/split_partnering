@@ -28,8 +28,9 @@ function isCronAuthorized(req: Request): boolean {
 /**
  * SERVER-SIDE automatic group expiration.
  *
- * Business rule: Groups that remain inactive/unpaid for 24 hours
- * become "expired" (status = "expired").
+ * Business rule: A match/group remains valid for 1 MONTH (30 days) from
+ * creation. Groups that are still unpaid after 30 days become "expired"
+ * (status = "expired").
  *
  * This runs via Vercel Cron (see vercel.json) and uses the Admin SDK,
  * so it is NOT dependent on any frontend timer.

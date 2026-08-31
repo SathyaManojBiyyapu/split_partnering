@@ -7,6 +7,7 @@ import { db } from "@/firebase/config";
 import { doc, getDoc } from "firebase/firestore";
 import { auth } from "@/firebase/config";
 import { onAuthStateChanged } from "firebase/auth";
+import { getCurrentUserDocId } from "@/app/lib/userLookup";
 
 export default function TrustAndSafetyPage() {
   const router = useRouter();
@@ -32,7 +33,7 @@ export default function TrustAndSafetyPage() {
     }
     const fetchProfile = async () => {
       try {
-        const snap = await getDoc(doc(db, "users", phone));
+        const snap = await getDoc(doc(db, "users", getCurrentUserDocId()));
         if (snap.exists()) setProfile(snap.data() as any);
       } catch (err) {
         console.error(err);

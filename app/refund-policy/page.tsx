@@ -123,7 +123,7 @@ export default function RefundPolicyPage() {
                     </li>
                     <li className="flex items-start gap-2">
                       <span className="text-red-400 mt-0.5">•</span>
-                      <span>Match expiry (10-day period has passed)</span>
+                      <span>Match expiry (30-day period has passed)</span>
                     </li>
                     <li className="flex items-start gap-2">
                       <span className="text-red-400 mt-0.5">•</span>

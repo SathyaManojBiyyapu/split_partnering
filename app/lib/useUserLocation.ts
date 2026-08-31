@@ -5,6 +5,7 @@
 import { useState, useEffect } from "react";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "@/firebase/config";
+import { getCurrentUserDocId } from "@/app/lib/userLookup";
 
 export interface UserLocation {
   state: string;
@@ -43,7 +44,7 @@ export function useUserLocation(): UserLocation {
           return;
         }
 
-        const userRef = doc(db, "users", phone);
+        const userRef = doc(db, "users", getCurrentUserDocId());
         const snap = await getDoc(userRef);
 
         if (snap.exists()) {

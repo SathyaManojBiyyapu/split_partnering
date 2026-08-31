@@ -51,7 +51,8 @@ export async function GET(req: Request) {
 
   try {
     const now = Date.now();
-    const EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
+    // A match/group remains valid for 1 MONTH (30 days) from creation.
+    const EXPIRY_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
     const groupsRef = adminDb.collection("groups");
     const snapshot = await groupsRef
@@ -76,7 +77,7 @@ export async function GET(req: Request) {
       const createdMs = createdAt.toMillis();
       const ageMs = now - createdMs;
 
-      // Only expire groups older than 24 hours
+      // Only expire groups older than 1 month (30 days)
       if (ageMs < EXPIRY_MS) {
         skippedActive++;
         return;

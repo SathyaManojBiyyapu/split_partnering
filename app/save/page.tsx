@@ -29,6 +29,7 @@ import {
 
 import { categoryData, slugToCategoryName, masterCategories } from "@/app/data/subcategories";
 import MarketplaceGrid from "@/app/components/marketplace/MarketplaceGrid";
+import { getCurrentUserDocId } from "@/app/lib/userLookup";
 import toast from "react-hot-toast";
 
 /* -----------------------------------------
@@ -183,7 +184,7 @@ function CollaboratorBrandSelector({
     if (!phone) return;
     const fetchUser = async () => {
       try {
-        const snap = await getDoc(doc(db, "users", phone));
+        const snap = await getDoc(doc(db, "users", getCurrentUserDocId()));
         if (snap.exists()) {
           const d = snap.data();
           setUserCity(d.city || "");
@@ -522,7 +523,7 @@ function SaveContent() {
     if (!phone) return;
     const fetchUser = async () => {
       try {
-        const userRef = doc(db, "users", phone);
+        const userRef = doc(db, "users", getCurrentUserDocId());
         const snap = await getDoc(userRef);
         if (snap.exists()) {
           const d = snap.data() as any;

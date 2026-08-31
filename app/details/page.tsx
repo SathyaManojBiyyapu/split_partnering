@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { db } from "@/firebase/config";
 import { doc, getDoc } from "firebase/firestore";
 import { useRouter } from "next/navigation";
+import { getCurrentUserDocId } from "@/app/lib/userLookup";
 
 export default function MyDetailsPage() {
   const router = useRouter();
@@ -40,7 +41,7 @@ export default function MyDetailsPage() {
     const loadProfile = async () => {
       if (!phone) return;
 
-      const userRef = doc(db, "users", phone);
+      const userRef = doc(db, "users", getCurrentUserDocId());
       const snap = await getDoc(userRef);
 
       if (snap.exists()) {

@@ -5,7 +5,7 @@ import { db, storage, auth } from "@/firebase/config";
 import { signOut } from "firebase/auth";
 import { doc, setDoc } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { resolveExistingUserDoc } from "@/app/lib/userLookup";
+import { resolveExistingUserDoc, normalizePhone } from "@/app/lib/userLookup";
 import { indiaStates } from "@/app/data/indiaStates";
 import { districts } from "@/app/data/districts";
 import { citiesByDistrict } from "@/app/data/cities";
@@ -63,10 +63,11 @@ export default function ProfilePage() {
         const resolved = await resolveExistingUserDoc(phone);
 
         if (resolved) {
-          // Existing member: align localStorage with the ACTUAL doc ID so all
-          // later reads/writes hit the same existing document.
+          // Existing member: the actual doc ID (may be +91/uid-keyed) is kept
+          // separate from the canonical phone so matching stays intact while
+          // this page reads the real document.
           if (resolved.docId !== phone) {
-            localStorage.setItem("phone", resolved.docId);
+            localStorage.setItem("phoneDocId", resolved.docId);
           }
           const data = resolved.data as any;
           setName(data.name || "");
@@ -187,8 +188,11 @@ export default function ProfilePage() {
         { merge: true }
       );
 
+      // Always keep the canonical phone for matching; the real doc ID is
+      // tracked separately so reads/writes hit the same existing document.
+      localStorage.setItem("phone", normalizePhone(phone) || phone);
       if (docPhone !== phone) {
-        localStorage.setItem("phone", docPhone);
+        localStorage.setItem("phoneDocId", docPhone);
       }
 
       toast.success("Profile saved successfully!");

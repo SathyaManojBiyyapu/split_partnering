@@ -31,6 +31,7 @@ import {
   formatDate,
 } from "@/app/data/matchExpiry";
 import { categoryData, slugToCategoryName, masterCategories } from "@/app/data/subcategories";
+import { getCurrentUserDocId } from "@/app/lib/userLookup";
 import Seo from "@/app/components/Seo";
 
 type Group = {
@@ -174,7 +175,7 @@ export default function DashboardPage() {
     if (!phone) return;
     const loadNearby = async () => {
       try {
-        const userRef = doc(db, "users", phone);
+        const userRef = doc(db, "users", getCurrentUserDocId());
         const userSnap = await getDoc(userRef);
         if (!userSnap.exists()) return;
         const me = userSnap.data() as any;

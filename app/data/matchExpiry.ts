@@ -1,8 +1,9 @@
-// Match expiry: 12 days for partner requests, 15 days for groups
+// Match/group tenure: 1 MONTH (30 days) from creation — for both partner
+// requests and groups. Must match /api/cleanup-expired-groups EXPIRY_MS.
 export const MATCH_EXPIRY_DAYS: Record<string, number> = {};
 
-export const DEFAULT_EXPIRY_DAYS = 12;
-export const GROUP_DELETE_DAYS = 15;
+export const DEFAULT_EXPIRY_DAYS = 30;
+export const GROUP_DELETE_DAYS = 30;
 
 export function getExpiryDate(createdAt: any): Date | null {
   if (!createdAt?.seconds) return null;

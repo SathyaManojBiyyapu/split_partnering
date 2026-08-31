@@ -90,86 +90,12 @@ export default function LoginPage() {
       }
 
       // --- STEP 1: Confirm OTP ---
-      const credential = await window.confirmationResult.confirm(otp);
-
-      // ================ BACKEND AUTH DIAGNOSTIC ================
-      if (credential.user) {
-        // Log Firebase project config
-        try {
-          const { getApp } = await import("firebase/app");
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          const firebaseApp = getApp();
-          // Use auth.app.options to get config
-          const appOptions = (auth as any).app?.options || {};
-          console.log("================ FIREBASE PROJECT ================");
-          console.log("projectId:", appOptions.projectId || "unknown");
-          console.log("authDomain:", appOptions.authDomain || "unknown");
-          console.log("storageBucket:", appOptions.storageBucket || "unknown");
-          console.log("appId:", appOptions.appId || "unknown");
-          console.log("apiKey:", appOptions.apiKey ? "***" + appOptions.apiKey.slice(-4) : "unknown");
-          console.log("===============================================");
-        } catch (_e) {
-          console.log("================ FIREBASE PROJECT ================");
-          console.log("Could not read app options");
-          console.log("===============================================");
-        }
-
-        // Log auth user data
-        console.log("================ AUTH USER ======================");
-        console.log("uid:", credential.user.uid);
-        console.log("phoneNumber:", credential.user.phoneNumber);
-        console.log("email:", credential.user.email);
-        console.log("providerData:");
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        credential.user.providerData?.forEach((p: any, i: number) => {
-          console.log("  [" + i + "] providerId:", p?.providerId, "uid:", p?.uid, "phoneNumber:", p?.phoneNumber, "email:", p?.email);
-        });
-        console.log("===============================================");
-
-        // Log JWT claims
-        try {
-          const tokenResult = await credential.user.getIdTokenResult(true);
-          console.log("================ JWT ===========================");
-          console.log("claims:", JSON.stringify(tokenResult.claims, null, 2));
-          console.log("claims.phone_number:", (tokenResult.claims as any).phone_number);
-          console.log("claims.firebase:", JSON.stringify((tokenResult.claims as any).firebase, null, 2));
-          console.log("authTime:", tokenResult.authTime);
-          console.log("issuedAtTime:", tokenResult.issuedAtTime);
-          console.log("expirationTime:", tokenResult.expirationTime);
-          console.log("signInProvider:", tokenResult.signInProvider);
-          console.log("===============================================");
-        } catch (_e) {
-          console.log("================ JWT ===========================");
-          console.log("Could not get token result");
-          console.log("===============================================");
-        }
-
-        // Comparison
-        const cleanPhone = phone.trim();
-        const authPhone = credential.user.phoneNumber?.replace(/^\+91/, "").trim() ?? "";
-        try {
-          const tokenResult = await credential.user.getIdTokenResult(true);
-          const jwtPhone = (tokenResult.claims as any).phone_number;
-          console.log("================ COMPARISON =====================");
-          console.log("CLIENT PHONE:", authPhone);
-          console.log("JWT PHONE:", jwtPhone);
-          console.log("DOC ID:", cleanPhone);
-          console.log("client === jwt:", authPhone === jwtPhone);
-          console.log("client === docId:", authPhone === cleanPhone);
-          console.log("jwt === docId:", jwtPhone === cleanPhone);
-          console.log("===============================================");
-        } catch (_e) {
-          console.log("================ COMPARISON =====================");
-          console.log("Cannot compare - JWT unavailable");
-          console.log("===============================================");
-        }
-      }
-      // ================ END BACKEND AUTH DIAGNOSTIC ================
+      await window.confirmationResult.confirm(otp);
 
       // --- STEP 5: Authentication is COMPLETE. ---
       // Firebase already confirmed the OTP and established the session.
-      // Everything below only decides WHERE to navigate and must never
-      // fail the login or block the redirect.
+      // localStorage.phone is ALWAYS the canonical 10-digit number — every
+      // matching/group/member/payment query is keyed by it.
       localStorage.setItem("loggedIn", "true");
       localStorage.setItem("phone", phone.trim());
       localStorage.removeItem("guest");
@@ -185,10 +111,11 @@ export default function LoginPage() {
       try {
         const resolved = await resolveExistingUserDoc(phone);
         if (resolved) {
-          // Existing member: remember the ACTUAL doc ID so every later page
-          // (profile/dashboard/find-partners) reads the same existing doc.
+          // Actual doc ID (may be +91/uid-keyed) goes into phoneDocId —
+          // keep it separate so profile reads target the real doc while
+          // matching keeps using the canonical 10-digit phone.
           if (resolved.docId !== localStorage.getItem("phone")) {
-            localStorage.setItem("phone", resolved.docId);
+            localStorage.setItem("phoneDocId", resolved.docId);
           }
           if (resolved.data?.profileCompleted === true) {
             destination = "/";
@@ -266,11 +193,18 @@ export default function LoginPage() {
          lookup is best-effort only and must never fail the login. */
       let gDestination = "/profile";
       try {
-        const gResolved = await resolveExistingUserDoc(null);
-        if (gResolved && gResolved.data?.profileCompleted === true) {
-          gDestination = "/";
-          if (gResolved.docId !== localStorage.getItem("phone")) {
-            localStorage.setItem("phone", gResolved.docId);
+        const key = authPhone || user.phoneNumber || user.uid;
+        const gResolved = await resolveExistingUserDoc(key);
+        if (gResolved) {
+          if (gResolved.data?.profileCompleted === true) {
+            gDestination = "/";
+          }
+          if (gResolved.phone) {
+            // Canonical phone for all matching queries:
+            localStorage.setItem("phone", gResolved.phone);
+          }
+          if (gResolved.docId !== (localStorage.getItem("phone") || gResolved.phone)) {
+            localStorage.setItem("phoneDocId", gResolved.docId);
           }
         }
       } catch (gFsError: any) {

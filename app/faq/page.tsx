@@ -27,7 +27,7 @@ const faqs = [
   },
   {
     q: "How long does a match last?",
-    a: "Matches expire after 10 days. You can see the countdown on your My Matches dashboard. Expired matches move to the expired section but are not deleted."
+    a: "A match/group remains valid for 1 month (30 days) from creation. You can see the countdown on your My Matches dashboard. Expired matches move to the expired section but are not deleted."
   },
   {
     q: "Is my personal information safe?",

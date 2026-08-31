@@ -724,7 +724,7 @@ export default function AdminPage() {
                 const paidCount = (g.membersDetailed || []).filter((m: any) => m.paid).length;
                 const paidMembers = (g.membersDetailed || []).filter((m: any) => m.paid).length === (g.membersDetailed || []).length;
                 const expiryTime = g.createdAt?.seconds
-                  ? new Date((g.createdAt.seconds + 12 * 24 * 60 * 60) * 1000).toLocaleDateString()
+                  ? new Date((g.createdAt.seconds + 30 * 24 * 60 * 60) * 1000).toLocaleDateString()
                   : "N/A";
                 return (
                 <div key={g.id} className="p-4 bg-[#0c0c0c] border border-[#FFD166]/20 rounded-xl">

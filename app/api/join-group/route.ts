@@ -272,7 +272,13 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ error: "Could not finalize group after multiple attempts, please try again" }, { status: 409 });
   } catch (error: any) {
-    console.error("JOIN-GROUP ERROR:", error?.message || error);
+    console.error(
+      "JOIN-GROUP ERROR:",
+      error?.code || "",
+      error?.message || error,
+      "\n",
+      error?.stack || ""
+    );
     return NextResponse.json({ error: "Matching failed. Please try again." }, { status: 500 });
   }
 }

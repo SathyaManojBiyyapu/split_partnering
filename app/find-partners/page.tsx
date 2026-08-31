@@ -220,8 +220,10 @@ export default function FindPartnersPage() {
       toast.success(`✅ Match request sent to ${partner.userId}`);
       router.push("/dashboard");
     } catch (err: any) {
-      console.error("Match error:", err);
-      toast.error("Failed to create match request. Please try again.");
+      console.error("Match error:", err?.code, err?.message, err);
+      toast.error(
+        `Failed to create match request (${err?.code || "unknown"}). Please try again.`
+      );
     }
     setStartingMatch(null);
   }, [phone, userProfile, router]);

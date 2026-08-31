@@ -164,8 +164,10 @@ export default function DashboardPage() {
       await addDoc(collection(db, "matchRequests"), matchData);
       toast.success(`✅ Match request sent to ${partner.userId}`);
     } catch (err: any) {
-      console.error("Match error:", err);
-      toast.error("Failed to create match request. Please try again.");
+      console.error("Match error:", err?.code, err?.message, err);
+      toast.error(
+        `Failed to create match request (${err?.code || "unknown"}). Please try again.`
+      );
     }
     setStartingMatch(null);
   }, [phone, userProfile, myUserId]);

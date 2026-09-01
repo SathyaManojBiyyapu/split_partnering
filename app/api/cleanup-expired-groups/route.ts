@@ -26,21 +26,21 @@ function isCronAuthorized(req: Request): boolean {
 }
 
 /**
- * SERVER-SIDE automatic group expiration.
+ * SERVER-SIDE automatic group expiration + deletion.
  *
- * Business rule: A match/group remains valid for 1 MONTH (30 days) from
- * creation. Groups that are still unpaid after 30 days become "expired"
- * (status = "expired").
+ * Business rule: A match/group remains valid for 6 MONTHS (180 days) from
+ * creation. Groups that are still unpaid after 180 days are DELETED so the
+ * members are freed up and can create a new match.
  *
  * This runs via Vercel Cron (see vercel.json) and uses the Admin SDK,
  * so it is NOT dependent on any frontend timer.
  *
  * Safety:
  * - Protected: requires Authorization: Bearer <CRON_SECRET>.
- * - Only marks groups as "expired" — does NOT hard-delete (preserves audit/payment records).
  * - Only touches groups where NO member has paid (paid: true).
  * - Only touches groups with status "waiting" or "ready" (never "completed").
  * - Uses server-side timestamps for createdAt comparison.
+ * - Associated `selections` docs are marked status="expired" (audit kept).
  */
 export async function GET(req: Request) {
   if (!isCronAuthorized(req)) {
@@ -52,18 +52,19 @@ export async function GET(req: Request) {
 
   try {
     const now = Date.now();
-    // A match/group remains valid for 1 MONTH (30 days) from creation.
-    const EXPIRY_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+    // A match/group remains valid for 6 MONTHS (180 days) from creation.
+    const EXPIRY_MS = 180 * 24 * 60 * 60 * 1000; // 180 days (6 months)
 
     const groupsRef = adminDb.collection("groups");
     const snapshot = await groupsRef
       .where("status", "in", ["waiting", "ready"])
       .get();
 
-    let expiredCount = 0;
+    let deletedCount = 0;
     let skippedActive = 0;
 
-    const batch = adminDb.batch();
+    type Pending = { groupRef: any; groupId: string };
+    const toDelete: Pending[] = [];
 
     snapshot.forEach((doc) => {
       const data = doc.data();
@@ -78,13 +79,13 @@ export async function GET(req: Request) {
       const createdMs = createdAt.toMillis();
       const ageMs = now - createdMs;
 
-      // Only expire groups older than 1 month (30 days)
+      // Only delete groups older than 6 months (180 days)
       if (ageMs < EXPIRY_MS) {
         skippedActive++;
         return;
       }
 
-      // Check if ANY member has paid — if so, never expire
+      // Check if ANY member has paid — if so, never expire/delete
       const members = Array.isArray(data?.members) ? data.members : [];
       const hasPaidMember = members.some((m: any) => m?.paid === true);
       if (hasPaidMember) {
@@ -92,23 +93,38 @@ export async function GET(req: Request) {
         return;
       }
 
-      // Mark as expired (safe, non-destructive)
-      batch.update(doc.ref, {
-        status: "expired",
-        expiresAt: adminTimestamp(),
-        expiredAt: adminTimestamp(),
-        lastActivityAt: adminTimestamp(),
-      });
-      expiredCount++;
+      toDelete.push({ groupRef: doc.ref, groupId: doc.id });
     });
 
-    if (expiredCount > 0) {
+    // Firestore batches are capped at 500 operations — chunk to stay safe.
+    const CHUNK = 400;
+    for (let i = 0; i < toDelete.length; i += CHUNK) {
+      const chunk = toDelete.slice(i, i + CHUNK);
+      const batch = adminDb.batch();
+
+      for (const { groupRef, groupId } of chunk) {
+        // Mark any selections pointing at this group as expired (audit trail).
+        const selSnap = await adminDb
+          .collection("selections")
+          .where("groupId", "==", groupId)
+          .get();
+        selSnap.forEach((selDoc) => {
+          batch.update(selDoc.ref, {
+            status: "expired",
+            expiredAt: adminTimestamp(),
+          });
+        });
+        // Hard-delete the group so members can create a new match.
+        batch.delete(groupRef);
+      }
+
       await batch.commit();
+      deletedCount += chunk.length;
     }
 
     return NextResponse.json({
       success: true,
-      expiredCount,
+      deletedCount,
       skippedActive,
       checked: snapshot.size,
     });

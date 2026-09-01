@@ -28,6 +28,7 @@ import {
 } from "firebase/firestore";
 
 import { categoryData, slugToCategoryName, masterCategories } from "@/app/data/subcategories";
+import { isGroupExpired } from "@/app/data/matchExpiry";
 import MarketplaceGrid from "@/app/components/marketplace/MarketplaceGrid";
 import { getCurrentUserDocId } from "@/app/lib/userLookup";
 import toast from "react-hot-toast";
@@ -91,6 +92,17 @@ const maskPhone = (phone: string) => {
 
 const normalize = (value: string | null | undefined): string =>
   value?.trim().toLowerCase() || "";
+
+/* -----------------------------------------
+   STALE GROUP CHECK
+   A group is stale if the cleanup cron marked it "expired" OR it has passed
+   the match tenure (6 months). Stale groups must never block the user from
+   creating a new match — this was the cause of the "Partner Already Saved"
+   state showing while nothing appeared under My Partners.
+------------------------------------------ */
+const isStaleGroup = (data: any): boolean =>
+  String(data?.status || "").toLowerCase() === "expired" ||
+  isGroupExpired(data?.createdAt);
 
 /* -----------------------------------------
    CREATE OR JOIN GROUP
@@ -546,6 +558,8 @@ function SaveContent() {
         const activeOptions: string[] = [];
         snap.forEach((docSnap) => {
           const data = docSnap.data() as any;
+          // Skip expired/stale groups — they no longer count as active matches.
+          if (isStaleGroup(data)) return;
           const members = Array.isArray(data.members) ? data.members : [];
           const isMember = members.some((m: any) => {
             if (typeof m === "string") return m.trim() === phone;
@@ -576,6 +590,8 @@ function SaveContent() {
 
         for (const catDoc of catSnap.docs) {
           const catData = catDoc.data();
+          // Expired/stale groups must not count as duplicates.
+          if (isStaleGroup(catData)) continue;
           const catMembers = catData.members || [];
           const isIn = catMembers.some((m: any) => m?.phone === phone);
           if (isIn) {
@@ -595,6 +611,9 @@ function SaveContent() {
         const snap = await getDocs(qGroups);
         for (const d of snap.docs) {
           const data = d.data();
+          // Expired/stale groups must NOT trigger "Partner Already Saved" —
+          // the user is free to create a new match for this option.
+          if (isStaleGroup(data)) continue;
           const exists = (data.members || []).some((m: any) => m?.phone === phone);
           if (exists) {
             setExistingGroup({ id: d.id, ...data });

@@ -3,17 +3,18 @@
 import Link from "next/link";
 import { motion } from "framer-motion";
 
+// Keep the hero fully visible at all times (never start at opacity 0) so the
+// LCP heading can be painted the moment the HTML arrives. Only a subtle
+// translate is animated — transforms do not delay paint or count as layout shift.
 const staggerContainer = {
-  hidden: { opacity: 0 },
   visible: {
-    opacity: 1,
     transition: { staggerChildren: 0.08, delayChildren: 0.1 },
   },
 };
 
 const fadeUp = {
-  hidden: { opacity: 0, y: 20 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.5 } },
+  hidden: { y: 20 },
+  visible: { y: 0, transition: { duration: 0.5 } },
 };
 
 export default function Hero() {

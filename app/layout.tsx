@@ -13,11 +13,7 @@ import {
   useAuth,
 } from "./context/AuthContext";
 
-import {
-  useEffect,
-  useState,
-  ReactNode,
-} from "react";
+import { useEffect, ReactNode } from "react";
 
 import Link from "next/link";
 import {
@@ -59,12 +55,6 @@ function AuthGuard({
   const router = useRouter();
   const pathname = usePathname();
 
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
   const protectedPages = [
     "/profile",
     "/my-details",
@@ -75,8 +65,12 @@ function AuthGuard({
     "/notifications",
   ];
 
+  // Children are rendered unconditionally (server + first client paint) so
+  // the page content — including the LCP element — is present in the initial
+  // HTML and paints immediately. Protected-page redirects happen client-side
+  // below, after Firebase auth state resolves; they never block first paint.
   useEffect(() => {
-    if (!mounted || loading) return;
+    if (loading) return;
 
     const guest = localStorage.getItem("guest") === "true";
 
@@ -106,9 +100,7 @@ function AuthGuard({
     if (!user) {
       router.push("/login");
     }
-  }, [mounted, user, loading, pathname, router]);
-
-  if (!mounted) return null;
+  }, [user, loading, pathname, router]);
 
   return <>{children}</>;
 }

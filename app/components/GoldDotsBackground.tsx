@@ -47,9 +47,11 @@ export default function GoldDotsBackground() {
     let dots: Dot[] = [];
     let width = 0;
     let height = 0;
+    let lastFrameTime = 0;
+    let frameCounter = 0;
 
     const dotCount = () =>
-      Math.min(90, Math.max(40, Math.floor((width * height) / 18000)));
+      Math.min(60, Math.max(28, Math.floor((width * height) / 26000)));
 
     const resize = () => {
       width = window.innerWidth;
@@ -59,10 +61,20 @@ export default function GoldDotsBackground() {
 
       const count = dotCount();
       dots = Array.from({ length: count }, () => createDot(width, height));
+      lastFrameTime = 0; // draw the next frame immediately after a resize
     };
 
-    const draw = () => {
+    const draw = (timestamp: number) => {
       if (!running) return;
+
+      // Throttle to ~30 fps so the decorative animation never starves the
+      // main thread during initial load or while the user scrolls.
+      if (timestamp - lastFrameTime < 33) {
+        animationId = window.requestAnimationFrame(draw);
+        return;
+      }
+      lastFrameTime = timestamp;
+      frameCounter += 1;
 
       ctx.clearRect(0, 0, width, height);
 
@@ -109,7 +121,9 @@ export default function GoldDotsBackground() {
         ctx.fill();
       }
 
-      if (!prefersReducedMotion) {
+      // Connection lines are the most expensive pass (O(n²)); render them
+      // at ~7 fps and only when dots are close by.
+      if (!prefersReducedMotion && frameCounter % 4 === 0) {
         for (let i = 0; i < dots.length; i++) {
           for (let j = i + 1; j < dots.length; j++) {
             const a = dots[i];
@@ -118,8 +132,8 @@ export default function GoldDotsBackground() {
             const dy = a.y - b.y;
             const dist = Math.hypot(dx, dy);
 
-            if (dist < 120) {
-              const lineAlpha = (1 - dist / 120) * 0.08;
+            if (dist < 110) {
+              const lineAlpha = (1 - dist / 110) * 0.08;
               ctx.beginPath();
               ctx.strokeStyle = `rgba(${GOLD.r}, ${GOLD.g}, ${GOLD.b}, ${lineAlpha})`;
               ctx.lineWidth = 0.6;
@@ -131,26 +145,34 @@ export default function GoldDotsBackground() {
         }
       }
 
+      // For reduced-motion users the background is static — draw once, stop.
+      if (prefersReducedMotion) {
+        return;
+      }
       animationId = window.requestAnimationFrame(draw);
     };
 
     const onVisibilityChange = () => {
       running = !document.hidden;
-      if (running) {
-        draw();
-        return;
-      }
       window.cancelAnimationFrame(animationId);
+      if (running) {
+        animationId = window.requestAnimationFrame(draw);
+      }
     };
 
-    resize();
-    draw();
+    // Defer the decorative animation until after the initial paint / LCP
+    // milestone so it never competes with the page's own first render.
+    const startTimer = window.setTimeout(() => {
+      resize();
+      animationId = window.requestAnimationFrame(draw);
+    }, 300);
 
     window.addEventListener("resize", resize);
     document.addEventListener("visibilitychange", onVisibilityChange);
 
     return () => {
       running = false;
+      window.clearTimeout(startTimer);
       window.cancelAnimationFrame(animationId);
       window.removeEventListener("resize", resize);
       document.removeEventListener("visibilitychange", onVisibilityChange);

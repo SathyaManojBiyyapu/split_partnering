@@ -303,11 +303,16 @@ export async function POST(req: Request) {
       "\n",
       error?.stack || ""
     );
-    // TEMP DIAGNOSTIC: surface the real cause to the client while production
-    // is being debugged (remove `detail` once resolved).
-    const detail = `${error?.code || "unknown"}: ${String(error?.message || error).slice(0, 300)}`;
+    // Error detail is exposed ONLY outside production (local/dev debugging).
+    // Never leak internals to production clients.
+    const includeDetail = process.env.NODE_ENV !== "production";
     return NextResponse.json(
-      { error: "Matching failed. Please try again.", detail },
+      {
+        error: "Matching failed. Please try again.",
+        ...(includeDetail
+          ? { detail: `${error?.code || "unknown"}: ${String(error?.message || error).slice(0, 300)}` }
+          : {}),
+      },
       { status: 500 }
     );
   }

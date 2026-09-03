@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
-import admin, { adminDb, adminTimestamp } from "@/firebase/admin";
+import admin, { adminDb, adminTimestamp, adminCredentialsConfigured } from "@/firebase/admin";
 import {
   getRequiredSize,
   maskPhone,
@@ -90,6 +90,21 @@ async function loadCurrentUser(cleanPhone: string) {
 
 export async function POST(req: Request) {
   try {
+    // Fail fast with an actionable error when the server has no admin
+    // credentials (e.g. FIREBASE_SERVICE_ACCOUNT_KEY missing on Vercel) —
+    // otherwise every adminDb call throws and surfaces as an opaque 500.
+    if (!adminCredentialsConfigured) {
+      console.error(
+        "JOIN-GROUP ERROR: Firebase admin credentials are not configured. " +
+          "Set FIREBASE_SERVICE_ACCOUNT_KEY (single-line service-account JSON) " +
+          "in the deployment environment."
+      );
+      return NextResponse.json(
+        { error: "Server configuration error: Firebase admin credentials missing. Matching is temporarily unavailable." },
+        { status: 503 }
+      );
+    }
+
     let payload: any = {};
     try {
       payload = await req.json();

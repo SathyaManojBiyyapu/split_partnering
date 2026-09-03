@@ -72,6 +72,14 @@ if (!admin.apps.length) {
   }
 }
 
+/**
+ * True when a real service-account credential was resolved at init time.
+ * When false, every adminDb call will throw at runtime (no default
+ * credentials on Vercel) — API routes use this to fail fast with a clear,
+ * actionable error instead of an opaque 500.
+ */
+export const adminCredentialsConfigured = Boolean(resolveServiceAccount());
+
 export const adminDb = admin.firestore();
 export const adminTimestamp = admin.firestore.FieldValue.serverTimestamp;
 export default admin;

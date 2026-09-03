@@ -173,7 +173,10 @@ export async function POST(req: Request) {
       name: userData?.name || "User",
       gender: String(userData?.gender || ""),
       photoURL: String(userData?.photoURL || ""),
-      joinedAt: adminTimestamp(),
+      // NOTE: Firestore FORBIDS FieldValue.serverTimestamp() inside array
+      // fields ("members" is an array) — it throws at write time. Use a real
+      // timestamp value instead.
+      joinedAt: new Date(),
       online: true,
       paid: false,
       collaboratorId,

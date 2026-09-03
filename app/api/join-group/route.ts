@@ -142,8 +142,14 @@ export async function POST(req: Request) {
       if (decoded.phone_number) {
         verifiedPhone = decoded.phone_number.replace(/^\+91/, "").trim();
       }
-    } catch {
-      return NextResponse.json({ error: "Invalid token" }, { status: 401 });
+    } catch (error: any) {
+      // Only genuine token problems are the caller's fault → 401.
+      // Credential/infra failures must NOT masquerade as "Invalid token" —
+      // rethrow so the 500 handler surfaces the real cause.
+      if (String(error?.code || "").startsWith("auth/")) {
+        return NextResponse.json({ error: "Invalid token" }, { status: 401 });
+      }
+      throw error;
     }
 
     const requestedPhone = String(payload?.phone || "").trim();

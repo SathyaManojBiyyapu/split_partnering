@@ -19,7 +19,17 @@ import path from "node:path";
 
 function resolveServiceAccount() {
   if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
-    return JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
+    const sa = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
+    return normalizeServiceAccount(sa);
+  }
+
+  // Alternative: three discrete env vars — avoids whole-JSON paste mangling.
+  if (process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY) {
+    return normalizeServiceAccount({
+      project_id: process.env.FIREBASE_PROJECT_ID || "splitpartnering",
+      client_email: process.env.FIREBASE_CLIENT_EMAIL,
+      private_key: process.env.FIREBASE_PRIVATE_KEY,
+    });
   }
 
   const candidates = [
@@ -32,7 +42,7 @@ function resolveServiceAccount() {
   for (const filePath of candidates) {
     try {
       if (fs.existsSync(filePath)) {
-        return JSON.parse(fs.readFileSync(filePath, "utf8"));
+        return normalizeServiceAccount(JSON.parse(fs.readFileSync(filePath, "utf8")));
       }
     } catch (err) {
       console.warn(
@@ -43,6 +53,21 @@ function resolveServiceAccount() {
   }
 
   return null;
+}
+
+/**
+ * Fix the classic paste-mangling failure: when the service-account JSON is
+ * stored in an env var, the private key's newlines are often stored as literal
+ * "\n" two-character sequences. JSON.parse then yields a key whose REAL
+ * newlines were double-escaped, and google-auth-library fails only when it
+ * actually signs a token — surfacing as an opaque 500 on every admin call.
+ * A valid PEM never contains a literal backslash-n, so this replace is safe.
+ */
+function normalizeServiceAccount(sa) {
+  if (sa && typeof sa.private_key === "string" && sa.private_key.includes("\\n")) {
+    sa.private_key = sa.private_key.replace(/\\n/g, "\n");
+  }
+  return sa;
 }
 
 if (!admin.apps.length) {

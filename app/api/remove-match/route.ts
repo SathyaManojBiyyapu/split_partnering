@@ -75,8 +75,13 @@ export async function POST(req: Request) {
           phone = String((byUid.data() as any)?.phone || "").trim();
         }
       }
-    } catch {
-      return NextResponse.json({ error: "Invalid token" }, { status: 401 });
+    } catch (error: any) {
+      // Only genuine token problems → 401; infra/credential failures must
+      // surface with their real cause (see the 500 handler below).
+      if (String(error?.code || "").startsWith("auth/")) {
+        return NextResponse.json({ error: "Invalid token" }, { status: 401 });
+      }
+      throw error;
     }
     if (!phone) {
       return NextResponse.json(

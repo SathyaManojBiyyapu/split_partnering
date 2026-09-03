@@ -57,8 +57,13 @@ export async function POST(req: Request) {
         identities.push(raw, raw.replace(/^\+91/, ""));
       }
       identities = [...new Set(identities.filter(Boolean))];
-    } catch {
-      return NextResponse.json({ error: "Invalid token" }, { status: 401 });
+    } catch (error: any) {
+      // Only genuine token problems → 401; infra/credential failures must
+      // surface with their real cause (see the 500 handler below).
+      if (String(error?.code || "").startsWith("auth/")) {
+        return NextResponse.json({ error: "Invalid token" }, { status: 401 });
+      }
+      throw error;
     }
 
     // 1. Check group exists and the AUTHENTICATED caller is a member

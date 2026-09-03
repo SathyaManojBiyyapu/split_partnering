@@ -95,7 +95,13 @@ service cloud.firestore {
     ========================== */
 
     match /selections/{docId} {
-      allow read: if loggedIn() && (request.resource == null || isOwnDoc(request.resource.data.phone) || isOwnDoc(request.resource.data.uid) || isAdmin());
+      // Single-doc fetch: only your OWN selection (or admin).
+      allow get: if loggedIn() && (isOwnDoc(resource.data.phone) || isOwnDoc(resource.data.uid) || isAdmin());
+      // Collection list: any logged-in user — required for /dashboard My Matches,
+      // which loads all selections to build the partner map. Mirrors /users.
+      // (NOTE: read rules cannot use request.resource — that only exists for
+      // write requests; using it in a read rule denies everyone.)
+      allow list: if loggedIn();
       allow create: if loggedIn() && validString(request.resource.data.uid) && validString(request.resource.data.phone) && validString(request.resource.data.category) && (isOwnDoc(request.resource.data.phone) || isOwnDoc(request.resource.data.uid));
       allow update: if loggedIn() && (isOwnDoc(resource.data.phone) || isOwnDoc(resource.data.uid) || isAdmin());
       allow delete: if false;

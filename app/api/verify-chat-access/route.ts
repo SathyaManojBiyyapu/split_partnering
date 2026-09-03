@@ -1,28 +1,52 @@
 import { NextResponse } from "next/server";
-import { adminDb } from "@/firebase/admin";
+import admin, { adminDb } from "@/firebase/admin";
 
 /**
  * SERVER-SIDE chat access verification.
  * Chat is unlocked ONLY when:
- * 1. The user is a member of the group
- * 2. The user has a VERIFIED payment (status === "paid" && verified === true)
+ * 1. The caller is AUTHENTICATED (Firebase ID token) and is a member of the group
+ * 2. The caller has a VERIFIED payment (status === "paid" && verified === true)
  * 3. The chat exists for that group
  *
- * The frontend alone can never unlock chat — this endpoint is the source of truth.
+ * The caller's identity is resolved from their verified ID token — NEVER from
+ * a client-supplied uid (which could be spoofed to access another member's
+ * chat). The frontend alone can never unlock chat — this endpoint is the
+ * source of truth.
  */
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { uid, groupId } = body;
+    const { groupId } = body;
 
-    if (!uid || !groupId) {
+    if (!groupId) {
       return NextResponse.json(
         { error: "Missing required fields" },
         { status: 400 }
       );
     }
 
-    // 1. Check group exists and user is a member
+    /* --- Authenticate the caller via their Firebase ID token --- */
+    const authorization = req.headers.get("authorization") || "";
+    const idToken = authorization.replace(/^Bearer\s+/i, "").trim();
+    if (!idToken) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    let identities: string[] = [];
+    try {
+      const decoded = await admin.auth().verifyIdToken(idToken);
+      identities = [decoded.uid || ""];
+      if (decoded.phone_number) {
+        const raw = decoded.phone_number.trim();
+        // Cover every historical identity format: +91-prefixed, 10-digit, raw
+        identities.push(raw, raw.replace(/^\+91/, ""));
+      }
+      identities = [...new Set(identities.filter(Boolean))];
+    } catch {
+      return NextResponse.json({ error: "Invalid token" }, { status: 401 });
+    }
+
+    // 1. Check group exists and the AUTHENTICATED caller is a member
     const groupRef = adminDb.collection("groups").doc(groupId);
     const groupSnap = await groupRef.get();
 
@@ -36,7 +60,9 @@ export async function POST(req: Request) {
     const group = groupSnap.data();
     const members = group?.members || [];
     const memberUIDs = group?.memberUIDs || [];
-    const isMember = members.some((m: any) => m?.phone === uid || m?.uid === uid) || memberUIDs.includes(uid);
+    const isMember =
+      members.some((m: any) => identities.includes(m?.phone) || identities.includes(m?.uid)) ||
+      identities.some((id) => memberUIDs.includes(id));
 
     if (!isMember) {
       return NextResponse.json(
@@ -45,10 +71,11 @@ export async function POST(req: Request) {
       );
     }
 
-    // 2. Check verified payment exists
+    // 2. Check verified payment exists for the caller (any identity format
+    //    historically used in payment docs: 10-digit phone, +91 phone, uid)
     const paymentsRef = adminDb.collection("payments");
     const paySnap = await paymentsRef
-      .where("uid", "==", uid)
+      .where("uid", "in", identities)
       .where("groupId", "==", groupId)
       .where("status", "==", "paid")
       .where("verified", "==", true)

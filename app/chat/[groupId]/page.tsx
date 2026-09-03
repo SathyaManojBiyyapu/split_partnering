@@ -78,10 +78,14 @@ export default function ChatPage() {
           return;
         }
 
+        const idToken = await firebaseUser.getIdToken();
         const res = await fetch("/api/verify-chat-access", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ uid, groupId }),
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${idToken}`,
+          },
+          body: JSON.stringify({ groupId }),
         });
 
         const data = await res.json();

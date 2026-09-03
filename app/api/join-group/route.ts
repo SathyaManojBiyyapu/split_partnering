@@ -294,6 +294,12 @@ export async function POST(req: Request) {
       "\n",
       error?.stack || ""
     );
-    return NextResponse.json({ error: "Matching failed. Please try again." }, { status: 500 });
+    // TEMP DIAGNOSTIC: surface the real cause to the client while production
+    // is being debugged (remove `detail` once resolved).
+    const detail = `${error?.code || "unknown"}: ${String(error?.message || error).slice(0, 300)}`;
+    return NextResponse.json(
+      { error: "Matching failed. Please try again.", detail },
+      { status: 500 }
+    );
   }
 }

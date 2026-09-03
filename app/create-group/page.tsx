@@ -109,7 +109,7 @@ async function createOrJoinGroup(
   const data = await res.json().catch(() => ({}));
 
   if (!res.ok) {
-    throw new Error(data?.error || `Matching failed (${res.status})`);
+    throw new Error(data?.detail || data?.error || `Matching failed (${res.status})`);
   }
 
   return {

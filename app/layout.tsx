@@ -7,6 +7,7 @@ import Footer from "./components/Footer";
 import SupportButton from "./components/SupportButton";
 import ErrorBoundary from "./components/ErrorBoundary";
 import GoldDotsBackground from "./components/GoldDotsBackground";
+import { isStickyCtaPage } from "@/app/lib/mobileCta";
 
 import {
   AuthProvider,

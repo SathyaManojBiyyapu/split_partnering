@@ -218,7 +218,7 @@ export default function OptionsPage() {
       {/* ===== 3. SAVINGS OPPORTUNITIES HEADER ===== */}
       <section className="px-4 mt-10">
         <div className="max-w-5xl mx-auto">
-          <div className="flex items-center justify-between mb-2">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
             <h2 className="font-heading text-xl sm:text-2xl text-[#FFD166]">
               Save Money On
             </h2>
@@ -240,6 +240,23 @@ export default function OptionsPage() {
               <SubcategoryCard key={sub.slug} sub={sub} slug={slug} index={i} />
             ))}
           </div>
+        </div>
+      </section>
+
+      {/* ===== CUSTOM GROUP CTA ===== */}
+      <section className="px-4 py-2">
+        <div className="max-w-5xl mx-auto">
+          <Link
+            href={`/create-group?category=${slug}`}
+            className="block w-full p-5 rounded-2xl border border-dashed border-[#D4AF37]/40 bg-[#D4AF37]/5 text-center hover:bg-[#D4AF37]/10 transition-all hover:-translate-y-0.5"
+          >
+            <p className="text-[#FFD166] font-semibold text-sm sm:text-base">
+              ➕ Don't see your subcategory? Create your own group →
+            </p>
+            <p className="text-gray-400 text-[10px] sm:text-xs mt-1">
+              Start a new partner request under {data.title} with your own custom option. Groups stay locked to this category.
+            </p>
+          </Link>
         </div>
       </section>
 

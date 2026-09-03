@@ -507,7 +507,7 @@ function SaveContent() {
   const [selectedCollaboratorName, setSelectedCollaboratorName] = useState<string | null>(null);
 
   const categoryName = slugToCategoryName[category] || category.replace("-", " ");
-  const subcategoryName = getSubcategoryName(category, option);
+  const subcategoryName = getSubcategoryName(category, option) || option.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
   const description = getSubcategoryDescription(category, option);
   const categoryIcon = getCategoryIcon(category);
   const whatsNextText = getWhatsNextText(category);
@@ -713,6 +713,10 @@ function SaveContent() {
           <div className="mb-4 border border-emerald-500/30 bg-emerald-500/10 rounded-xl p-4">
             <p className="text-emerald-400 font-bold text-base flex items-center gap-2">✅ Partner Already Saved</p>
             <p className="text-gray-300 text-xs mt-1">You have already saved a partner match for this option. Head to your dashboard to view or manage your match.</p>
+            <p className="text-gray-400 text-[11px] mt-2">
+              Match status: {(Array.isArray(existingGroup.members) ? existingGroup.members.length : (existingGroup.membersCount || 1))}/{(existingGroup.requiredSize || getRequiredSize(option))} members
+              {String(existingGroup.status || "").toLowerCase() === "ready" ? " · Group complete — ready to unlock" : " · Still searching for a partner"}
+            </p>
             <div className="mt-3 flex gap-2">
               <button onClick={() => router.push("/dashboard")} className="px-4 py-2 rounded-lg text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition">View My Dashboard →</button>
               <button onClick={() => router.push("/categories")} className="px-4 py-2 rounded-lg text-xs font-bold bg-gray-700 text-gray-300 hover:bg-gray-600 transition">Browse Other Categories</button>

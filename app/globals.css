@@ -74,6 +74,13 @@
     -moz-osx-font-smoothing: grayscale;
   }
 
+  /* Prevent accidental horizontal scrolling on ALL viewports (including
+     narrow mobile widths) without breaking position:sticky — unlike
+     overflow-x:hidden, clip does not turn html/body into a scroll container. */
+  html, body {
+    overflow-x: clip;
+  }
+
   h1, h2, h3, h4, h5 {
     color: var(--text-heading);
     font-family: "Playfair Display", Georgia, serif;
@@ -112,6 +119,16 @@ body {
   background-position: center, 15% 30%, 85% 70%, center;
   background-repeat: no-repeat;
   background-attachment: fixed;
+}
+
+/* `background-attachment: fixed` is poorly supported on mobile browsers:
+   iOS Safari ignores it (the background just stays in the first scroll
+   position) and it can cause janky repaints/scaling on Android. On small
+   screens keep the image scrolling with the page instead. */
+@media (max-width: 640px) {
+  body {
+    background-attachment: scroll;
+  }
 }
 
 /* Let the site background show through page shells */
@@ -385,6 +402,14 @@ main > main.min-h-screen.bg-black {
     right: 16px;
     padding: 10px 18px;
     font-size: 13px;
+  }
+
+  /* On pages that render their own sticky bottom bar (landing, categories,
+     dashboard, find-partners, collaborators, offers), the global floating
+     pill is redundant and would overlap the bar / support button. The body
+     attribute is set by SupportButton (see isStickyCtaPage). */
+  body[data-sticky-cta="true"] .floating-cta {
+    display: none;
   }
 }
 

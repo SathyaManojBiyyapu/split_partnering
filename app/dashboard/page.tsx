@@ -12,9 +12,6 @@ import {
   doc,
   query,
   where,
-  updateDoc,
-  deleteDoc,
-  arrayRemove,
   addDoc,
   serverTimestamp,
 } from "firebase/firestore";
@@ -412,29 +409,38 @@ export default function DashboardPage() {
     loadSelection();
   }, [phone]);
 
-  /* Delete match */
+  /* Delete match (SOFT delete — My Matches retention) */
   const deleteMatch = async (groupId: string) => {
-    if (!confirm("Remove this match?")) return;
+    if (!confirm("Remove this match from your list?")) return;
     try {
-      const gRef = doc(db, "groups", groupId);
-      const snap = await getDoc(gRef);
-      if (!snap.exists()) return;
-      const data = snap.data() as any;
-      const members = data.members || [];
-
-      const removeMember = members.find((m: any) => {
-        if (typeof m === "string") return m.trim() === phone;
-        return m?.phone === phone || m?.uid === phone;
+      // `groups` updates are ADMINS ONLY in firestore.rules, so the removal
+      // goes through the Admin-SDK API (same pattern as /api/join-group).
+      // The server performs a SOFT delete: the group doc is never physically
+      // deleted (it is the source of truth for other members' My Matches
+      // history) — only the caller's membership is removed and recorded in
+      // deletedByUsers / deletedByUserAt for auditability.
+      const currentUser = auth.currentUser;
+      if (!currentUser) {
+        toast.error("Please log in again");
+        return;
+      }
+      const idToken = await currentUser.getIdToken();
+      const res = await fetch("/api/remove-match", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({ groupId }),
       });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.error || `HTTP ${res.status}`);
+      }
 
-      const newCount = Math.max(0, (data.membersCount || members.length) - 1);
-      await updateDoc(gRef, {
-        members: arrayRemove(removeMember),
-        memberUIDs: arrayRemove(phone),
-        membersCount: newCount,
-      });
-      if (newCount === 0) await deleteDoc(gRef);
-      toast.success("Removed successfully");
+      // Remove it from this user's view only; other members are unaffected.
+      setMatches((prev: any[]) => prev.filter((g) => g.id !== groupId));
+      toast.success("Match removed");
     } catch (err) {
       console.error(err);
       toast.error("Failed to remove");
@@ -462,7 +468,7 @@ export default function DashboardPage() {
     const info = computeGroupMatch(g.members, g.category, g.option);
     return info.matchingCount < g.requiredSize;
   }).length;
-  const completedPartnerships = paidStats.count;
+  const completedPartnerships = matches.filter(g => g.isPaid || g.status === "completed" || g.status === "expired" || isExpired(g.createdAt)).length;
   const totalSavings = paidStats.total;
   const readyMatches = matches.filter(g => {
     if (isExpired(g.createdAt)) return false;
@@ -474,7 +480,7 @@ export default function DashboardPage() {
 
   const pendingGroups = matches.filter(g => !isExpired(g.createdAt) && !g.isPaid && !(userProfile?.state ? computeGroupMatch(g.members, g.category, g.option).matchingCount >= g.requiredSize : g.membersCount >= g.requiredSize));
   const readyGroups = matches.filter(g => !isExpired(g.createdAt) && !g.isPaid && (userProfile?.state ? computeGroupMatch(g.members, g.category, g.option).matchingCount >= g.requiredSize : g.membersCount >= g.requiredSize));
-  const completedGroups = matches.filter(g => g.isPaid || g.status === "completed" || (isExpired(g.createdAt) && g.isPaid));
+  const completedGroups = matches.filter(g => g.isPaid || g.status === "completed" || g.status === "expired" || isExpired(g.createdAt));
 
   /* Group card renderer */
   const renderGroupCard = (group: Group, idx: number, section: "pending" | "ready" | "completed") => {
@@ -486,7 +492,10 @@ export default function DashboardPage() {
     const isSearching = matchingCount <= 1;
     const expiry = getExpiryStatus(group.createdAt);
     const statusInfo = getGroupStatus(group, matchingCount, required);
-    const isPaid = group.isPaid || section === "completed";
+    const isPaid = group.isPaid;
+    const isExpiredGroup =
+      group.status === "expired" ||
+      isExpired(group.createdAt);
     const businessName = group.collaboratorBrand || group.collaboratorId || latestSelection?.collaboratorName || latestSelection?.collaboratorId || "";
 
     return (
@@ -529,7 +538,7 @@ export default function DashboardPage() {
           </div>
 
           {/* Progress */}
-          {!isPaid && (
+          {!isPaid && !isExpiredGroup && (
             <div className="mb-3">
               <div className="flex items-center justify-between text-[11px] mb-1.5">
                 <span className="text-gray-400">
@@ -581,7 +590,11 @@ export default function DashboardPage() {
         {/* Actions footer */}
         <div className="border-t border-white/5 px-5 py-3 flex gap-2 flex-wrap bg-black/20">
           {!isPaid ? (
-            matchingCount >= required ? (
+            isExpiredGroup ? (
+              <button disabled className="px-4 py-2 rounded-xl bg-gray-800 text-gray-500 text-xs font-bold cursor-not-allowed">
+                ⌛ Match expired
+              </button>
+            ) : matchingCount >= required ? (
               <button onClick={() => (window.location.href = `/payment?groupId=${group.id}`)}
                 className="btn-primary text-xs px-4 py-2">
                 🔓 Unlock for ₹29
@@ -715,7 +728,7 @@ export default function DashboardPage() {
           {completedGroups.length > 0 && (
             <div>
               <h2 className="text-lg font-semibold text-[#FFD166] mb-4 flex items-center gap-2">
-                <span className="text-emerald-400">🏆</span> Completed Partnerships
+                <span className="text-emerald-400">🏆</span> Completed & Past Partnerships
                 <span className="text-xs text-gray-500 font-normal">({completedGroups.length})</span>
               </h2>
               <div className="space-y-4">

@@ -26,17 +26,21 @@ function isCronAuthorized(req: Request): boolean {
 }
 
 /**
- * SERVER-SIDE automatic group expiration + deletion.
+ * SERVER-SIDE automatic group expiration.
  *
  * Business rule: A match/group remains valid for 6 MONTHS (180 days) from
- * creation. Groups that are still unpaid after 180 days are DELETED so the
- * members are freed up and can create a new match.
+ * creation. Groups that are still unpaid after 180 days are marked
+ * `status: "expired"` so they stop being matched into — but the group doc is
+ * NEVER deleted, because it is the source of truth for the My Matches history
+ * (retention requirement: a match stays visible until the USER explicitly
+ * deletes/removes it).
  *
  * This runs via Vercel Cron (see vercel.json) and uses the Admin SDK,
  * so it is NOT dependent on any frontend timer.
  *
  * Safety:
  * - Protected: requires Authorization: Bearer <CRON_SECRET>.
+ * - Only marks groups as "expired" — never hard-deletes (preserves My Matches history / audit / payment records).
  * - Only touches groups where NO member has paid (paid: true).
  * - Only touches groups with status "waiting" or "ready" (never "completed").
  * - Uses server-side timestamps for createdAt comparison.
@@ -60,11 +64,11 @@ export async function GET(req: Request) {
       .where("status", "in", ["waiting", "ready"])
       .get();
 
-    let deletedCount = 0;
+    let expiredCount = 0;
     let skippedActive = 0;
 
     type Pending = { groupRef: any; groupId: string };
-    const toDelete: Pending[] = [];
+    const toExpire: Pending[] = [];
 
     snapshot.forEach((doc) => {
       const data = doc.data();
@@ -79,13 +83,13 @@ export async function GET(req: Request) {
       const createdMs = createdAt.toMillis();
       const ageMs = now - createdMs;
 
-      // Only delete groups older than 6 months (180 days)
+      // Only expire groups older than 6 months (180 days)
       if (ageMs < EXPIRY_MS) {
         skippedActive++;
         return;
       }
 
-      // Check if ANY member has paid — if so, never expire/delete
+      // Check if ANY member has paid — if so, never expire
       const members = Array.isArray(data?.members) ? data.members : [];
       const hasPaidMember = members.some((m: any) => m?.paid === true);
       if (hasPaidMember) {
@@ -93,13 +97,13 @@ export async function GET(req: Request) {
         return;
       }
 
-      toDelete.push({ groupRef: doc.ref, groupId: doc.id });
+      toExpire.push({ groupRef: doc.ref, groupId: doc.id });
     });
 
     // Firestore batches are capped at 500 operations — chunk to stay safe.
     const CHUNK = 400;
-    for (let i = 0; i < toDelete.length; i += CHUNK) {
-      const chunk = toDelete.slice(i, i + CHUNK);
+    for (let i = 0; i < toExpire.length; i += CHUNK) {
+      const chunk = toExpire.slice(i, i + CHUNK);
       const batch = adminDb.batch();
 
       for (const { groupRef, groupId } of chunk) {
@@ -114,17 +118,24 @@ export async function GET(req: Request) {
             expiredAt: adminTimestamp(),
           });
         });
-        // Hard-delete the group so members can create a new match.
-        batch.delete(groupRef);
+
+        // Soft-expire ONLY — the group doc itself is NEVER deleted so it stays
+        // in My Matches history until the user explicitly removes it.
+        batch.update(groupRef, {
+          status: "expired",
+          expiresAt: adminTimestamp(),
+          expiredAt: adminTimestamp(),
+          lastActivityAt: adminTimestamp(),
+        });
       }
 
       await batch.commit();
-      deletedCount += chunk.length;
+      expiredCount += chunk.length;
     }
 
     return NextResponse.json({
       success: true,
-      deletedCount,
+      expiredCount,
       skippedActive,
       checked: snapshot.size,
     });

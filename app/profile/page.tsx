@@ -169,8 +169,11 @@ export default function ProfilePage() {
       await setDoc(
         userRef,
         {
-          phone: docPhone,
-          name: pick(name, "name"),
+          // FIXED account identity — never overwrite an existing saved value.
+          // - phone: preserve the stored identity (existing field wins).
+          // - name: preserved forever once saved (existing field wins).
+          phone: existingData.phone?.trim() ? existingData.phone : docPhone,
+          name: existingData.name?.trim() ? existingData.name : (name?.trim() || ""),
           city: pick(city, "city"),
           district: pick(district, "district"),
           state: pick(stateVal, "state"),
@@ -232,6 +235,7 @@ export default function ProfilePage() {
   }
 
   const profileStrength = [name, city, gender, bio, interests, college, photoURL].filter(Boolean).length * 15;
+  const nameLocked = !guest && !!name; // fixed after registration / first save
 
   return (
     <div className="text-white pt-28 flex flex-col items-center gap-8 px-6 pb-20 max-w-3xl mx-auto">
@@ -276,8 +280,12 @@ export default function ProfilePage() {
               value={name}
               onChange={(e) => setName(e.target.value)}
               className="input w-full"
-              disabled={guest}
+              readOnly={nameLocked}
+              disabled={guest || nameLocked}
             />
+            {nameLocked && (
+              <p className="text-[10px] text-gray-500 mt-1.5">🔒 Your name is fixed after saving and cannot be changed.</p>
+            )}
           </div>
 
           <div>
@@ -387,6 +395,17 @@ export default function ProfilePage() {
               ))}
             </select>
           </div>
+
+          {/* Current matching location */}
+          <div className="border border-[#D4AF37]/20 bg-[#D4AF37]/5 rounded-xl p-3">
+            <p className="text-[10px] text-gray-400 mb-1">📍 Current Matching Location</p>
+            <p className="text-sm font-semibold text-[#FFD166]">
+              {city || "—"}, {district || "—"}, {stateVal || "—"}
+            </p>
+            <p className="text-[10px] text-gray-500 mt-0.5">
+              Your new "Make Partner" matches will use this location. Existing matches stay in My Matches.
+            </p>
+          </div>
         </div>
       </section>
 
@@ -478,6 +497,7 @@ export default function ProfilePage() {
             <div>
               <p className="text-sm font-medium text-white">Phone</p>
               <p className="text-xs text-gray-500">+91 {phone || "Not set"}</p>
+              <p className="text-[10px] text-gray-600 mt-0.5">Your phone number is your fixed account ID and cannot be changed.</p>
             </div>
             <span className="text-xs text-green-400 font-medium">✓ Verified</span>
           </div>

@@ -2,7 +2,7 @@
 
 import { Suspense, useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { db, auth } from "@/firebase/config";
 import { doc, getDoc } from "firebase/firestore";
 import { categoryData, slugToCategoryName, masterCategories } from "@/app/data/subcategories";
@@ -135,6 +135,7 @@ function getSubcategoryName(categorySlug: string, optionSlug: string): string {
 ------------------------------------------ */
 function CreateGroupContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [mounted, setMounted] = useState(false);
   const [phone, setPhone] = useState<string | null>(null);
@@ -142,7 +143,7 @@ function CreateGroupContent() {
   const [loading, setLoading] = useState(false);
 
   // Form state
-  const [category, setCategory] = useState("");
+  const [category, setCategory] = useState(searchParams.get("category") || "");
   const [option, setOption] = useState("");
   const [brand, setBrand] = useState("");
   const [state, setState] = useState("");
@@ -238,7 +239,19 @@ function CreateGroupContent() {
 
     try {
       setLoading(true);
-      const result = await createOrJoinGroup(category, optionSlug, phone, {
+      // Map the selected subcategory NAME to its canonical slug when one exists
+      // (e.g. "Gym Membership Split" → "split") so groups created here share the
+      // exact same option key used by the /save subcategory flow — guaranteeing
+      // that a custom group never mixes with groups of a different subcategory.
+      const canonicalSubs = categoryData[category]?.subcategories || [];
+      const canonicalMatch = canonicalSubs.find(
+        (s) =>
+          s.name.toLowerCase() === option.trim().toLowerCase() ||
+          s.slug === optionSlug
+      );
+      const finalOption = canonicalMatch?.slug || optionSlug;
+
+      const result = await createOrJoinGroup(category, finalOption, phone, {
         collaboratorId: brand || undefined,
         collaboratorName: brand || undefined,
         requiredSize,

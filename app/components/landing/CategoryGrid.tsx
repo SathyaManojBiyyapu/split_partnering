@@ -44,11 +44,11 @@ export default function CategoryGrid() {
     <section className="py-12 sm:py-16 px-4">
       <div className="max-w-5xl mx-auto">
         {/* Section header */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
           <h2 className="font-heading text-xl sm:text-2xl text-white">
             Start Saving Now
           </h2>
-          <div className="flex gap-1">
+          <div className="flex flex-wrap justify-end gap-1">
             {filters.map((tab) => (
               <button
                 key={tab}

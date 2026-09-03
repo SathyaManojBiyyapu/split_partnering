@@ -212,7 +212,7 @@ export default function ChatPage() {
 
   /* ---------------- CHAT UI ---------------- */
   return (
-    <div className="h-screen bg-black text-white flex flex-col">
+    <div className="h-dvh bg-black text-white flex flex-col">
       {/* HEADER */}
       <div className="p-4 border-b border-gray-700 flex justify-between items-center">
         <div>
@@ -291,7 +291,7 @@ export default function ChatPage() {
       </div>
 
       {/* INPUT */}
-      <div className="p-4 border-t border-gray-700 flex gap-2">
+      <div className="p-4 border-t border-gray-700 flex gap-2 pb-[calc(1rem+env(safe-area-inset-bottom))]">
         <input
           type="text"
           value={newMessage}

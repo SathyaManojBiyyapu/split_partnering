@@ -43,6 +43,9 @@ type Group = {
   isPaid?: boolean;
   collaboratorBrand?: string;
   collaboratorId?: string;
+  state?: string;
+  district?: string;
+  city?: string;
 };
 
 type PartnerMatch = {
@@ -376,6 +379,9 @@ export default function DashboardPage() {
             isPaid: paidGroups.has(docSnap.id),
             collaboratorBrand: data.collaboratorBrand || "",
             collaboratorId: data.collaboratorId || "",
+            state: data.state || "",
+            district: data.district || "",
+            city: data.city || "",
           });
         });
 
@@ -507,6 +513,20 @@ export default function DashboardPage() {
       group.status === "expired" ||
       isExpired(group.createdAt);
     const businessName = group.collaboratorBrand || group.collaboratorId || latestSelection?.collaboratorName || latestSelection?.collaboratorId || "";
+    // Two-line My Matches hierarchy:
+    //   Line 1: State → District → City
+    //   Line 2: Category → Subcategory → Gym/Group (when one was selected)
+    const locLine =
+      [
+        group.state || userProfile?.state || "",
+        group.district || userProfile?.district || "",
+        group.city || userProfile?.city || group.members?.[0]?.city || "",
+      ]
+        .filter(Boolean)
+        .join(" → ") || "Location not set";
+    const hierarchyLine =
+      `${getCategoryDisplayName(group.category)} → ${getSubcategoryDisplayName(group.category, group.option)}` +
+      (businessName ? ` → ${businessName}` : "");
 
     return (
       <motion.div
@@ -523,12 +543,14 @@ export default function DashboardPage() {
               <h3 className="text-base font-bold text-white font-heading leading-tight">
                 {getSubcategoryDisplayName(group.category, group.option)}
               </h3>
-              <p className="text-[11px] text-gray-400 mt-0.5">
-                Category: {getCategoryDisplayName(group.category)}
+              <p className="text-[11px] text-gray-300 mt-1 flex items-center gap-1 flex-wrap">
+                <svg className="w-3 h-3 text-gray-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                {locLine}
               </p>
-              {businessName && (
-                <p className="text-[11px] text-gray-400 mt-0.5">🏪 {businessName}</p>
-              )}
+              <p className="text-[11px] text-[#D4AF37] mt-0.5 break-words">{hierarchyLine}</p>
             </div>
             <div className={`px-2.5 py-1 rounded-full text-[10px] font-bold shrink-0 ${statusInfo.color}`}>
               {statusInfo.label}
@@ -537,15 +559,6 @@ export default function DashboardPage() {
 
           {/* Divider */}
           <div className="section-divider-light mb-3" />
-
-          {/* Location */}
-          <div className="flex items-center gap-2 text-xs mb-3">
-            <svg className="w-3.5 h-3.5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-            <span className="text-gray-300">{userProfile?.city || group.members[0]?.city || "Not set"}</span>
-          </div>
 
           {/* Progress */}
           {!isPaid && !isExpiredGroup && (

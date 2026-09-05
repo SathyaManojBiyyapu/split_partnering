@@ -42,7 +42,10 @@ service cloud.firestore {
       return loggedIn() && (
         phone == myPhone() ||
         phone == request.auth.token.phone_number ||
-        phone == request.auth.uid
+        phone == request.auth.uid ||
+        // Legacy docs keyed as "91XXXXXXXXXX" (country code without '+'):
+        // still strictly the caller's OWN phone — never another user's doc.
+        (myPhone() != null && phone == '91' + myPhone())
       );
     }
 

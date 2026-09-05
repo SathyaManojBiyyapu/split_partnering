@@ -50,9 +50,9 @@ export async function POST(req: Request) {
     const category = String(payload?.category || "").trim();
     const categorySlug = String(payload?.categorySlug || "").trim();
     const subCategory = String(payload?.subCategory || "").trim();
-    const state = String(payload?.state || "").trim();
-    const district = String(payload?.district || "").trim();
-    const city = String(payload?.city || "").trim();
+    let state = String(payload?.state || "").trim();
+    let district = String(payload?.district || "").trim();
+    let city = String(payload?.city || "").trim();
     const createdBy = String(payload?.createdBy || "").trim();
     const createdByName = String(payload?.createdByName || "").trim();
     const createdByEmail = String(payload?.createdByEmail || "").trim();
@@ -85,6 +85,32 @@ export async function POST(req: Request) {
     }
     const submitterPhone = callerPhone || createdByPhone || createdBy || "anonymous";
     const submitterName = createdByName || "Anonymous";
+
+    /* --- AUTHORITATIVE LOCATION: the authenticated user's saved profile ---
+       The client payload can carry a wrong fallback (e.g. district used as
+       city when the profile save had failed). The Firestore profile is the
+       source of truth for State → District → City, so a gym submitted from
+       Tenali is stored under Tenali — never the district name. */
+    if (callerPhone) {
+      let userSnap = await adminDb.collection("users").doc(callerPhone).get();
+      if (!userSnap.exists) {
+        // Legacy docs are keyed as "91XXXXXXXXXX" — try that form too.
+        userSnap = await adminDb.collection("users").doc(`91${callerPhone}`).get();
+      }
+      const up = (userSnap.data() || {}) as any;
+      const pState = String(up?.state || "").trim();
+      const pDistrict = String(up?.district || "").trim();
+      const pCity = String(up?.city || "").trim();
+      if (!pState || !pDistrict || !pCity) {
+        return NextResponse.json(
+          { error: "Please complete your profile with State, District, and City first." },
+          { status: 400 }
+        );
+      }
+      state = pState;
+      district = pDistrict;
+      city = pCity;
+    }
 
     // --- Duplicate check (normalized name + category + city) ---
     const dupName = norm(businessName);

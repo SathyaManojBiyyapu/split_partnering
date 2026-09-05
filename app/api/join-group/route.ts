@@ -85,7 +85,14 @@ async function ensureChat(groupId: string, members: any[], memberUIDs: string[])
 
 async function loadCurrentUser(cleanPhone: string) {
   const userDoc = await adminDb.collection("users").doc(cleanPhone).get();
-  return userDoc.exists ? userDoc.data() : {};
+  if (userDoc.exists) return userDoc.data();
+  // Legacy docs are keyed as "91XXXXXXXXXX" (country code, no '+').
+  // Fall back so legacy users are not treated as having no profile.
+  const legacyDoc = await adminDb
+    .collection("users")
+    .doc(`91${cleanPhone}`)
+    .get();
+  return legacyDoc.exists ? legacyDoc.data() : {};
 }
 
 export async function POST(req: Request) {
@@ -160,11 +167,43 @@ export async function POST(req: Request) {
 
     /* --- Load user profile (name + location) --- */
     const userData = await loadCurrentUser(cleanPhone);
+
+    /* --- MANDATORY-PROFILE GATE ---
+       A user with an incomplete profile must NEVER create/join a group.
+       This is what previously produced "Location not set" cards and groups
+       keyed with district-as-city. Block clearly before any group is read. */
+    const profName = String(userData?.name || "").trim();
+    const profGender = String(userData?.gender || "").trim();
+    const profState = String(userData?.state || "").trim();
+    const profDistrict = String(userData?.district || "").trim();
+    const profCity = String(userData?.city || "").trim();
+    if (!profName || !profGender || !profState || !profDistrict || !profCity) {
+      return NextResponse.json(
+        {
+          error:
+            "Please complete your profile (name, gender, state, district, and city) before making a partner.",
+          code: "PROFILE_INCOMPLETE",
+        },
+        { status: 409 }
+      );
+    }
+
     // Matching criteria = exactly what the user selected. Prefer explicit
-    // location overrides (Create Group form) and fall back to the profile.
-    const state = String(payload?.state || userData?.state || "").trim();
-    const district = String(payload?.district || userData?.district || "").trim();
-    const city = String(payload?.city || userData?.city || "").trim();
+    // location overrides (Create Group form); the profile is the fallback.
+    // Because the gate above guarantees a complete profile, city can no
+    // longer fall back to the district or any placeholder value.
+    const state = String(payload?.state || profState).trim();
+    const district = String(payload?.district || profDistrict).trim();
+    const city = String(payload?.city || profCity).trim();
+    if (!state || !district || !city) {
+      return NextResponse.json(
+        {
+          error: "Your location (State → District → City) is incomplete. Please finish your profile first.",
+          code: "LOCATION_MISSING",
+        },
+        { status: 409 }
+      );
+    }
 
     const memberObject = {
       uid: cleanPhone,

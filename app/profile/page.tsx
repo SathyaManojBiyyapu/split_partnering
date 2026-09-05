@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { db, storage, auth } from "@/firebase/config";
-import { signOut } from "firebase/auth";
+import { signOut, onAuthStateChanged, type User } from "firebase/auth";
 import { doc, setDoc } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { resolveExistingUserDoc, normalizePhone } from "@/app/lib/userLookup";
@@ -141,18 +141,33 @@ export default function ProfilePage() {
     try {
       setSaving(true);
 
-      // Force-refresh auth before save too
-      if (auth.currentUser) {
-        try {
-          await auth.currentUser.reload();
-          await auth.currentUser.getIdToken(true);
-        } catch (_) {}
+      // AUTH TIMING FIX: right after OTP login, Firebase Auth may still be
+      // restoring the session when the user hits Save. Writing before
+      // currentUser exists is ALWAYS denied by the rules ("Missing or
+      // insufficient permissions"). Wait briefly for auth to restore and
+      // fail with a retryable message instead of attempting a doomed write.
+      let currentUser = auth.currentUser;
+      if (!currentUser) {
+        for (let i = 0; i < 20 && !auth.currentUser; i++) {
+          await new Promise((r) => setTimeout(r, 250));
+        }
+        currentUser = auth.currentUser;
+      }
+      if (!currentUser) {
+        setSaving(false);
+        toast.error("Still signing you in… please try again in a moment.");
+        return;
       }
 
-      const currentUser = auth.currentUser;
-      const authPhoneRaw = currentUser?.phoneNumber || null;
+      // Force-refresh the token so the rules evaluate fresh auth claims.
+      try {
+        await currentUser.reload();
+        await currentUser.getIdToken(true);
+      } catch (_) {}
+
+      const authPhoneRaw = currentUser.phoneNumber || null;
       const authPhone = authPhoneRaw ? authPhoneRaw.replace(/^\+91/, "").trim() : null;
-      const authUid = currentUser?.uid || null;
+      const authUid = currentUser.uid || null;
 
       // Resolve the EXISTING member doc first so we update it in place instead
       // of creating a duplicate/new document for a phone that already exists.

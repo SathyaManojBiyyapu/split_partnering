@@ -193,7 +193,7 @@ export async function POST(req: Request) {
         .limit(100)
         .get();
 
-      const best = pickOldestOpen(snap.docs, { state, district, city, option, phone: cleanPhone });
+      const best = pickOldestOpen(snap.docs, { state, district, city, option, phone: cleanPhone, collaboratorId });
 
       if (!best) {
         // ---- No compatible open group → create a brand-new 1/x group ----

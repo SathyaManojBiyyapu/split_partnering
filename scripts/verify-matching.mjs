@@ -86,6 +86,8 @@ function createGroup(store, category, option, memberObject, phone, extra = {}) {
     state: extra.state,
     district: extra.district,
     city: extra.city,
+    collaboratorId: extra.collaboratorId || "",
+    collaboratorBrand: extra.collaboratorName || "",
     members: [memberObject],
     memberUIDs: [phone],
     membersCount: 1,
@@ -98,15 +100,15 @@ function createGroup(store, category, option, memberObject, phone, extra = {}) {
 }
 
 // Replicates /api/join-group's retry loop exactly.
-function routeProcess(store, { category, option, phone, state, district, city, requestedRequiredSize, extra = {} }) {
+function routeProcess(store, { category, option, phone, state, district, city, requestedRequiredSize, collaboratorId, extra = {} }) {
   const memberObject = { phone, uid: phone, name: "User-" + phone };
   for (let attempt = 0; attempt < 4; attempt++) {
     const candidates = store.query(category, option);
-    const best = pickOldestOpen(candidates, { state, district, city, option, phone });
+    const best = pickOldestOpen(candidates, { state, district, city, option, phone, collaboratorId: collaboratorId || "" });
 
     if (!best) {
       const r = createGroup(store, category, option, memberObject, phone, {
-        state, district, city, requiredSize: requestedRequiredSize, ...extra,
+        state, district, city, requiredSize: requestedRequiredSize, collaboratorId, ...extra,
       });
       return r;
     }
@@ -226,6 +228,36 @@ console.log("\n== Scenario 1: User1→1/2, User2 joins→2/2, User3→new 1/2, U
     const loserGroup = store.get(losers[0].groupId);
     check(loserGroup.membersCount === 1 && loserGroup.status === "waiting", "Loser's group is a clean new 1/2 (waiting)");
   }
+  check(!store.all().some((g) => g.membersCount > g.requiredSize), "No over-capacity group anywhere");
+}
+
+/* ------------------------------------------------------------------ */
+/* SCENARIO 4 — gym layer: users only match within the SAME gym        */
+/* ------------------------------------------------------------------ */
+{
+  console.log("\n== Scenario 4: same-gym matching (category + subcategory + gym + location) ==");
+  const store = makeStore();
+  const criteria = { category: "gym", option: "split", state: "Andhra Pradesh", district: "Krishna", city: "Vijayawada" };
+
+  // U1 joins Cult Fit (gym-specific), U2 same gym → share group.
+  const r1 = routeProcess(store, { ...criteria, phone: "910000000001", collaboratorId: "cultfit-vja", collaboratorName: "Cult Fit" });
+  const r2 = routeProcess(store, { ...criteria, phone: "910000000002", collaboratorId: "cultfit-vja", collaboratorName: "Cult Fit" });
+  check(r1.groupId === r2.groupId && r1.status === "created", "Same-gym users share a group (U1 1/2 → U2 2/2 same group)");
+  check(store.get(r1.groupId).status === "ready", "Same-gym group is ready after 2 same-gym users");
+
+  // A generic (no gym) user must NOT join the Cult Fit group.
+  const r3 = routeProcess(store, { ...criteria, phone: "910000000003" });
+  check(r3.groupId !== r1.groupId, "Generic user does NOT join a gym-specific group (separate group)");
+  check(store.get(r1.groupId).memberUIDs.length === 2, "Cult Fit group unchanged by generic user");
+
+  // Same location + subcategory but DIFFERENT gym → different groups.
+  const r4 = routeProcess(store, { ...criteria, phone: "910000000004", collaboratorId: "goldshym-vja", collaboratorName: "Gold's Gym" });
+  check(r4.groupId !== r1.groupId && r4.groupId !== r3.groupId, "Different gym → different group");
+
+  // Two users of Gold's Gym (different city) must NOT join Vijayawada's group.
+  const r5 = routeProcess(store, { ...criteria, city: "Guntur", phone: "910000000005", collaboratorId: "goldshym-vja", collaboratorName: "Gold's Gym" });
+  check(r5.groupId !== r4.groupId, "Same gym but different city → separate group (location respected)");
+
   check(!store.all().some((g) => g.membersCount > g.requiredSize), "No over-capacity group anywhere");
 }
 

@@ -67,26 +67,28 @@ export async function submitUserCollaboration(data: {
   createdByEmail: string;
   createdByPhone: string;
 }) {
-  const collabRef = collection(db, "userCollaborations");
-  const docRef = await addDoc(collabRef, {
-    businessName: data.businessName,
-    category: data.category,
-    categorySlug: data.categorySlug,
-    subCategory: data.subCategory,
-    state: data.state,
-    district: data.district,
-    city: data.city,
-    createdBy: data.createdBy,
-    createdByName: data.createdByName,
-    createdByEmail: data.createdByEmail,
-    createdByPhone: data.createdByPhone,
-    submittedAt: serverTimestamp(),
-    status: "pending",
-    verified: false,
-    image: null,
-    source: "user",
+  // Submissions go through the server route (/api/submit-gym) so duplicates
+  // are prevented and the pending record is created with admin privileges
+  // (userCollaborations is admin-read-only in firestore.rules).
+  const { getAuth } = await import("firebase/auth");
+  const currentUser = getAuth().currentUser;
+  if (!currentUser) {
+    throw new Error("Please login first.");
+  }
+  const idToken = await currentUser.getIdToken();
+  const res = await fetch("/api/submit-gym", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${idToken}`,
+    },
+    body: JSON.stringify(data),
   });
-  return docRef.id;
+  const result = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(result?.error || `Submission failed (${res.status})`);
+  }
+  return result?.id || "";
 }
 
 /* ----------------------------------------

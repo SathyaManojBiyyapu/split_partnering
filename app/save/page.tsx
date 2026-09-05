@@ -505,6 +505,10 @@ function SaveContent() {
   const [activeSubcategories, setActiveSubcategories] = useState<string[]>([]);
   const [selectedCollaboratorId, setSelectedCollaboratorId] = useState<string | null>(null);
   const [selectedCollaboratorName, setSelectedCollaboratorName] = useState<string | null>(null);
+  // Approved gyms/businesses available for this subcategory in the user's area.
+  // When any exist, the user MUST pick one — matching happens at the gym level,
+  // so a generic "Make Partner" without a gym would bypass the gym layer.
+  const [approvedGymCount, setApprovedGymCount] = useState(0);
 
   const categoryName = slugToCategoryName[category] || category.replace("-", " ");
   const subcategoryName = getSubcategoryName(category, option) || option.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
@@ -641,6 +645,21 @@ function SaveContent() {
 
     try {
       setLoading(true);
+
+      // Gym layer: when approved gyms exist for this subcategory, matching must
+      // run for a specific gym — never silently create a generic group.
+      if (
+        approvedGymCount > 0 &&
+        !selectedCollaboratorId &&
+        !(selectedCollaboratorName)
+      ) {
+        setLoading(false);
+        toast.error(
+          "Please select a gym/business first — you'll be matched with people who chose the same one."
+        );
+        return;
+      }
+
       const result = await createOrJoinGroup(
         category,
         option,
@@ -803,6 +822,7 @@ function SaveContent() {
             categorySlug={category}
             subcategory={subcategoryName}
             buttonLabel="Make Partner →"
+            onCountChange={setApprovedGymCount}
             onMakePartner={async (business) => {
               if (!mounted) return;
               if (!phone) {
@@ -869,9 +889,29 @@ function SaveContent() {
             disabled={loading}
             className="px-8 py-3.5 rounded-xl font-semibold text-sm bg-[#D4AF37] text-black hover:bg-[#E6C97A] hover:-translate-y-0.5 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loading ? "Saving..." : existingGroup ? "Partner Already Saved ✓" : "Make Partner"}
+            {loading
+              ? "Saving..."
+              : existingGroup
+              ? "Partner Already Saved ✓"
+              : approvedGymCount > 0 && !selectedCollaboratorId
+              ? "Select a Gym to Continue →"
+              : selectedCollaboratorName
+              ? `Make Partner at ${selectedCollaboratorName}`
+              : "Make Partner"}
           </button>
         </div>
+
+        {/* GYM LAYER HINT */}
+        {approvedGymCount > 0 && !selectedCollaboratorId && (
+          <p className="text-center text-[11px] text-amber-300/80 mt-3">
+            🔒 Step 1: select a gym above → Step 2: we match you only with people who chose the same gym.
+          </p>
+        )}
+        {selectedCollaboratorName && (
+          <p className="text-center text-[11px] text-green-400/80 mt-3">
+            ✓ Your match will run for: {selectedCollaboratorName}
+          </p>
+        )}
 
         {/* BACK LINK */}
         <div className="mt-6 text-center">

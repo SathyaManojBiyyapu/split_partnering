@@ -73,6 +73,21 @@ export function matchesLocation(g: any, state: string, district: string, city: s
   return norm(g?.state) === norm(state) && norm(g?.district) === norm(district) && norm(g?.city) === norm(city);
 }
 
+/**
+ * Same gym/group match (collaboratorId).
+ * Gym/group is the new layer underneath subcategory: users are ONLY matched
+ * with people who selected the same approved gym/group. A request without a
+ * gym (legacy generic) only matches groups that ALSO have no gym, keeping the
+ * old behavior intact for categories/gyms that have no marketplace entries.
+ */
+export function matchesGroupKey(g: any, collaboratorId: string): boolean {
+  const requested = norm(collaboratorId || "");
+  const stored = norm(g?.collaboratorId || "");
+  if (requested) return stored === requested;
+  // No gym requested → only generic (gym-less) groups are compatible.
+  return stored === "";
+}
+
 /** A group is open for join while its status is an open/pending value. */
 export function isOpen(g: any): boolean {
   return OPEN_STATUSES.includes(String(g?.status || "waiting").toLowerCase());
@@ -104,7 +119,7 @@ export interface GroupDoc<T = any> {
 
 export function pickOldestOpen<T extends { data(): any }>(
   docs: T[],
-  args: { state: string; district: string; city: string; option: string; phone: string }
+  args: { state: string; district: string; city: string; option: string; phone: string; collaboratorId?: string }
 ): T | null {
   let best: T | null = null;
   let bestKey = Number.MAX_SAFE_INTEGER;
@@ -113,6 +128,7 @@ export function pickOldestOpen<T extends { data(): any }>(
     const g = d.data();
     if (!isOpen(g)) continue;
     if (!matchesLocation(g, args.state, args.district, args.city)) continue;
+    if (!matchesGroupKey(g, args.collaboratorId || "")) continue;
     if (isMember(g, args.phone)) continue;
     if (memberCount(g) >= resolveRequired(g, args.option)) continue;
 

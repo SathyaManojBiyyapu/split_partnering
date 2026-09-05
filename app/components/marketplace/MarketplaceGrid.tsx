@@ -15,6 +15,7 @@ interface MarketplaceGridProps {
   buttonLabel?: string;
   buttonHrefBuilder?: (business: MarketplaceBusiness) => string;
   onMakePartner?: (business: MarketplaceBusiness) => void;
+  onCountChange?: (count: number) => void;
   showAddButton?: boolean;
   addButtonType?: "business" | "collaborator";
   emptyMessage?: string;
@@ -26,6 +27,7 @@ export default function MarketplaceGrid({
   buttonLabel = "Make Partner →",
   buttonHrefBuilder,
   onMakePartner,
+  onCountChange,
   showAddButton = true,
   addButtonType = "business",
   emptyMessage,
@@ -45,6 +47,7 @@ export default function MarketplaceGrid({
   useEffect(() => {
     if (!location.state || !location.district || !location.city) {
       setLoading(false);
+      onCountChange?.(0);
       return;
     }
 
@@ -61,17 +64,19 @@ export default function MarketplaceGrid({
         if (err) {
           setError(err);
           setLoading(false);
+          onCountChange?.(0);
           return;
         }
         setBusinesses(data);
         setLoading(false);
+        onCountChange?.(Array.isArray(data) ? data.length : 0);
       }
     );
 
     return () => {
       if (typeof unsub === "function") unsub();
     };
-  }, [categorySlug, subcategory, location.state, location.district, location.city]);
+  }, [categorySlug, subcategory, location.state, location.district, location.city, onCountChange]);
 
   // Search filter
   const filteredBusinesses = searchQuery

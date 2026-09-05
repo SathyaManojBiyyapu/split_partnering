@@ -244,7 +244,10 @@ service cloud.firestore {
 
     match /userCollaborations/{docId} {
       allow read: if isAdmin();
-      allow create: if loggedIn() && validString(request.resource.data.businessName) && validString(request.resource.data.category) && validString(request.resource.data.state) && validString(request.resource.data.district) && validString(request.resource.data.city) && validString(request.resource.data.createdBy) && validString(request.resource.data.createdByName) && validString(request.resource.data.createdByPhone) && request.resource.data.status == "pending";
+      // Submissions are created by the SERVER route /api/submit-gym (which runs
+      // duplicate checks + pending workflow) — the client cannot write here, so
+      // duplicates can't bypass the approval queue.
+      allow create: if isAdmin();
       allow update: if isAdmin();
       allow delete: if false;
     }

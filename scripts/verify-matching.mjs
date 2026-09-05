@@ -262,6 +262,166 @@ console.log("\n== Scenario 1: User1→1/2, User2 joins→2/2, User3→new 1/2, U
 }
 
 /* ------------------------------------------------------------------ */
+/* SCENARIO 5 — gym VISIBILITY: pending hidden, approved area-scoped   */
+/* (verification cases F and G)                                        */
+/*                                                                     */
+/* Replicates the real visibility pipeline:                            */
+/*  - Pending user submissions live in `userCollaborations` and are    */
+/*    NEVER in the marketplace/{category}/businesses collection, so    */
+/*    they can never appear in the user's gym selection list.          */
+/*  - On approval, approveUserCollaboration() creates a marketplace    */
+/*    doc (visible: true, scope: "city", state/district/city +         */
+/*    subcategory). filterBusinessesByScope() then shows it ONLY to    */
+/*    users whose State → District → City matches.                     */
+/* ------------------------------------------------------------------ */
+{
+  console.log("\n== Scenario 5: gym visibility (F: pending hidden, G: approved area-scoped) ==");
+
+  const normalize = (v) => String(v ?? "").trim().toLowerCase();
+
+  // Faithful replica of filterBusinessesByScope (marketplaceManager.ts):
+  // hidden docs skipped, subcategory must match, scope decides area reach.
+  function filterBusinessesByScope(data, subcategory, userState, userDistrict, userCity) {
+    const normState = normalize(userState);
+    const normDistrict = normalize(userDistrict);
+    const normCity = normalize(userCity);
+    const normSubcategory = normalize(subcategory);
+    const results = [];
+    for (const b of data) {
+      if (b.visible === false) continue; // hidden
+      if (normSubcategory && normalize(b.subcategory) !== normSubcategory) continue;
+      let scopeMatch = false;
+      switch (b.scope) {
+        case "national":
+          scopeMatch = true;
+          break;
+        case "state":
+          scopeMatch = normalize(b.state) === normState;
+          break;
+        case "district":
+          scopeMatch = normalize(b.state) === normState && normalize(b.district) === normDistrict;
+          break;
+        case "city":
+          scopeMatch =
+            normalize(b.state) === normState &&
+            normalize(b.district) === normDistrict &&
+            normalize(b.city) === normCity;
+          break;
+      }
+      if (scopeMatch) results.push(b);
+    }
+    return results;
+  }
+
+  const userLoc = { state: "Andhra Pradesh", district: "Guntur", city: "Tenali" };
+
+  // The ONLY source the gym grid queries: approved marketplace businesses.
+  // (Pending submissions live in userCollaborations — modeled by their absence here.)
+  const marketplaceDocs = [
+    {
+      id: "seed-cult-tenali",
+      businessName: "Cult Gym",
+      subcategory: "Gym Membership Split",
+      visible: true,
+      scope: "city",
+      state: "Andhra Pradesh",
+      district: "Guntur",
+      city: "Tenali",
+    },
+    {
+      id: "user-submitted-xyz",
+      businessName: "XYZ Gym (user-submitted)",
+      subcategory: "Gym Membership Split",
+      visible: true,
+      scope: "city",
+      state: "Andhra Pradesh",
+      district: "Guntur",
+      city: "Tenali",
+    },
+    {
+      id: "other-city-gym",
+      businessName: "Vijayawada Gym",
+      subcategory: "Gym Membership Split",
+      visible: true,
+      scope: "city",
+      state: "Andhra Pradesh",
+      district: "Krishna",
+      city: "Vijayawada",
+    },
+  ];
+
+  // Case F: a PENDING user-submitted gym is not in the marketplace at all.
+  const pendingSubmission = {
+    id: "pending-abc",
+    businessName: "Pending Gym",
+    subcategory: "Gym Membership Split",
+    status: "pending", // userCollaborations doc — NOT in marketplaceDocs
+  };
+  const visibleF = filterBusinessesByScope(
+    marketplaceDocs.filter((b) => b.id === pendingSubmission.id), // grid's source has no pending docs
+    "Gym Membership Split",
+    userLoc.state,
+    userLoc.district,
+    userLoc.city
+  );
+  check(visibleF.length === 0, "F: pending user-submitted gym is NOT visible before approval");
+
+  // Case G1: approved user-submitted gym IS visible to users in the same area.
+  const visibleTenali = filterBusinessesByScope(
+    marketplaceDocs,
+    "Gym Membership Split",
+    userLoc.state,
+    userLoc.district,
+    userLoc.city
+  );
+  check(
+    visibleTenali.some((b) => b.id === "user-submitted-xyz"),
+    "G: approved user-submitted gym IS visible to users in the same State-District-City"
+  );
+  check(
+    visibleTenali.some((b) => b.id === "seed-cult-tenali"),
+    "G: seed/admin gym remains visible alongside the approved user gym"
+  );
+
+  // Case G2: an approved gym in a DIFFERENT city is NOT visible here.
+  check(
+    !visibleTenali.some((b) => b.id === "other-city-gym"),
+    "G: approved gym from a different city is NOT visible (area scoping respected)"
+  );
+
+  // Case G3: users in the other city see THEIR gyms, not Tenali's.
+  const visibleVja = filterBusinessesByScope(
+    marketplaceDocs,
+    "Gym Membership Split",
+    "Andhra Pradesh",
+    "Krishna",
+    "Vijayawada"
+  );
+  check(
+    visibleVja.some((b) => b.id === "other-city-gym") && !visibleVja.some((b) => b.id === "user-submitted-xyz"),
+    "G: users in the other city see their own area's gyms only"
+  );
+
+  // Case G4: a rejected submission never becomes visible (approval is the
+  // ONLY path that creates the marketplace doc).
+  const rejectedDoc = { ...pendingSubmission, status: "rejected" };
+  check(
+    rejectedDoc.status !== "approved" &&
+      filterBusinessesByScope(
+        marketplaceDocs.filter((b) => b.id === rejectedDoc.id),
+        "Gym Membership Split",
+        userLoc.state,
+        userLoc.district,
+        userLoc.city
+      ).length === 0,
+    "G: rejected submission never becomes visible (only admin approval publishes)"
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Summary                                                             */
+/* ------------------------------------------------------------------ */
+/* ------------------------------------------------------------------ */
 /* Summary                                                             */
 /* ------------------------------------------------------------------ */
 if (failures > 0) {

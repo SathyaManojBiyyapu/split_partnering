@@ -181,30 +181,76 @@ export default function ProfilePage() {
         value && value.trim() !== "" ? value : existingData[key] ?? "";
 
       const userRef = doc(db, "users", docPhone);
-      await setDoc(
-        userRef,
-        {
-          // FIXED account identity — never overwrite an existing saved value.
-          // - phone: preserve the stored identity (existing field wins).
-          // - name: preserved forever once saved (existing field wins).
-          phone: existingData.phone?.trim() ? existingData.phone : docPhone,
-          name: existingData.name?.trim() ? existingData.name : (name?.trim() || ""),
-          city: pick(city, "city"),
-          district: pick(district, "district"),
-          state: pick(stateVal, "state"),
-          gender: pick(gender, "gender"),
-          bio: pick(bio, "bio"),
-          interests: pick(interests, "interests"),
-          college: pick(college, "college"),
-          photoURL: photoURL || existingData.photoURL || "",
-          verified: true,
-          profileCompleted: true,
-          updatedAt: new Date(),
-          // Notification preferences (user-editable)
-          notificationPrefs,
-        },
-        { merge: true }
-      );
+
+      /* PRIMARY: server-side save. The route verifies the caller's Firebase
+         ID token and writes the profile with the Admin SDK, which is immune
+         to the rules' own-doc ID-form edge cases (e.g. Google-login tokens
+         without a phone_number claim, or unusual legacy doc IDs). Still
+         secure: the caller can only ever write their OWN document. */
+      let savedViaServer = false;
+      try {
+        const idToken = await currentUser.getIdToken(true);
+        const res = await fetch("/api/save-profile", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${idToken}`,
+          },
+          body: JSON.stringify({
+            name: name?.trim() || "",
+            gender: gender,
+            state: stateVal,
+            district: district,
+            city: city,
+            bio: bio,
+            interests: interests,
+            college: college,
+            photoURL: photoURL || "",
+            notificationPrefs,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json().catch(() => null);
+          if (data?.docId && data.docId !== docPhone) {
+            localStorage.setItem("phoneDocId", data.docId);
+          }
+          savedViaServer = true;
+        } else {
+          console.warn("[saveProfile] server save failed:", res.status);
+        }
+      } catch (serverError: any) {
+        console.warn("[saveProfile] server save unavailable, falling back:", serverError?.code || serverError?.message);
+      }
+
+      /* FALLBACK: direct Firestore write (kept for resilience when the API
+         route is unreachable; works whenever the rules accept this doc-ID
+         form — e.g. standard OTP-login users). */
+      if (!savedViaServer) {
+        await setDoc(
+          userRef,
+          {
+            // FIXED account identity — never overwrite an existing saved value.
+            // - phone: preserve the stored identity (existing field wins).
+            // - name: preserved forever once saved (existing field wins).
+            phone: existingData.phone?.trim() ? existingData.phone : docPhone,
+            name: existingData.name?.trim() ? existingData.name : (name?.trim() || ""),
+            city: pick(city, "city"),
+            district: pick(district, "district"),
+            state: pick(stateVal, "state"),
+            gender: pick(gender, "gender"),
+            bio: pick(bio, "bio"),
+            interests: pick(interests, "interests"),
+            college: pick(college, "college"),
+            photoURL: photoURL || existingData.photoURL || "",
+            verified: true,
+            profileCompleted: true,
+            updatedAt: new Date(),
+            // Notification preferences (user-editable)
+            notificationPrefs,
+          },
+          { merge: true }
+        );
+      }
 
       // Always keep the canonical phone for matching; the real doc ID is
       // tracked separately so reads/writes hit the same existing document.

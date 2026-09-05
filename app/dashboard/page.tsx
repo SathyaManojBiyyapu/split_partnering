@@ -323,22 +323,35 @@ export default function DashboardPage() {
     const unsub = onSnapshot(
       collection(db, "groups"),
       async (snapshot) => {
+        // Payments are BEST-EFFORT on the dashboard. The payments list query is
+        // rule-gated to phone-verified ID tokens (isOwnDoc), so Google/email
+        // logins without a phone claim are denied here. That denial must NEVER
+        // stop groups/matches from rendering — so fetch payments separately and
+        // keep paid-state badges as a graceful fallback.
+        let paidGroups = new Set<string>();
+        let paidCount = 0;
+        let paidTotal = 0;
         try {
           const paymentsSnap = await getDocs(
             query(collection(db, "payments"), where("uid", "==", phone))
           );
-        const paidGroups = new Set<string>();
-        let paidCount = 0;
-        let paidTotal = 0;
-        paymentsSnap.forEach((p) => {
-          const pdata = p.data();
-          if (pdata.uid === phone && (pdata.status === "paid" || pdata.paid === true)) {
-            paidGroups.add(pdata.groupId);
-            paidCount++;
-            paidTotal += Number(pdata.amount || 29);
-          }
-        });
-        setPaidStats({ count: paidCount, total: paidTotal });
+          paymentsSnap.forEach((p) => {
+            const pdata = p.data() as any;
+            if (pdata.uid === phone && (pdata.status === "paid" || pdata.paid === true)) {
+              paidGroups.add(pdata.groupId);
+              paidCount++;
+              paidTotal += Number(pdata.amount || 29);
+            }
+          });
+          setPaidStats({ count: paidCount, total: paidTotal });
+        } catch (err) {
+          // Non-fatal: paid badges fall back to unpaid; payment/chat unlock still
+          // works through the server-side /api/verify-chat-access (admin SDK).
+          console.warn(
+            "Payments lookup skipped:",
+            (err as any)?.code || (err as any)?.message || err
+          );
+        }
 
         const groups: Group[] = [];
         snapshot.forEach((docSnap) => {
@@ -379,10 +392,7 @@ export default function DashboardPage() {
           return (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0);
         });
         setMatches(groups);
-      } catch (err) {
-        console.error(err);
-      }
-      setLoading(false);
+        setLoading(false);
       },
       (err) => {
         console.error("Groups listener error:", err);

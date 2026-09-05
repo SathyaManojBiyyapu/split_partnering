@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { db, auth } from "@/firebase/config";
 import { doc, getDoc } from "firebase/firestore";
 import { categoryData, slugToCategoryName, masterCategories } from "@/app/data/subcategories";
-import { getCurrentUserDocId } from "@/app/lib/userLookup";
+import { fetchCurrentUserDoc } from "@/app/lib/userLookup";
 import toast from "react-hot-toast";
 import Seo from "@/app/components/Seo";
 
@@ -178,10 +178,9 @@ function CreateGroupContent() {
     if (!phone) return;
     const fetchUser = async () => {
       try {
-        const userRef = doc(db, "users", getCurrentUserDocId());
-        const snap = await getDoc(userRef);
-        if (snap.exists()) {
-          const d = snap.data() as any;
+        const resolved = await fetchCurrentUserDoc();
+        if (resolved) {
+          const d = resolved.data as any;
           setState(d.state || "");
           setDistrict(d.district || "");
           setCity(d.city || "");

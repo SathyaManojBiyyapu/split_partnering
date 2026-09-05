@@ -30,7 +30,7 @@ import {
 import { categoryData, slugToCategoryName, masterCategories } from "@/app/data/subcategories";
 import { isGroupExpired } from "@/app/data/matchExpiry";
 import MarketplaceGrid from "@/app/components/marketplace/MarketplaceGrid";
-import { getCurrentUserDocId } from "@/app/lib/userLookup";
+import { fetchCurrentUserDoc } from "@/app/lib/userLookup";
 import toast from "react-hot-toast";
 
 /* -----------------------------------------
@@ -196,9 +196,9 @@ function CollaboratorBrandSelector({
     if (!phone) return;
     const fetchUser = async () => {
       try {
-        const snap = await getDoc(doc(db, "users", getCurrentUserDocId()));
-        if (snap.exists()) {
-          const d = snap.data();
+        const resolved = await fetchCurrentUserDoc();
+        if (resolved) {
+          const d = resolved.data as any;
           setUserCity(d.city || "");
           setUserDistrict(d.district || "");
           setUserState(d.state || "");
@@ -539,10 +539,9 @@ function SaveContent() {
     if (!phone) return;
     const fetchUser = async () => {
       try {
-        const userRef = doc(db, "users", getCurrentUserDocId());
-        const snap = await getDoc(userRef);
-        if (snap.exists()) {
-          const d = snap.data() as any;
+        const resolved = await fetchCurrentUserDoc();
+        if (resolved) {
+          const d = resolved.data as any;
           setUserName(d.name || null);
         }
       } catch (error) {

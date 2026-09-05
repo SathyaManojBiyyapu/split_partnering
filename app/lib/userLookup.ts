@@ -117,3 +117,23 @@ export function getCurrentUserDocId(): string {
   if (typeof window === "undefined") return "";
   return localStorage.getItem("phoneDocId") || localStorage.getItem("phone") || "";
 }
+
+/**
+ * Resilient read of the CURRENT user's users document.
+ *
+ * Unlike a blind getDoc(users/{getCurrentUserDocId()}), this resolves the
+ * real doc ID first (10-digit phone, +91, raw, UID) and falls back to the
+ * indexed phone-field query when the doc is keyed under an ID form the
+ * security rules don't accept for direct gets (e.g. Google-login accounts
+ * whose doc lives under a non-UID key). Returns null when no profile exists
+ * or the caller isn't logged in. NEVER creates or overwrites.
+ */
+export async function fetchCurrentUserDoc(): Promise<{
+  docId: string;
+  phone: string;
+  data: Record<string, any>;
+} | null> {
+  if (typeof window === "undefined") return null;
+  const stored = localStorage.getItem("phone") || auth.currentUser?.phoneNumber || "";
+  return resolveExistingUserDoc(stored);
+}

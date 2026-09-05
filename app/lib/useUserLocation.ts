@@ -3,9 +3,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { doc, getDoc } from "firebase/firestore";
 import { db } from "@/firebase/config";
-import { getCurrentUserDocId } from "@/app/lib/userLookup";
+import { fetchCurrentUserDoc } from "@/app/lib/userLookup";
 
 export interface UserLocation {
   state: string;
@@ -44,11 +43,18 @@ export function useUserLocation(): UserLocation {
           return;
         }
 
-        const userRef = doc(db, "users", getCurrentUserDocId());
-        const snap = await getDoc(userRef);
+        // Resilient read: resolves the real doc ID (phone/+91/UID forms) and
+        // falls back to the indexed phone query when a direct getDoc is denied
+        // by the own-doc rules (e.g. Google-login doc-ID edge cases).
+        const resolved = await fetchCurrentUserDoc();
 
-        if (snap.exists()) {
-          const data = snap.data() as any;
+        if (resolved) {
+          const data = resolved.data as any;
+          // Keep the resolved doc ID cached so later direct reads on this
+          // session hit the right document.
+          if (resolved.docId !== phone) {
+            localStorage.setItem("phoneDocId", resolved.docId);
+          }
           setLocation({
             state: data.state || "",
             district: data.district || "",

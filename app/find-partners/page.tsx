@@ -15,7 +15,7 @@ import {
   computeCompatibility,
   generateUserId,
 } from "@/app/data/matchExpiry";
-import { getCurrentUserDocId } from "@/app/lib/userLookup";
+import { fetchCurrentUserDoc } from "@/app/lib/userLookup";
 import Seo from "@/app/components/Seo";
 
 type PartnerMatch = {
@@ -80,13 +80,12 @@ export default function FindPartnersPage() {
     }
     const loadPartners = async () => {
       try {
-        const userRef = doc(db, "users", getCurrentUserDocId());
-        const userSnap = await getDoc(userRef);
-        if (!userSnap.exists()) {
+        const resolved = await fetchCurrentUserDoc();
+        if (!resolved) {
           setLoading(false);
           return;
         }
-        const me = userSnap.data() as any;
+        const me = resolved.data as any;
         setUserProfile(me);
         if (!me.state) {
           setLoading(false);

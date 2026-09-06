@@ -5,6 +5,10 @@ import { useRouter } from "next/navigation";
 import { db } from "@/firebase/config";
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import toast from "react-hot-toast"; // ✅ ADDED (ONLY THIS IMPORT)
+import {
+  sanitizeTicketRateInput,
+  isValidTicketRate,
+} from "@/app/lib/ticketRate";
 
 export default function TradeTicketsPage() {
   const router = useRouter();
@@ -37,6 +41,11 @@ export default function TradeTicketsPage() {
   const [showDate, setShowDate] = useState("");
   const [showTime, setShowTime] = useState("");
   const [quantity, setQuantity] = useState(1);
+  // Ticket RATE — restricted to at most 4 numeric digits (0-9999). The input
+  // mask strips non-digits and caps the length on every keystroke; the same
+  // constraint is enforced server-side in firestore.rules so it cannot be
+  // bypassed by direct API calls.
+  const [rate, setRate] = useState("");
   const [loading, setLoading] = useState(false);
 
   /* BLOCK UI UNTIL AUTH CHECK */
@@ -66,6 +75,15 @@ export default function TradeTicketsPage() {
       return;
     }
 
+    // SERVER-MIRRORED validation: rate must be numeric with at most 4 digits
+    // (0-9999). firestore.rules enforce the same constraint, so a crafted
+    // direct write with a 5-digit rate is rejected server-side too.
+    if (!isValidTicketRate(rate)) {
+      alert("Ticket rate must be a number with at most 4 digits (0-9999)");
+      toast.error("Ticket rate must be a number with at most 4 digits (0-9999)");
+      return;
+    }
+
     try {
       setLoading(true);
 
@@ -78,6 +96,7 @@ export default function TradeTicketsPage() {
         showDate,
         showTime,
         quantity,
+        rate: Number(rate),
         status: "available",
         createdAt: serverTimestamp(),
       });
@@ -154,6 +173,17 @@ export default function TradeTicketsPage() {
           placeholder="Ticket Quantity"
           value={quantity}
           onChange={(e) => setQuantity(Number(e.target.value))}
+          className="w-full neon-input"
+        />
+
+        {/* TICKET RATE — max 4 digits, digits only (mirrored in firestore.rules) */}
+        <input
+          type="text"
+          inputMode="numeric"
+          maxLength={4}
+          placeholder="Ticket Rate (₹, e.g. 500 — max 4 digits)"
+          value={rate}
+          onChange={(e) => setRate(sanitizeTicketRateInput(e.target.value))}
           className="w-full neon-input"
         />
 

@@ -6,6 +6,7 @@ import { signOut, onAuthStateChanged, type User } from "firebase/auth";
 import { doc, setDoc } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { resolveExistingUserDoc, normalizePhone } from "@/app/lib/userLookup";
+import { shouldLockName, resolveSavedName } from "@/app/lib/profileName";
 import { indiaStates } from "@/app/data/indiaStates";
 import { districts } from "@/app/data/districts";
 import { citiesByDistrict } from "@/app/data/cities";
@@ -14,6 +15,12 @@ import Link from "next/link";
 
 export default function ProfilePage() {
   const [name, setName] = useState("");
+  // TRUE only when a name has been PERSISTED (loaded from the Firestore doc,
+  // or written by a successful save in this session). The Name field is
+  // read-only based on THIS flag — never on the live input value, otherwise
+  // the very first keystroke would lock the field (the "one character only"
+  // bug). New users can type their complete name freely until they save.
+  const [nameSaved, setNameSaved] = useState(false);
   const [city, setCity] = useState("");
   const [district, setDistrict] = useState("");
   const [stateVal, setStateVal] = useState("");
@@ -71,6 +78,10 @@ export default function ProfilePage() {
           }
           const data = resolved.data as any;
           setName(data.name || "");
+          // Existing member whose name is already persisted → the field stays
+          // fixed (intended design). A member doc WITHOUT a saved name (or a
+          // brand-new user) leaves the field editable until they save.
+          setNameSaved(!!(data.name || "").trim());
           setCity(data.city || "");
           setDistrict(data.district || "");
           setStateVal(data.state || "");
@@ -135,6 +146,20 @@ export default function ProfilePage() {
 
     if (!stateVal || !district || !city) {
       toast.error("Please select State, District, and City.");
+      return;
+    }
+
+    // Mandatory-name validation (mirrors the server route's required fields).
+    if (!name || !name.trim()) {
+      toast.error("Please enter your full name.");
+      return;
+    }
+
+    // Mandatory gender validation (the server route also requires it).
+    // Without this a "successful" save would silently omit gender and later
+    // block matching with a confusing PROFILE_INCOMPLETE error.
+    if (!gender || !gender.trim()) {
+      toast.error("Please select your gender.");
       return;
     }
 
@@ -216,6 +241,20 @@ export default function ProfilePage() {
           }
           savedViaServer = true;
         } else {
+          // 4xx = a validation/auth failure REPORTED BY THE ROUTE. Surface it
+          // and STOP — silently falling back to the direct Firestore write
+          // would skip these validations and was part of the confusing
+          // "permission denied / please re-login" experience. 5xx/infra
+          // failures still fall through to the resilient direct write below.
+          if (res.status >= 400 && res.status < 500) {
+            const errData = await res.json().catch(() => null);
+            setSaving(false);
+            toast.error(
+              errData?.error ||
+                "Profile save failed. Please re-login and try again."
+            );
+            return;
+          }
           console.warn("[saveProfile] server save failed:", res.status);
         }
       } catch (serverError: any) {
@@ -231,9 +270,10 @@ export default function ProfilePage() {
           {
             // FIXED account identity — never overwrite an existing saved value.
             // - phone: preserve the stored identity (existing field wins).
-            // - name: preserved forever once saved (existing field wins).
+            // - name: preserved forever once saved (existing field wins); a
+            //   new user's COMPLETE typed name is saved (never truncated).
             phone: existingData.phone?.trim() ? existingData.phone : docPhone,
-            name: existingData.name?.trim() ? existingData.name : (name?.trim() || ""),
+            name: resolveSavedName(existingData.name, name),
             city: pick(city, "city"),
             district: pick(district, "district"),
             state: pick(stateVal, "state"),
@@ -261,6 +301,9 @@ export default function ProfilePage() {
 
       toast.success("Profile saved successfully!");
       setProfileCompleted(true);
+      // The profile was successfully saved/submitted → NOW (and only now) the
+      // name becomes fixed/read-only.
+      setNameSaved(true);
     } catch (error: any) {
       const code = error?.code || "";
       if (code === "permission-denied") {
@@ -296,7 +339,11 @@ export default function ProfilePage() {
   }
 
   const profileStrength = [name, city, gender, bio, interests, college, photoURL].filter(Boolean).length * 15;
-  const nameLocked = !guest && !!name; // fixed after registration / first save
+  // Name is read-only ONLY after the name has been persisted (loaded from
+  // Firestore with a saved value, or a successful save in this session).
+  // NEVER keyed off the live input value — that locked the field after the
+  // first keystroke and made full names like "Manoj Kumar" impossible to type.
+  const nameLocked = shouldLockName(nameSaved, guest);
 
   return (
     <div className="text-white pt-28 flex flex-col items-center gap-8 px-6 pb-20 max-w-3xl mx-auto">

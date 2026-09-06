@@ -93,6 +93,39 @@ export function isOpen(g: any): boolean {
   return OPEN_STATUSES.includes(String(g?.status || "waiting").toLowerCase());
 }
 
+/**
+ * AUTHORITATIVE member count for DISPLAY / classification (My Matches cards).
+ * Trust the LARGER of the declared membersCount and the members array length:
+ * - member objects written by /api/join-group carry NO state/district/city,
+ *   so location-based counting under-reports (a full 2/2 group showed "1/2").
+ * - a stale declared count must never hide real members (or vice versa).
+ */
+export function actualMemberCount(g: any): number {
+  const declared = Number(g?.membersCount);
+  const len = memberList(g).length;
+  if (Number.isFinite(declared) && declared >= 0) return Math.max(declared, len);
+  return len;
+}
+
+/**
+ * True when the group has reached its required size (e.g. 2/2 → matched).
+ * Uses actual membership — never location heuristics.
+ */
+export function isGroupMatched(g: any): boolean {
+  return actualMemberCount(g) >= resolveRequired(g, String(g?.option || ""));
+}
+
+/**
+ * Human-readable member names for My Matches cards (waiting AND matched).
+ * Falls back to the masked phone — never leaks a raw phone number.
+ */
+export function memberDisplayNames(g: any): string[] {
+  return memberList(g).map((m: any) => {
+    if (typeof m === "string") return maskPhone(m);
+    return m?.name || m?.maskedPhone || maskPhone(m?.phone || m?.uid || "");
+  });
+}
+
 /** Effective required size: prefer the group's own, fall back to the map. */
 export function resolveRequired(g: any, option: string): number {
   const n = Number(g?.requiredSize);

@@ -31,6 +31,16 @@ import { categoryData, slugToCategoryName, masterCategories } from "@/app/data/s
 import { isGroupExpired } from "@/app/data/matchExpiry";
 import MarketplaceGrid from "@/app/components/marketplace/MarketplaceGrid";
 import { fetchCurrentUserDoc } from "@/app/lib/userLookup";
+import {
+  isOpen,
+  matchesLocation,
+  matchesGroupKey,
+  isMember,
+  memberCount,
+  resolveRequired,
+  actualMemberCount,
+  memberDisplayNames,
+} from "@/app/lib/groupMatching";
 import toast from "react-hot-toast";
 
 /* -----------------------------------------
@@ -509,6 +519,16 @@ function SaveContent() {
   // When any exist, the user MUST pick one — matching happens at the gym level,
   // so a generic "Make Partner" without a gym would bypass the gym layer.
   const [approvedGymCount, setApprovedGymCount] = useState(0);
+  // OPEN WAITING GROUPS for the EXACT same criteria (State + District + City +
+  // Category + Subgroup + Gym). Display-only preview so the user can SEE the
+  // existing member(s) they are about to join BEFORE joining. The actual join
+  // still happens exclusively through the atomic /api/join-group server route.
+  const [waitingGroups, setWaitingGroups] = useState<any[]>([]);
+  const [userLocation, setUserLocation] = useState<{ state: string; district: string; city: string }>({
+    state: "",
+    district: "",
+    city: "",
+  });
 
   const categoryName = slugToCategoryName[category] || category.replace("-", " ");
   const subcategoryName = getSubcategoryName(category, option) || option.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
@@ -543,6 +563,14 @@ function SaveContent() {
         if (resolved) {
           const d = resolved.data as any;
           setUserName(d.name || null);
+          // The /api/join-group route reads State/District/City from this SAME
+          // user doc — mirroring it here keeps the preview 1:1 with the server
+          // matching decision.
+          setUserLocation({
+            state: d.state || "",
+            district: d.district || "",
+            city: d.city || "",
+          });
         }
       } catch (error) {
         console.error("User fetch error:", error);
@@ -550,6 +578,50 @@ function SaveContent() {
     };
     fetchUser();
   }, [phone]);
+
+  /* -------- OPEN WAITING GROUP PREVIEW --------
+     Shows the open waiting group(s) the user would join for the EXACT same
+     eligibility key: State + District + City + Category + Subgroup + Gym.
+     Uses the SAME shared pure matching rules as /api/join-group
+     (matchesLocation + matchesGroupKey + capacity), so what the user sees here
+     is exactly what the server route will do (FIFO: oldest waiting group first,
+     new group only when none is compatible). Display-only — no group writes. */
+  useEffect(() => {
+    if (!phone || !category || !option) return;
+    if (!userLocation.state || !userLocation.district || !userLocation.city) return;
+    let cancelled = false;
+    const loadWaitingGroups = async () => {
+      try {
+        const q = query(
+          collection(db, "groups"),
+          where("category", "==", category),
+          where("option", "==", option)
+        );
+        const snap = await getDocs(q);
+        const found: any[] = [];
+        snap.forEach((docSnap) => {
+          const data = docSnap.data() as any;
+          if (isStaleGroup(data)) return; // expired groups are never joinable
+          if (!isOpen(data)) return;
+          if (!matchesLocation(data, userLocation.state, userLocation.district, userLocation.city)) return;
+          // STRICT gym key: no-gym request only matches gym-less groups.
+          if (!matchesGroupKey(data, selectedCollaboratorId || "")) return;
+          if (isMember(data, phone)) return; // already joined
+          if (memberCount(data) >= resolveRequired(data, option)) return; // full
+          found.push({ id: docSnap.id, ...data });
+        });
+        // FIFO — same fill order as /api/join-group (oldest createdAt first).
+        found.sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
+        if (!cancelled) setWaitingGroups(found);
+      } catch (err) {
+        console.error("Waiting group preview error:", err);
+      }
+    };
+    loadWaitingGroups();
+    return () => {
+      cancelled = true;
+    };
+  }, [phone, category, option, selectedCollaboratorId, userLocation.state, userLocation.district, userLocation.city]);
 
   /* -------- FETCH ACTIVE SUBCATEGORIES -------- */
   useEffect(() => {
@@ -617,18 +689,27 @@ function SaveContent() {
           // Expired/stale groups must NOT trigger "Partner Already Saved" —
           // the user is free to create a new match for this option.
           if (isStaleGroup(data)) continue;
-          const exists = (data.members || []).some((m: any) => m?.phone === phone);
-          if (exists) {
-            setExistingGroup({ id: d.id, ...data });
-            break;
-          }
+          // KEY-AWARE duplicate check: membership counts as "Partner Already
+          // Saved" ONLY for the SAME matching key (State + District + City +
+          // Category + Subgroup + Gym). The same user in the same city with a
+          // DIFFERENT gym — or the same gym from a different city — is a
+          // SEPARATE partnership and must remain allowed (multiple independent
+          // matches per user). These are the SAME shared pure helpers that
+          // /api/join-group uses, so what the user sees can never diverge from
+          // the server's matching decision.
+          if (!userLocation.state || !userLocation.district || !userLocation.city) continue;
+          if (!matchesLocation(data, userLocation.state, userLocation.district, userLocation.city)) continue;
+          if (!matchesGroupKey(data, selectedCollaboratorId || "")) continue;
+          if (!isMember(data, phone)) continue;
+          setExistingGroup({ id: d.id, ...data });
+          break;
         }
       } catch (err) {
         console.error(err);
       }
     };
     checkExisting();
-  }, [phone, category, option]);
+  }, [phone, category, option, selectedCollaboratorId, userLocation.state, userLocation.district, userLocation.city]);
 
   /* -------- SAVE -------- */
   const savePartner = async () => {
@@ -656,6 +737,16 @@ function SaveContent() {
         toast.error(
           "Please select a gym/business first — you'll be matched with people who chose the same one."
         );
+        return;
+      }
+
+      // Same-key duplicate guard: the user is already in an active group for
+      // this EXACT matching key (location + category + subcategory + gym).
+      // Different gyms in the same city — and the same gym in another city —
+      // remain fully allowed (the check above is key-aware).
+      if (existingGroup) {
+        toast.success("You already have an active match for this gym/location — opening My Matches.");
+        router.push("/dashboard");
         return;
       }
 
@@ -753,6 +844,49 @@ function SaveContent() {
             </div>
             <p className="text-gray-500 text-[10px] mt-2">Joining one of these again will update the existing request instead of creating a new one.</p>
           </div>
+        )}
+
+        {/* WAITING GROUP PREVIEW — existing member(s) visible BEFORE joining.
+            Eligibility shown here is IDENTICAL to /api/join-group's decision
+            (same shared matching rules), so joining always pairs the user into
+            the oldest open waiting group for the exact same criteria. */}
+        {!existingGroup && (
+          waitingGroups.length > 0 ? (
+            <div className="mb-4 border border-blue-500/30 bg-blue-500/10 rounded-xl p-4">
+              <p className="text-blue-400 font-bold text-sm flex items-center gap-2">
+                ⏳ Open Waiting Group{waitingGroups.length > 1 ? "s" : ""} — you&apos;ll join the oldest one
+              </p>
+              {waitingGroups.map((wg) => {
+                const count = actualMemberCount(wg);
+                const req = resolveRequired(wg, option);
+                const names = memberDisplayNames(wg);
+                const waitingFor = Math.max(req - count, 0);
+                return (
+                  <div key={wg.id} className="mt-2 border border-white/10 bg-black/30 rounded-lg p-3">
+                    <p className="text-gray-400 text-[10px] font-medium">Members:</p>
+                    <div className="space-y-0.5 mt-0.5">
+                      {names.map((n, i) => (
+                        <p key={i} className="text-xs text-gray-200">• {n}</p>
+                      ))}
+                    </div>
+                    <p className="text-blue-300 text-[11px] mt-1.5 font-medium">
+                      {count}/{req} Waiting — waiting for {waitingFor} more {waitingFor === 1 ? "person" : "people"}
+                    </p>
+                  </div>
+                );
+              })}
+              <p className="text-gray-500 text-[11px] mt-2">
+                Select the same gym below and tap Make Partner to join this group instantly.
+              </p>
+            </div>
+          ) : (
+            <div className="mb-4 border border-white/10 bg-white/[0.02] rounded-xl p-4">
+              <p className="text-gray-400 text-xs">
+                🆕 No waiting group for these exact criteria yet — you&apos;ll be the first member
+                (1/{getRequiredSize(option)} Waiting).
+              </p>
+            </div>
+          )
         )}
 
         {/* SELECTION INFO CARD */}

@@ -29,6 +29,12 @@ import {
 } from "@/app/data/matchExpiry";
 import { categoryData, slugToCategoryName, masterCategories } from "@/app/data/subcategories";
 import { fetchCurrentUserDoc } from "@/app/lib/userLookup";
+import {
+  actualMemberCount,
+  isGroupMatched,
+  memberDisplayNames,
+  matchesLocation,
+} from "@/app/lib/groupMatching";
 import Seo from "@/app/components/Seo";
 
 type Group = {
@@ -84,37 +90,33 @@ export default function DashboardPage() {
   const [nearbyPartners, setNearbyPartners] = useState<PartnerMatch[]>([]);
   const [startingMatch, setStartingMatch] = useState<string | null>(null);
 
-  function computeGroupMatch(
-    groupMembers: any[],
-    groupCategory: string,
-    groupOption: string
-  ): { matchingCount: number; matchLevel: "same-city" | "none" } {
-    if (!userProfile?.city) {
-      return { matchingCount: 0, matchLevel: "none" };
-    }
-    let count = 1;
-    for (const m of groupMembers) {
-      const member = typeof m === "string" ? { phone: m } : m;
-      if (member.phone?.trim() === phone) continue;
-      if (
-        member.state === userProfile.state &&
-        member.district === userProfile.district &&
-        member.city === userProfile.city
-      ) {
-        count++;
-      }
-    }
-    return { matchingCount: count, matchLevel: count > 1 ? "same-city" : "none" };
-  }
-
-  function getGroupStatus(group: Group, matchingCount: number, required: number): { color: string; label: string } {
+  /*
+   * GROUP STATUS — based on ACTUAL membership (membersCount / members array).
+   *
+   * ROOT-CAUSE FIX: the old computeGroupMatch() counted only members whose
+   * state/district/city fields matched the viewer's profile — but member
+   * objects written by /api/join-group carry NO location fields, so even a
+   * FULL 2/2 group was counted as "1/2" and stuck in Pending Requests as
+   * "🔍 Matching" forever. Classification now uses actual membership via
+   * isGroupMatched()/actualMemberCount() (shared pure logic, same source as
+   * the server route).
+   */
+  function getGroupStatus(group: Group): { color: string; label: string } {
     const expiry = getExpiryStatus(group.createdAt);
     if (expiry.status === "expired") return { color: "bg-red-600/20 text-red-400 border border-red-500/30", label: "Expired" };
     if (group.isPaid) return { color: "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30", label: "Paid ✅" };
-    if (matchingCount >= required) return { color: "bg-green-500/20 text-green-400 border border-green-500/30", label: "Ready to Unlock 🔓" };
+    const count = actualMemberCount(group);
+    const required = group.requiredSize || 2;
+    if (count >= required)
+      return {
+        color: "bg-green-500/20 text-green-400 border border-green-500/30",
+        label: `${count}/${required} Matched · Ready to Unlock 🔓`,
+      };
     if (expiry.status === "expiring-soon") return { color: "bg-orange-500/20 text-orange-400 border border-orange-500/30", label: "Expiring Soon ⏳" };
-    if (matchingCount <= 1) return { color: "bg-blue-500/20 text-blue-400 border border-blue-500/30", label: "🔍 Matching" };
-    return { color: "bg-yellow-500/20 text-yellow-400 border border-yellow-500/30", label: "Waiting" };
+    return {
+      color: "bg-blue-500/20 text-blue-400 border border-blue-500/30",
+      label: `${count}/${required} Waiting`,
+    };
   }
 
   function getMatchTier(partner: any, user: any): { tier: number; label: string } {
@@ -181,7 +183,8 @@ export default function DashboardPage() {
         if (!resolved) return;
         const me = resolved.data as any;
         setUserProfile(me);
-        if (!me.state) return;
+        // Nearby pool needs the user's COMPLETE current location.
+        if (!me.state || !me.district || !me.city) return;
 
         const usersSnap = await getDocs(collection(db, "users"));
         const selectionsSnap = await getDocs(collection(db, "selections"));
@@ -221,6 +224,14 @@ export default function DashboardPage() {
           if (!u.state) return;
           if (!u.profileCompleted) return;
 
+          // CURRENT-CITY ONLY (nearby pool): candidates must be in the user's
+          // CURRENT State → District → City. This is the SAME shared location
+          // rule the matching key uses (matchesLocation). Changing the profile
+          // city swaps the pool on the next load — users from other cities are
+          // never mixed into this section (old-city history stays in My
+          // Matches under the 6-month policy).
+          if (!matchesLocation(u, me.state, me.district, me.city)) return;
+
           const tierInfo = getMatchTier(u, me);
           const compatibility = computeCompatibility(me, u);
 
@@ -245,13 +256,10 @@ export default function DashboardPage() {
             }
           }
 
+          // All nearby candidates are same-city (pool filter above).
           let distance = "";
-          if (u.city && me.city && u.city === me.city) {
+          if (u.city && me.city) {
             distance = (1 + Math.random() * 4).toFixed(1);
-          } else if (u.district && me.district && u.district === me.district) {
-            distance = (3 + Math.random() * 7).toFixed(1);
-          } else if (u.state && me.state && u.state === me.state) {
-            distance = (10 + Math.random() * 40).toFixed(1);
           }
 
           partners.push({
@@ -476,41 +484,43 @@ export default function DashboardPage() {
   if (loading) return <DashboardSkeleton />;
 
   const activeMatches = matches.filter(g => !isExpired(g.createdAt)).length;
+  // Pending = not yet reached required size; Ready/Matched = actual members
+  // >= required size. Both use ACTUAL membership — never location heuristics
+  // (see getGroupStatus note above: location-tag-based counting under-reported
+  // full groups as "1/2" and misfiled them under Pending Requests).
   const pendingRequests = matches.filter(g => {
     if (isExpired(g.createdAt)) return false;
     if (g.isPaid) return false;
-    if (!userProfile?.state) return g.membersCount < g.requiredSize;
-    const info = computeGroupMatch(g.members, g.category, g.option);
-    return info.matchingCount < g.requiredSize;
+    return !isGroupMatched(g);
   }).length;
   const completedPartnerships = matches.filter(g => g.isPaid || g.status === "completed" || g.status === "expired" || isExpired(g.createdAt)).length;
   const totalSavings = paidStats.total;
   const readyMatches = matches.filter(g => {
     if (isExpired(g.createdAt)) return false;
     if (g.isPaid) return false;
-    if (!userProfile?.state) return g.membersCount >= g.requiredSize;
-    const info = computeGroupMatch(g.members, g.category, g.option);
-    return info.matchingCount >= g.requiredSize;
+    return isGroupMatched(g);
   }).length;
 
-  const pendingGroups = matches.filter(g => !isExpired(g.createdAt) && !g.isPaid && !(userProfile?.state ? computeGroupMatch(g.members, g.category, g.option).matchingCount >= g.requiredSize : g.membersCount >= g.requiredSize));
-  const readyGroups = matches.filter(g => !isExpired(g.createdAt) && !g.isPaid && (userProfile?.state ? computeGroupMatch(g.members, g.category, g.option).matchingCount >= g.requiredSize : g.membersCount >= g.requiredSize));
+  const pendingGroups = matches.filter(g => !isExpired(g.createdAt) && !g.isPaid && !isGroupMatched(g));
+  const readyGroups = matches.filter(g => !isExpired(g.createdAt) && !g.isPaid && isGroupMatched(g));
   const completedGroups = matches.filter(g => g.isPaid || g.status === "completed" || g.status === "expired" || isExpired(g.createdAt));
 
   /* Group card renderer */
   const renderGroupCard = (group: Group, idx: number, section: "pending" | "ready" | "completed") => {
-    const matchInfo = userProfile?.state
-      ? computeGroupMatch(group.members, group.category, group.option)
-      : { matchingCount: 0, matchLevel: "none" as const };
-    const matchingCount = section === "completed" ? group.membersCount : matchInfo.matchingCount;
-    const required = group.requiredSize;
-    const isSearching = matchingCount <= 1;
+    // ACTUAL membership (authoritative). Never derived from location tags —
+    // member objects written by /api/join-group carry no state/district/city.
+    const matchingCount = actualMemberCount(group);
+    const required = group.requiredSize || 2;
+    const isSearching = matchingCount < required;
     const expiry = getExpiryStatus(group.createdAt);
-    const statusInfo = getGroupStatus(group, matchingCount, required);
+    const statusInfo = getGroupStatus(group);
     const isPaid = group.isPaid;
     const isExpiredGroup =
       group.status === "expired" ||
       isExpired(group.createdAt);
+    // Existing member(s) of this group — visible while waiting AND matched.
+    const memberNames = memberDisplayNames(group);
+    const waitingFor = Math.max(required - matchingCount, 0);
     const businessName = group.collaboratorBrand || group.collaboratorId || latestSelection?.collaboratorName || latestSelection?.collaboratorId || "";
     // Two-line My Matches hierarchy:
     //   Line 1: State → District → City
@@ -559,17 +569,41 @@ export default function DashboardPage() {
           {/* Divider */}
           <div className="section-divider-light mb-3" />
 
+          {/* Members — existing member(s) of this group, visible while the
+              group is waiting (1/2) AND once it is matched (2/2). */}
+          {memberNames.length > 0 && (
+            <div className="mb-3">
+              <p className="text-[11px] text-gray-400 font-medium mb-1">Members:</p>
+              <div className="space-y-0.5">
+                {memberNames.map((memberName, i) => (
+                  <p key={i} className="text-xs text-gray-200 flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#D4AF37] shrink-0" />
+                    {memberName}
+                    {i === 0 && matchingCount < required && (
+                      <span className="text-[9px] text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded">Creator</span>
+                    )}
+                  </p>
+                ))}
+              </div>
+              {matchingCount < required && (
+                <p className="text-[10px] text-blue-400 mt-1.5">
+                  ⏳ {matchingCount}/{required} Waiting — waiting for {waitingFor} more {waitingFor === 1 ? "person" : "people"}
+                </p>
+              )}
+            </div>
+          )}
+
           {/* Progress */}
           {!isPaid && !isExpiredGroup && (
             <div className="mb-3">
               <div className="flex items-center justify-between text-[11px] mb-1.5">
                 <span className="text-gray-400">
-                  {isSearching ? (
-                    <span className="text-blue-400">🔍 Searching...</span>
-                  ) : matchingCount >= required ? (
+                  {!isSearching ? (
                     <span className="text-green-400">✅ Group Complete</span>
-                  ) : (
+                  ) : matchingCount > 1 ? (
                     <span className="text-yellow-400">👥 Building group</span>
+                  ) : (
+                    <span className="text-blue-400">🔍 Searching...</span>
                   )}
                 </span>
                 <span className="text-gray-500">{matchingCount}/{required} members</span>

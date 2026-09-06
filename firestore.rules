@@ -193,7 +193,19 @@ service cloud.firestore {
 
     match /movieTickets/{ticketId} {
       allow read: if loggedIn();
-      allow create: if loggedIn();
+      // Create: logged-in user. SERVER-SIDE validation (rules execute on
+      // Google's servers — the client's 4-digit input mask CANNOT be trusted
+      // or bypassed here): the ticket rate must be a whole number with at
+      // most 4 digits (0-9999), quantity must be positive, and state/city are
+      // mandatory for area-scoped display.
+      allow create: if loggedIn()
+        && request.resource.data.rate is number
+        && request.resource.data.rate >= 0
+        && request.resource.data.rate <= 9999
+        && request.resource.data.quantity is number
+        && request.resource.data.quantity >= 1
+        && validString(request.resource.data.state)
+        && validString(request.resource.data.city);
       allow update: if isAdmin();
       allow delete: if false;
     }

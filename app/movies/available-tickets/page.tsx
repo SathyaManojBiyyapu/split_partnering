@@ -11,6 +11,7 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 import toast from "react-hot-toast"; // ✅ ADDED (ONLY THIS IMPORT)
+import { fetchCurrentUserDoc } from "@/app/lib/userLookup";
 
 type Ticket = {
   id: string;
@@ -21,6 +22,7 @@ type Ticket = {
   showDate: string;
   showTime: string;
   quantity: number;
+  rate?: number;
   status: string;
 };
 
@@ -34,12 +36,13 @@ export default function AvailableTicketsPage() {
   const [status, setStatus] = useState("");
 
   /* LOAD TICKETS */
-  const loadTickets = async () => {
+  const loadTickets = async (cityOverride?: string) => {
     setLoading(true);
 
     let q = query(collection(db, "movieTickets"));
 
-    if (city) q = query(q, where("city", "==", city));
+    const effectiveCity = cityOverride ?? city;
+    if (effectiveCity) q = query(q, where("city", "==", effectiveCity));
     if (movie) q = query(q, where("movie", "==", movie));
     if (status) q = query(q, where("status", "==", status));
 
@@ -55,7 +58,22 @@ export default function AvailableTicketsPage() {
   };
 
   useEffect(() => {
-    loadTickets();
+    const init = async () => {
+      try {
+        // CURRENT-CITY FIRST: pre-filter the list to the logged-in user's
+        // current saved city (existing location model). The manual filter
+        // above stays available, but the DEFAULT view is area-relevant only.
+        const resolved = await fetchCurrentUserDoc();
+        const myCity = String((resolved?.data as any)?.city || "").trim();
+        if (myCity) setCity(myCity);
+        await loadTickets(myCity);
+      } catch (err) {
+        console.error("Ticket city lookup failed:", err);
+        await loadTickets();
+      }
+    };
+    init();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /* CONTACT ADMIN */
@@ -125,7 +143,7 @@ export default function AvailableTicketsPage() {
         </select>
 
         <button
-          onClick={loadTickets}
+          onClick={() => loadTickets()}
           className="
             sm:col-span-3 mt-2 px-6 py-3 rounded-xl font-semibold
             bg-black text-[#E6C972]
@@ -168,6 +186,9 @@ export default function AvailableTicketsPage() {
               </p>
               <p className="text-sm text-gray-400">
                 🎟️ Quantity: {t.quantity}
+              </p>
+              <p className="text-sm font-semibold text-[#FFD166]">
+                💵 Rate: ₹{t.rate ?? "—"}
               </p>
 
               <p

@@ -12,7 +12,19 @@ import {
   memberCount,
   memberList,
   pickOldestOpen,
+  actualMemberCount,
+  isGroupMatched,
+  memberDisplayNames,
+  matchesLocation,
 } from "../app/lib/groupMatching.ts";
+import {
+  shouldLockName,
+  resolveSavedName,
+} from "../app/lib/profileName.ts";
+import {
+  sanitizeTicketRateInput,
+  isValidTicketRate,
+} from "../app/lib/ticketRate.ts";
 
 /* ------------------------------------------------------------------ */
 /* In-memory Firestore-ish store                                        */
@@ -419,8 +431,245 @@ console.log("\n== Scenario 1: User1→1/2, User2 joins→2/2, User3→new 1/2, U
 }
 
 /* ------------------------------------------------------------------ */
-/* Summary                                                             */
+/* SCENARIO 6 — Profile Name field (A: full-name entry + persistence)  */
 /* ------------------------------------------------------------------ */
+console.log("\n== Scenario 6: profile Name field — full name entry + save-then-lock ==");
+{
+  // Replicates the profile page's state machine EXACTLY (app/profile/page.tsx):
+  //   name       → live controlled-input value
+  //   nameSaved  → true ONLY when a name is PERSISTED (loaded from Firestore
+  //                with a saved value, or written by a successful save)
+  //   nameLocked → shouldLockName(nameSaved, guest) — must NEVER depend on the
+  //                live input value (keying it off the value was the root cause
+  //                of the "one character only" bug: typing "M" made the value
+  //                truthy and instantly set readOnly/disabled).
+  const guest = false;
+
+  // A. New user can enter the COMPLETE name — no keystroke may lock the field.
+  let name = "";
+  let nameSaved = false;
+  const typed = "Manoj Kumar";
+  let lockedAtKeystroke = -1;
+  for (let i = 0; i < typed.length; i++) {
+    name = typed.slice(0, i + 1); // each keystroke appends one char
+    if (shouldLockName(nameSaved, guest)) {
+      lockedAtKeystroke = i;
+      break;
+    }
+  }
+  check(lockedAtKeystroke === -1, "A: typing is NEVER locked mid-entry (field stays editable through every keystroke)");
+
+  // The profile is saved/submitted → the COMPLETE typed name is persisted.
+  const persisted = resolveSavedName("", name);
+  check(persisted === "Manoj Kumar", `A: complete name persisted after save ("${persisted}", not just the first char)`);
+
+  // Multi-word names too.
+  check(resolveSavedName("", "Sathya Manoj Biyyapu") === "Sathya Manoj Biyyapu", 'A: "Sathya Manoj Biyyapu" accepted in full');
+
+  // Name becomes fixed/read-only ONLY AFTER a successful save.
+  nameSaved = true;
+  check(shouldLockName(nameSaved, guest) === true, "A: name locks ONLY after the profile is successfully saved");
+
+  // Existing users with an already-saved name keep the fixed-name design.
+  check(shouldLockName(true, false) === true, "Existing saved name stays fixed/read-only (intended design)");
+
+  // Identity preservation: an existing saved name always wins on re-save.
+  check(resolveSavedName("Existing User", "Someone Else") === "Existing User", "Existing saved name is preserved forever (never overwritten)");
+
+  // Guests can never save, so the field is never locked for them.
+  check(shouldLockName(true, true) === false, "Guest mode never locks the name field");
+}
+
+/* ------------------------------------------------------------------ */
+/* SCENARIO 7 — My Matches display (J: 1/2 waiting + 2/2 matched,      */
+/*               K: existing member visible before joining)            */
+/* ------------------------------------------------------------------ */
+console.log("\n== Scenario 7: My Matches display counts + member visibility ==");
+{
+  const mk = (phone, nm) => ({ phone, uid: phone, name: nm });
+
+  // A real 1/2 waiting group exactly as /api/join-group writes it: member
+  // objects carry name + masked phone and NO state/district/city (the old
+  // dashboard counted only location-tagged members and mis-displayed groups).
+  const waiting = {
+    category: "gym",
+    option: "split",
+    state: "Andhra Pradesh",
+    district: "Guntur",
+    city: "Tenali",
+    collaboratorId: "cult-gym-tenali",
+    members: [mk("9000000001", "Manoj")],
+    memberUIDs: ["9000000001"],
+    membersCount: 1,
+    requiredSize: 2,
+    status: "waiting",
+  };
+
+  // J: a 1-member group classifies as WAITING (1/2) — never hidden, never
+  // mis-filed as matched, and the count is the real membership.
+  check(!isGroupMatched(waiting), "J: 1-member group classifies as WAITING (1/2), never hidden");
+  check(actualMemberCount(waiting) === 1 && resolveRequired(waiting, "split") === 2, "J: '1/2 Waiting' count is exact");
+
+  // K: the existing member is visible to the other eligible user BEFORE joining.
+  const waitingNames = memberDisplayNames(waiting);
+  check(waitingNames.length === 1 && waitingNames[0] === "Manoj", `K: existing member visible before joining (Members: ${waitingNames.join(", ")})`);
+
+  // After the second member joins → 2/2 matched, BOTH members visible.
+  const matched = {
+    ...waiting,
+    members: [mk("9000000001", "Manoj"), mk("9000000002", "Other User")],
+    memberUIDs: ["9000000001", "9000000002"],
+    membersCount: 2,
+    status: "ready",
+  };
+  check(isGroupMatched(matched), "J: 2/2 group classifies as MATCHED (no longer joinable)");
+  check(
+    memberDisplayNames(matched).join(", ") === "Manoj, Other User",
+    "J/K: both members visible on the matched card ('Manoj, Other User')"
+  );
+
+  // ROOT-CAUSE case: full 2/2 group whose members carry NO location tags —
+  // must still display 2/2 Matched (old code showed "1/2" here forever).
+  check(isGroupMatched({ ...matched, members: matched.members }), "J: full group with location-untagged members shows 2/2 Matched");
+
+  // Defensive: stale declared count can never hide real members.
+  check(actualMemberCount({ ...waiting, membersCount: undefined }) === 1, "Fallback: members array length used when membersCount is missing");
+  check(actualMemberCount({ ...matched, membersCount: 1 }) === 2, "Defensive: declared count < actual members → actual members win (no fake 1/2)");
+
+  // Privacy: a member row without a name falls back to the MASKED phone.
+  check(memberDisplayNames({ members: ["9000000009"] })[0] === "xxxxx00009", "Privacy: nameless member shown as masked phone (no PII leak)");
+}
+
+/* ------------------------------------------------------------------ */
+/* SCENARIO 8 — Multiple partnerships per user (H) + missing-location  */
+/*               safety (D) + profile-save contract (B, C)             */
+/* ------------------------------------------------------------------ */
+console.log("\n== Scenario 8: multiple matches per user + missing-location guard + profile contract ==");
+{
+  // H: the SAME user, same city, DIFFERENT gyms → separate independent groups.
+  const store8 = makeStore();
+  const multiUser = "9000000001";
+  const gymA = routeProcess(store8, {
+    category: "gym", option: "split", phone: multiUser,
+    state: "Andhra Pradesh", district: "Guntur", city: "Tenali",
+    collaboratorId: "gym-a", extra: { collaboratorName: "Gym A" },
+  });
+  const gymB = routeProcess(store8, {
+    category: "gym", option: "split", phone: multiUser,
+    state: "Andhra Pradesh", district: "Guntur", city: "Tenali",
+    collaboratorId: "gym-b", extra: { collaboratorName: "Gym B" },
+  });
+  check(gymA.groupId !== gymB.groupId, "H: same user + different gyms in the SAME city → SEPARATE groups (both allowed)");
+  check(gymA.status === "created" && gymA.membersCount === 1 && gymB.status === "created" && gymB.membersCount === 1, "H: both partnerships are independent 1/2 waiting groups");
+  const gymA2 = routeProcess(store8, {
+    category: "gym", option: "split", phone: "9000000077",
+    state: "Andhra Pradesh", district: "Guntur", city: "Tenali",
+    collaboratorId: "gym-a", extra: { collaboratorName: "Gym A" },
+  });
+  check(gymA2.groupId === gymA.groupId && gymA2.status === "ready", "H: Gym A group still fills independently (2/2) — untouched by Gym B");
+
+  // Same user, same gym, DIFFERENT city → separate group (city is part of the key).
+  const gymAOtherCity = routeProcess(store8, {
+    category: "gym", option: "split", phone: multiUser,
+    state: "Andhra Pradesh", district: "Krishna", city: "Vijayawada",
+    collaboratorId: "gym-a", extra: { collaboratorName: "Gym A" },
+  });
+  check(gymAOtherCity.groupId !== gymA.groupId && gymAOtherCity.status === "created", "H: same gym from a DIFFERENT city → separate new 1/2 group");
+
+  // D: a legacy "Location not set" group (empty state/district/city) must
+  // NEVER be matched into by a user with a real saved profile.
+  store8.set("bad-loc", {
+    category: "gym", option: "split", state: "", district: "", city: "",
+    collaboratorId: "", collaboratorBrand: "",
+    members: [{ phone: "9000000500", uid: "9000000500", name: "Ghost" }],
+    memberUIDs: ["9000000500"], membersCount: 1, requiredSize: 2,
+    status: "waiting", createdAt: store8.nextTs(), createdBy: "9000000500",
+  });
+  check(
+    matchesLocation(store8.get("bad-loc"), "Andhra Pradesh", "Guntur", "Tenali") === false &&
+      matchesLocation(store8.get("bad-loc"), "x", "y", "z") === false,
+    "D: 'Location not set' group never matches ANY real profile location"
+  );
+  const pickedReal = pickOldestOpen(store8.query("gym", "split"), {
+    state: "Andhra Pradesh", district: "Guntur", city: "Tenali",
+    option: "split", phone: "9000000900", collaboratorId: "gym-b",
+  });
+  check(
+    pickedReal !== null && pickedReal.id === gymB.groupId,
+    "D: real user is matched into a properly located waiting group, never the bad one"
+  );
+
+  // D: the route's mandatory-profile gate condition (name/gender/state/
+  // district/city ALL required) blocks matching before any group is read.
+  const gateBlocks = (p) =>
+    !String(p?.name || "").trim() || !String(p?.gender || "").trim() ||
+    !String(p?.state || "").trim() || !String(p?.district || "").trim() ||
+    !String(p?.city || "").trim();
+  check(gateBlocks({ name: "U", gender: "M", state: "AP", district: "Guntur", city: "" }) === true, "D: profile missing city is BLOCKED from matching (server gate)");
+  check(gateBlocks({ name: "U", gender: "M", state: "AP", district: "Guntur", city: "Tenali" }) === false, "D: complete profile passes the gate");
+
+  // B/C: /api/save-profile merge contract (replicated): mandatory fields are
+  // required and existing saved values are never overwritten with empty ones —
+  // so State/District/City persist across reloads.
+  const saveProfileMerge = (existing, incoming) => {
+    const pick = (v, k) => (v && String(v).trim() !== "" ? v : existing[k] ?? "");
+    return {
+      name: existing.name && String(existing.name).trim() !== "" ? String(existing.name).trim() : incoming.name,
+      state: pick(incoming.state, "state"),
+      district: pick(incoming.district, "district"),
+      city: pick(incoming.city, "city"),
+    };
+  };
+  const savedFresh = saveProfileMerge({}, { name: "Manoj Kumar", gender: "M", state: "Andhra Pradesh", district: "Guntur", city: "Tenali" });
+  check(savedFresh.name === "Manoj Kumar" && savedFresh.state === "Andhra Pradesh" && savedFresh.district === "Guntur" && savedFresh.city === "Tenali", "B: new user profile saves name + gender + full location");
+  const reSaved = saveProfileMerge(savedFresh, { name: "", gender: "M", state: "", district: "", city: "" });
+  check(reSaved.state === "Andhra Pradesh" && reSaved.district === "Guntur" && reSaved.city === "Tenali" && reSaved.name === "Manoj Kumar", "C: re-save with empty fields keeps persisted State/District/City (values survive reload)");
+}
+
+/* ------------------------------------------------------------------ */
+/* SCENARIO 9 — Nearby candidate pool (L, M) + Pay enablement (N, O)   */
+/*               + movie ticket rate (T)                               */
+/* ------------------------------------------------------------------ */
+console.log("\n== Scenario 9: nearby current-city pool + Pay gating + ticket rate ==");
+{
+  // L/M: the nearby pool uses the SAME matchesLocation rule as the matching
+  // key — candidates must be in the viewer's CURRENT State→District→City.
+  const me = { state: "Andhra Pradesh", district: "Guntur", city: "Tenali" };
+  check(matchesLocation({ state: "Andhra Pradesh", district: "Guntur", city: "Tenali" }, me.state, me.district, me.city) === true, "L: candidate in the SAME current city IS in the nearby pool");
+  check(matchesLocation({ state: "Andhra Pradesh", district: "Guntur", city: "Vijayawada" }, me.state, me.district, me.city) === false, "L: candidate from ANOTHER city is NEVER shown as nearby");
+  check(matchesLocation({ state: "Andhra Pradesh", district: "Krishna", city: "Vijayawada" }, me.state, me.district, me.city) === false, "M: candidate from another district is excluded");
+  const meMoved = { state: "Andhra Pradesh", district: "Krishna", city: "Vijayawada" };
+  check(matchesLocation({ state: "Andhra Pradesh", district: "Krishna", city: "Vijayawada" }, meMoved.state, meMoved.district, meMoved.city) === true, "M: after the user changes city, the pool follows the NEW city");
+  check(matchesLocation({ state: "Andhra Pradesh", district: "Guntur", city: "Tenali" }, meMoved.state, meMoved.district, meMoved.city) === false, "M: old-city candidates are not mixed into the new city pool");
+
+  // N/O: Pay gating follows ACTUAL membership — disabled while 1/2, enabled
+  // once 2/2 (dashboard action footer: matchingCount >= required → Unlock).
+  const half = {
+    category: "gym", option: "split", state: "Andhra Pradesh", district: "Guntur", city: "Tenali",
+    collaboratorId: "gym-a",
+    members: [{ phone: "9000000001", uid: "9000000001", name: "Manoj" }],
+    memberUIDs: ["9000000001"], membersCount: 1, requiredSize: 2, status: "waiting",
+  };
+  const full = {
+    ...half,
+    members: [
+      { phone: "9000000001", uid: "9000000001", name: "Manoj" },
+      { phone: "9000000002", uid: "9000000002", name: "Other User" },
+    ],
+    memberUIDs: ["9000000001", "9000000002"], membersCount: 2, status: "ready",
+  };
+  check(isGroupMatched(half) === false, "N: Pay DISABLED at 1/2 (group not yet complete)");
+  check(isGroupMatched(full) === true, "O: Pay ENABLED at 2/2 (group complete → Unlock)");
+  check(actualMemberCount(full) === 2 && actualMemberCount(half) === 1, "O/N: counts driving the Pay gate are accurate (never a stale '2/10')");
+
+  // T: movie-ticket RATE accepts at most 4 numeric digits.
+  check(isValidTicketRate(100) && isValidTicketRate(500) && isValidTicketRate(1500) && isValidTicketRate(9999), "T: rates 100 / 500 / 1500 / 9999 are accepted");
+  check(!isValidTicketRate(10000) && !isValidTicketRate(12345), "T: 5-digit rates (10000+) are REJECTED");
+  check(!isValidTicketRate("12a5") && !isValidTicketRate(-5) && !isValidTicketRate(12.5) && !isValidTicketRate("abc") && !isValidTicketRate(null), "T: non-numeric / negative / decimal / null rates are REJECTED");
+  check(sanitizeTicketRateInput("12a34bc5678") === "1234", "T: UI input mask strips non-digits and hard-caps at 4 digits");
+  check(isValidTicketRate(sanitizeTicketRateInput("500")) === true, "T: masked input stays valid");
+}
+
 /* ------------------------------------------------------------------ */
 /* Summary                                                             */
 /* ------------------------------------------------------------------ */

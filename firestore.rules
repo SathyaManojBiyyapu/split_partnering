@@ -119,7 +119,15 @@ service cloud.firestore {
 
     match /groups/{groupId} {
       allow read: if loggedIn();
-      allow create: if loggedIn() && validString(request.resource.data.category) && validString(request.resource.data.option) && validNumber(request.resource.data.membersCount) && validNumber(request.resource.data.requiredSize) && validList(request.resource.data.members) && validList(request.resource.data.memberUIDs) && validString(request.resource.data.createdBy) && request.resource.data.membersCount >= 1 && request.resource.data.requiredSize >= 2;
+      // Create: server route /api/join-group only (Admin SDK). These extra
+      // checks harden against any direct client write: a group MUST carry a
+      // pairingId (pairing-scoped payments/chat unlock) + memberPayments map,
+      // and can never be created already over capacity (membersCount must not
+      // exceed requiredSize). The server always satisfies all of these.
+      allow create: if loggedIn() && validString(request.resource.data.category) && validString(request.resource.data.option) && validNumber(request.resource.data.membersCount) && validNumber(request.resource.data.requiredSize) && validList(request.resource.data.members) && validList(request.resource.data.memberUIDs) && validString(request.resource.data.createdBy) && request.resource.data.membersCount >= 1 && request.resource.data.requiredSize >= 2 && request.resource.data.membersCount <= request.resource.data.requiredSize && validString(request.resource.data.pairingId) && request.resource.data.memberPayments is map;
+      // Update: admin/server only (prevents membership/payment manipulation —
+      // membership changes and payment resets are pairing-scoped server
+      // transactions in /api/join-group and /api/remove-match).
       allow update: if isAdmin();
       allow delete: if false;
     }
@@ -145,7 +153,12 @@ service cloud.firestore {
 
     match /payments/{paymentId} {
       allow read: if loggedIn() && (isOwnDoc(resource.data.uid) || isOwnDoc(resource.data.phone) || isAdmin());
-      allow create: if loggedIn() && validString(request.resource.data.uid) && validNumber(request.resource.data.amount) && (isOwnDoc(request.resource.data.uid) || isOwnDoc(request.resource.data.phone));
+      // Create: server payment-verification routes only (Admin SDK). Hardened
+      // against direct client writes: a payment record MUST be pairing-scoped
+      // (pairingId) and tied to a group (groupId). Chat unlock never trusts
+      // this collection anyway — it is validated server-side against the
+      // group's memberPayments for the CURRENT pairingId.
+      allow create: if loggedIn() && validString(request.resource.data.uid) && validNumber(request.resource.data.amount) && validString(request.resource.data.pairingId) && validString(request.resource.data.groupId) && (isOwnDoc(request.resource.data.uid) || isOwnDoc(request.resource.data.phone));
       allow update: if isAdmin();
       allow delete: if false;
     }

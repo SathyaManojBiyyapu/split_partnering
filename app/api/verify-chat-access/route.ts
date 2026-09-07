@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import admin, { adminDb, adminCredentialsConfigured } from "@/firebase/admin";
+import { chatUnlocked } from "@/app/lib/groupMatching";
 
 /**
  * SERVER-SIDE chat access verification.
  * Chat is unlocked ONLY when:
  * 1. The caller is AUTHENTICATED (Firebase ID token) and is a member of the group
- * 2. The caller has a VERIFIED payment (status === "paid" && verified === true)
- * 3. The chat exists for that group
+ * 2. The group is COMPLETE (e.g. 2/2 active members)
+ * 3. EVERY active member has PAID for the CURRENT pairing (pairingId matches —
+ *    a replaced partner resets payments, so old payment state never unlocks)
  *
  * The caller's identity is resolved from their verified ID token — NEVER from
  * a client-supplied uid (which could be spoofed to access another member's
@@ -91,22 +93,17 @@ export async function POST(req: Request) {
       );
     }
 
-    // 2. Check verified payment exists for the caller (any identity format
-    //    historically used in payment docs: 10-digit phone, +91 phone, uid)
-    const paymentsRef = adminDb.collection("payments");
-    const paySnap = await paymentsRef
-      .where("uid", "in", identities)
-      .where("groupId", "==", groupId)
-      .where("status", "==", "paid")
-      .where("verified", "==", true)
-      .limit(1)
-      .get();
-
-    const isPaid = !paySnap.empty;
-
-    if (!isPaid) {
+    // 2. Chat unlocks ONLY when the group is COMPLETE and EVERY active member
+    //    paid for the CURRENT pairing (both/observed members — never just the
+    //    caller). A replaced partner creates a new pairingId, so the old
+    //    member's payment can never unlock the new pairing.
+    if (!chatUnlocked(group)) {
       return NextResponse.json(
-        { error: "Payment not verified. Please complete payment to unlock chat." },
+        {
+          error:
+            "Chat is locked. Your match must be complete (2/2) AND both members must have paid.",
+          code: "CHAT_LOCKED",
+        },
         { status: 403 }
       );
     }

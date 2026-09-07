@@ -34,6 +34,10 @@ import {
   isGroupMatched,
   memberDisplayNames,
   matchesLocation,
+  chatUnlocked,
+  isPaidForPairing,
+  activeMemberPhones,
+  paidMemberCountForPairing,
 } from "@/app/lib/groupMatching";
 import Seo from "@/app/components/Seo";
 
@@ -52,6 +56,8 @@ type Group = {
   state?: string;
   district?: string;
   city?: string;
+  pairingId?: string;
+  memberPayments?: Record<string, any>;
 };
 
 type PartnerMatch = {
@@ -389,6 +395,8 @@ export default function DashboardPage() {
             state: data.state || "",
             district: data.district || "",
             city: data.city || "",
+            pairingId: data.pairingId || "",
+            memberPayments: data.memberPayments || {},
           });
         });
 
@@ -490,20 +498,20 @@ export default function DashboardPage() {
   // full groups as "1/2" and misfiled them under Pending Requests).
   const pendingRequests = matches.filter(g => {
     if (isExpired(g.createdAt)) return false;
-    if (g.isPaid) return false;
+    if (chatUnlocked(g)) return false;
     return !isGroupMatched(g);
   }).length;
-  const completedPartnerships = matches.filter(g => g.isPaid || g.status === "completed" || g.status === "expired" || isExpired(g.createdAt)).length;
+  const completedPartnerships = matches.filter(g => chatUnlocked(g) || g.isPaid || g.status === "completed" || g.status === "expired" || isExpired(g.createdAt)).length;
   const totalSavings = paidStats.total;
   const readyMatches = matches.filter(g => {
     if (isExpired(g.createdAt)) return false;
-    if (g.isPaid) return false;
+    if (chatUnlocked(g)) return false;
     return isGroupMatched(g);
   }).length;
 
-  const pendingGroups = matches.filter(g => !isExpired(g.createdAt) && !g.isPaid && !isGroupMatched(g));
-  const readyGroups = matches.filter(g => !isExpired(g.createdAt) && !g.isPaid && isGroupMatched(g));
-  const completedGroups = matches.filter(g => g.isPaid || g.status === "completed" || g.status === "expired" || isExpired(g.createdAt));
+  const pendingGroups = matches.filter(g => !isExpired(g.createdAt) && !chatUnlocked(g) && !isGroupMatched(g));
+  const readyGroups = matches.filter(g => !isExpired(g.createdAt) && !chatUnlocked(g) && isGroupMatched(g));
+  const completedGroups = matches.filter(g => chatUnlocked(g) || g.status === "completed" || g.status === "expired" || isExpired(g.createdAt));
 
   /* Group card renderer */
   const renderGroupCard = (group: Group, idx: number, section: "pending" | "ready" | "completed") => {
@@ -514,13 +522,24 @@ export default function DashboardPage() {
     const isSearching = matchingCount < required;
     const expiry = getExpiryStatus(group.createdAt);
     const statusInfo = getGroupStatus(group);
-    const isPaid = group.isPaid;
     const isExpiredGroup =
       group.status === "expired" ||
       isExpired(group.createdAt);
     // Existing member(s) of this group — visible while waiting AND matched.
     const memberNames = memberDisplayNames(group);
     const waitingFor = Math.max(required - matchingCount, 0);
+
+    /* ---- PAYMENT + CHAT state derived from the SHARED group doc ----
+       (live via the onSnapshot listener — never a stale client read). */
+    const partnerPhone = activeMemberPhones(group).find((p) => p !== phone) || "";
+    const mePaid = isPaidForPairing(group, phone);
+    const partnerPaid = !!partnerPhone && isPaidForPairing(group, partnerPhone);
+    const unlocked = chatUnlocked(group);
+    // Payment/Unlock is ENABLED only when the pair is complete (2/2) and the
+    // CURRENT user has not yet paid for the current pairing.
+    const canPay = isGroupMatched(group) && !mePaid;
+    const paidForPair = paidMemberCountForPairing(group);
+    const isPaid = unlocked || group.isPaid; // chat unlocked = both paid (group doc)
     const businessName = group.collaboratorBrand || group.collaboratorId || latestSelection?.collaboratorName || latestSelection?.collaboratorId || "";
     // Two-line My Matches hierarchy:
     //   Line 1: State → District → City
@@ -617,20 +636,23 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Payment status */}
-          <div className="flex items-center gap-2 text-[11px] mb-2">
-            {isPaid ? (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                💳 Payment: Completed
+          {/* Payment status — per-member, tied to the CURRENT pairing */}
+          <div className="flex flex-wrap items-center gap-2 text-[11px] mb-2">
+            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border ${mePaid ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-yellow-500/10 text-yellow-400 border-yellow-500/20"}`}>
+              💳 You: {mePaid ? "Paid" : "Payment Pending"}
+            </span>
+            {partnerPhone ? (
+              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border ${partnerPaid ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-yellow-500/10 text-yellow-400 border-yellow-500/20"}`}>
+                👤 Partner: {partnerPaid ? "Paid" : "Payment Pending"}
               </span>
-            ) : (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">
-                💳 Payment: Pending
-              </span>
-            )}
-            {isPaid ? (
+            ) : null}
+            {unlocked ? (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20">
                 💬 Chat: Unlocked
+              </span>
+            ) : matchingCount >= required ? (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-500/10 text-gray-400 border border-gray-500/20">
+                🔒 Chat: Locked ({paidForPair}/{matchingCount} paid)
               </span>
             ) : null}
           </div>
@@ -645,26 +667,28 @@ export default function DashboardPage() {
 
         {/* Actions footer */}
         <div className="border-t border-white/5 px-5 py-3 flex gap-2 flex-wrap bg-black/20">
-          {!isPaid ? (
-            isExpiredGroup ? (
-              <button disabled className="px-4 py-2 rounded-xl bg-gray-800 text-gray-500 text-xs font-bold cursor-not-allowed">
-                ⌛ Match expired
-              </button>
-            ) : matchingCount >= required ? (
-              <button onClick={() => (window.location.href = `/payment?groupId=${group.id}`)}
-                className="btn-primary text-xs px-4 py-2">
-                🔓 Unlock for ₹29
-              </button>
-            ) : (
-              <button disabled className="px-4 py-2 rounded-xl bg-gray-800 text-gray-500 text-xs font-bold cursor-not-allowed">
-                ⏳ Waiting for members
-              </button>
-            )
-          ) : (
+          {unlocked ? (
             <button onClick={() => router.push(`/chat/${group.id}`)}
               className="px-4 py-2 rounded-xl bg-purple-600 text-xs font-bold hover:scale-105 transition">
               💬 Open Chat
               {(unreadCounts[group.id] || 0) > 0 && <span className="ml-2">💬 {unreadCounts[group.id]}</span>}
+            </button>
+          ) : isExpiredGroup ? (
+            <button disabled className="px-4 py-2 rounded-xl bg-gray-800 text-gray-500 text-xs font-bold cursor-not-allowed">
+              ⌛ Match expired
+            </button>
+          ) : canPay ? (
+            <button onClick={() => (window.location.href = `/payment?groupId=${group.id}`)}
+              className="btn-primary text-xs px-4 py-2">
+              🔓 Unlock for ₹29
+            </button>
+          ) : mePaid && !partnerPaid && matchingCount >= required ? (
+            <button disabled className="px-4 py-2 rounded-xl bg-gray-800 text-gray-500 text-xs font-bold cursor-not-allowed">
+              ⏳ Waiting for partner's payment
+            </button>
+          ) : (
+            <button disabled className="px-4 py-2 rounded-xl bg-gray-800 text-gray-500 text-xs font-bold cursor-not-allowed">
+              ⏳ Waiting for members
             </button>
           )}
           <button onClick={() => deleteMatch(group.id)}

@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { FieldValue } from "firebase-admin/firestore";
 import admin, { adminDb, adminTimestamp, adminCredentialsConfigured } from "@/firebase/admin";
 import {
   getRequiredSize,
@@ -81,6 +80,15 @@ async function ensureChat(groupId: string, members: any[], memberUIDs: string[])
     unreadCounts: {},
     isActive: true,
   });
+}
+
+/* Generate a fresh match/session id for a pairing. Old payment records are
+ * tied to this id — every membership change produces a new one, so a previous
+ * pairing's payment can never unlock the next pairing. */
+function newPairingId(): string {
+  const c = (globalThis as any).crypto;
+  if (c?.randomUUID) return `p_${c.randomUUID()}`;
+  return `p_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`;
 }
 
 async function loadCurrentUser(cleanPhone: string) {
@@ -238,6 +246,7 @@ export async function POST(req: Request) {
         // ---- No compatible open group → create a brand-new 1/x group ----
         const newRef = groupsRef.doc();
         const required = requestedRequiredSize || getRequiredSize(option);
+        const nextPairingId = newPairingId();
         await newRef.set({
           category,
           option,
@@ -251,6 +260,8 @@ export async function POST(req: Request) {
           membersCount: 1,
           requiredSize: required,
           status: "waiting",
+          pairingId: nextPairingId,
+          memberPayments: { [cleanPhone]: { paid: false, pairingId: nextPairingId } },
           createdAt: adminTimestamp(),
           updatedAt: adminTimestamp(),
           lastActivityAt: adminTimestamp(),
@@ -295,14 +306,30 @@ export async function POST(req: Request) {
 
         const updatedCount = members.length + 1;
         const nextStatus = updatedCount >= required ? "ready" : "waiting";
+        // ANY membership change is a NEW pairing → fresh pairingId + all
+        // payments reset. Old paid state can never carry into a new pair.
+        const nextPairingId = newPairingId();
+        const existingPhones = members
+          .map((m: any) => (typeof m === "string" ? m : m?.phone || m?.uid || ""))
+          .filter((p: string) => p);
+        const allPhones = [...existingPhones, cleanPhone];
+        const resetMembers = members.map((m: any) =>
+          typeof m === "string" ? m : { ...m, paid: false }
+        );
+        const memberPayments: Record<string, any> = {};
+        for (const p of allPhones) {
+          memberPayments[p] = { paid: false, pairingId: nextPairingId };
+        }
 
         await tx.update(targetRef, {
-          members: FieldValue.arrayUnion(memberObject),
-          memberUIDs: FieldValue.arrayUnion(cleanPhone),
+          members: [...resetMembers, memberObject],
+          memberUIDs: [...currentUIDs, cleanPhone],
           membersCount: updatedCount,
           updatedAt: adminTimestamp(),
           lastActivityAt: adminTimestamp(),
           status: nextStatus,
+          pairingId: nextPairingId,
+          memberPayments,
           ...(nextStatus === "ready" ? { readyAt: adminTimestamp() } : {}),
         });
 

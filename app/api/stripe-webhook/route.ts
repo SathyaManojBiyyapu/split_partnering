@@ -26,6 +26,7 @@ async function markMemberPaid(
   if (!groupSnap.exists) return;
 
   const group = groupSnap.data();
+  const pairingId = String(group?.pairingId || "");
   const updatedMembers = (group?.members || []).map((m: any) => {
     if (typeof m === "string") return m;
     if (m.phone === userId || m.uid === userId) {
@@ -34,7 +35,13 @@ async function markMemberPaid(
     return m;
   });
 
-  await groupRef.update({ members: updatedMembers });
+  // Per-pair payment state on the SHARED group doc (live source of truth).
+  const memberPayments = {
+    ...(group?.memberPayments || {}),
+    [userId]: { paid: true, pairingId, paidAt: adminTimestamp() },
+  };
+
+  await groupRef.update({ members: updatedMembers, memberPayments });
 }
 
 /* =========================
@@ -53,12 +60,31 @@ async function finalizePayment(
     .where("status", "==", "pending")
     .get();
 
+  let updatedAny = false;
   for (const d of paySnap.docs) {
     await d.ref.update({
       status: "paid",
       verified: true,
       stripeSessionId,
       paidAt: adminTimestamp(),
+    });
+    updatedAny = true;
+  }
+
+  // If the client's pending doc write was rule-denied (e.g. Google login),
+  // record the paid payment server-side so history/audit is complete.
+  if (!updatedAny) {
+    await paymentsRef.add({
+      uid: userId,
+      phone: userId,
+      groupId,
+      amount: ACTIVATION_PRICE,
+      status: "paid",
+      verified: true,
+      paymentMethod: "stripe",
+      stripeSessionId,
+      paidAt: adminTimestamp(),
+      createdAt: adminTimestamp(),
     });
   }
 }

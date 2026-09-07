@@ -16,6 +16,11 @@ import {
   isGroupMatched,
   memberDisplayNames,
   matchesLocation,
+  matchesGroupKey,
+  pickOldestRefillable,
+  chatUnlocked,
+  isPaidForPairing,
+  getPairingId,
 } from "../app/lib/groupMatching.ts";
 import {
   shouldLockName,
@@ -60,7 +65,8 @@ function makeStore() {
 
 // Mirrors adminDb.runTransaction(): reads FRESH state at commit, re-checks
 // capacity/status/membership, writes, and reports retry when the group is
-// no longer joinable.
+// no longer joinable. ANY membership change = NEW pairing: fresh pairingId
+// and every member's payment resets to pending.
 function joinTransaction(store, groupId, category, option, memberObject, phone) {
   const g = store.get(groupId);
   if (!g) return { retry: true, result: null };
@@ -77,12 +83,23 @@ function joinTransaction(store, groupId, category, option, memberObject, phone) 
 
   const updatedCount = members.length + 1;
   const nextStatus = updatedCount >= required ? "ready" : "waiting";
+  const nextPairingId = newPairingId();
+  const resetMembers = members.map((m) => (typeof m === "string" ? m : { ...m, paid: false }));
+  const allPhones = [
+    ...members.map((m) => (typeof m === "string" ? m : m?.phone || m?.uid || "")).filter(Boolean),
+    phone,
+  ];
+  const memberPayments = {};
+  for (const p of allPhones) memberPayments[p] = { paid: false, pairingId: nextPairingId };
+
   store.set(groupId, {
     ...g,
-    members: [...members, memberObject],
+    members: [...resetMembers, memberObject],
     memberUIDs: [...(g.memberUIDs || []), phone],
     membersCount: updatedCount,
     status: nextStatus,
+    pairingId: nextPairingId,
+    memberPayments,
     ...(nextStatus === "ready" ? { readyAt: 1 } : {}),
   });
 
@@ -92,6 +109,7 @@ function joinTransaction(store, groupId, category, option, memberObject, phone) 
 function createGroup(store, category, option, memberObject, phone, extra = {}) {
   const id = "g" + (store.all().length + 1);
   const required = extra.requiredSize || getRequiredSize(option);
+  const nextPairingId = newPairingId();
   store.set(id, {
     category,
     option,
@@ -105,10 +123,139 @@ function createGroup(store, category, option, memberObject, phone, extra = {}) {
     membersCount: 1,
     requiredSize: required,
     status: "waiting",
+    pairingId: nextPairingId,
+    memberPayments: { [phone]: { paid: false, pairingId: nextPairingId } },
     createdAt: store.nextTs(),
     createdBy: phone,
   });
   return { status: "created", groupId: id, membersCount: 1, requiredSize: required };
+}
+
+/* Deterministic pairing-id generator (mirrors the server's newPairingId()). */
+let pairingCounter = 1000;
+function newPairingId() {
+  pairingCounter += 1;
+  return `p_${pairingCounter}`;
+}
+
+// Replicates /api/remove-match's removal transaction: soft-remove the caller,
+// fresh pairingId, all remaining payments reset, "empty" when nobody remains.
+function removeProcess(store, groupId, phone) {
+  const g = store.get(groupId);
+  if (!g) return { ok: false, error: "Group not found" };
+  if (!isMember(g, phone)) return { ok: false, error: "not a member" };
+  const members = memberList(g);
+  const oldCount = Number(g.membersCount) || members.length;
+  const newCount = Math.max(0, oldCount - 1);
+  const required = resolveRequired(g, g.option);
+  const nextPairingId = newPairingId();
+  const remaining = members.filter((m) =>
+    typeof m === "string" ? m !== phone : (m?.phone || m?.uid) !== phone
+  );
+  const remainingPhones = remaining
+    .map((m) => (typeof m === "string" ? m : m?.phone || m?.uid || ""))
+    .filter(Boolean);
+  const resetMembers = remaining.map((m) => (typeof m === "string" ? m : { ...m, paid: false }));
+  const memberPayments = {};
+  for (const p of remainingPhones) memberPayments[p] = { paid: false, pairingId: nextPairingId };
+
+  if (newCount <= 0) {
+    store.set(groupId, {
+      ...g,
+      members: [], memberUIDs: [], membersCount: 0,
+      status: "empty", pairingId: nextPairingId, memberPayments: {},
+    });
+  } else {
+    store.set(groupId, {
+      ...g,
+      members: resetMembers,
+      memberUIDs: remainingPhones,
+      membersCount: newCount,
+      status: newCount >= required ? "ready" : "waiting",
+      pairingId: nextPairingId,
+      memberPayments,
+    });
+  }
+  return { ok: true, newCount, required };
+}
+
+// Replicates verify-razorpay-payment's group update: mark THIS member paid
+// FOR THE CURRENT pairing on the shared group doc (rejected at 1/2).
+function payProcess(store, groupId, phone) {
+  const g = store.get(groupId);
+  if (!g) return { ok: false, error: "Group not found" };
+  const required = resolveRequired(g, g.option);
+  if (memberCount(g) < required) return { ok: false, error: "match not complete (1/2)" };
+  const pairingId = getPairingId(g);
+  const members = memberList(g).map((m) =>
+    typeof m === "string" ? m : (m?.phone || m?.uid) === phone ? { ...m, paid: true } : m
+  );
+  store.set(groupId, {
+    ...g,
+    members,
+    memberPayments: { ...(g.memberPayments || {}), [phone]: { paid: true, pairingId } },
+  });
+  return { ok: true };
+}
+
+// Replicates remove-match's refillOpenSlot: move the OLDEST compatible lone
+// waiting member into the vacated slot; source group becomes "empty"; both
+// members' payments reset for the new pairing. Re-validated before commit.
+function refillProcess(store, targetGroupId) {
+  const target = store.get(targetGroupId);
+  if (!target) return null;
+  if (!isOpen(target)) return null;
+  const tCount = memberCount(target);
+  const required = resolveRequired(target, target.option);
+  if (tCount !== required - 1) return null;
+
+  const candidates = store.query(target.category, target.option);
+  const best = pickOldestRefillable(
+    candidates,
+    {
+      state: target.state, district: target.district, city: target.city,
+      option: target.option, collaboratorId: target.collaboratorId || "",
+    },
+    targetGroupId
+  );
+  if (!best) return null;
+
+  // Re-validate (transactional semantics): both docs fresh-checked.
+  const src = store.get(best.id);
+  if (!src || !isOpen(src) || memberCount(src) !== 1) return null;
+  if (!matchesLocation(src, target.state, target.district, target.city)) return null;
+  if (!matchesGroupKey(src, target.collaboratorId || "")) return null;
+
+  const moved = memberList(src)[0];
+  const movedPhone = typeof moved === "string" ? moved : moved?.phone || moved?.uid || "";
+  const targetPhones = memberList(target)
+    .map((m) => (typeof m === "string" ? m : m?.phone || m?.uid || ""))
+    .filter(Boolean);
+  if (!movedPhone || targetPhones.includes(movedPhone)) return null;
+
+  const nextPairingId = newPairingId();
+  const resetTargetMembers = memberList(target).map((m) =>
+    typeof m === "string" ? m : { ...m, paid: false }
+  );
+  const memberPayments = {};
+  for (const p of [...targetPhones, movedPhone]) {
+    memberPayments[p] = { paid: false, pairingId: nextPairingId };
+  }
+
+  store.set(best.id, {
+    ...src, members: [], memberUIDs: [], membersCount: 0,
+    status: "empty", pairingId: nextPairingId, memberPayments: {},
+  });
+  store.set(targetGroupId, {
+    ...target,
+    members: [...resetTargetMembers, typeof moved === "string" ? moved : { ...moved, paid: false }],
+    memberUIDs: [...targetPhones, movedPhone],
+    membersCount: required,
+    status: "ready",
+    pairingId: nextPairingId,
+    memberPayments,
+  });
+  return { movedPhone, targetGroupId };
 }
 
 // Replicates /api/join-group's retry loop exactly.
@@ -668,6 +815,120 @@ console.log("\n== Scenario 9: nearby current-city pool + Pay gating + ticket rat
   check(!isValidTicketRate("12a5") && !isValidTicketRate(-5) && !isValidTicketRate(12.5) && !isValidTicketRate("abc") && !isValidTicketRate(null), "T: non-numeric / negative / decimal / null rates are REJECTED");
   check(sanitizeTicketRateInput("12a34bc5678") === "1234", "T: UI input mask strips non-digits and hard-caps at 4 digits");
   check(isValidTicketRate(sanitizeTicketRateInput("500")) === true, "T: masked input stays valid");
+}
+
+/* ------------------------------------------------------------------ */
+/* SCENARIO 10 — Full pairing lifecycle: match → pay → chat → remove   */
+/*               → FIFO refill → payment reset (tests A–J)             */
+/* ------------------------------------------------------------------ */
+console.log("\n== Scenario 10: pairing lifecycle (match, pay, chat, remove, FIFO refill) ==");
+{
+  const store10 = makeStore();
+  const LOC = { state: "Andhra Pradesh", district: "Prakasam", city: "Addanki" };
+  const join = (phone, collaboratorId) => routeProcess(store10, {
+    category: "gym", option: "split", phone,
+    ...LOC, collaboratorId, extra: { collaboratorName: "Vault" },
+  });
+
+  // A: User 1 joins → 1/2.
+  const u1 = join("9000000001", "vault-gym");
+  check(u1.status === "created" && u1.membersCount === 1 && u1.requiredSize === 2, "A: User 1 joins → 1/2 waiting group");
+  check(!chatUnlocked(store10.get(u1.groupId)) && !isGroupMatched(store10.get(u1.groupId)), "A: 1/2 → chat locked, Pay disabled");
+
+  // B: User 2 joins the SAME exact key → 2/2, same group (live shared doc).
+  const u2 = join("9000000002", "vault-gym");
+  check(u2.groupId === u1.groupId && u2.status === "ready" && u2.membersCount === 2, "B: User 2 joins → same group 2/2 Matched (User 1's card updates from the shared doc)");
+
+  // User 7 arrives while the pair is full → waits in their own lone group
+  // (this is the FIFO queue the refill draws from).
+  const u7 = join("9000000007", "vault-gym");
+  check(u7.status === "created" && u7.groupId !== u1.groupId && u7.membersCount === 1, "Setup: full pair → User 7 waits in their own lone 1/2 group");
+
+  // D: Pay button available to BOTH at 2/2 (group matched, self unpaid).
+  const gA = store10.get(u1.groupId);
+  check(isGroupMatched(gA) && !isPaidForPairing(gA, "9000000001") && !isPaidForPairing(gA, "9000000002"), "D: at 2/2 the Unlock/Pay button is available to both members");
+
+  // E: Only User 1 pays → chat stays locked.
+  const p1 = payProcess(store10, u1.groupId, "9000000001");
+  check(p1.ok && isPaidForPairing(store10.get(u1.groupId), "9000000001"), "E: User 1 pays → marked paid for the current pairing");
+  check(!chatUnlocked(store10.get(u1.groupId)), "E: 2/2 + one payment → chat REMAINS locked");
+
+  // F: User 2 pays → both paid → chat unlocks for both.
+  const p2 = payProcess(store10, u1.groupId, "9000000002");
+  check(p2.ok && chatUnlocked(store10.get(u1.groupId)), "F: both paid → chat UNLOCKS for both users");
+
+  // G: User 1 removes → User 2 immediately sees 1/2, payments reset.
+  const r1 = removeProcess(store10, u1.groupId, "9000000001");
+  const gAfterRemove = store10.get(u1.groupId);
+  check(r1.ok && gAfterRemove.status === "waiting" && memberCount(gAfterRemove) === 1, "G: User 1 removes → group becomes 1/2 Waiting for User 2");
+  check(!isPaidForPairing(gAfterRemove, "9000000002") && !chatUnlocked(gAfterRemove), "G: User 2's payment reset → 1/2 Waiting, chat locked");
+
+  // H: User 7 was ALREADY waiting in their own lone group (joined while the
+  // pair was full) → the FIFO refill moves them into the vacated slot.
+  const refill = refillProcess(store10, u1.groupId);
+  const gRefilled = store10.get(u1.groupId);
+  check(!!refill && refill.movedPhone === "9000000007" && gRefilled.status === "ready" && memberCount(gRefilled) === 2, "H: FIFO refill → User 2 + User 7 = 2/2 Matched");
+  check(!isOpen(store10.get(u7.groupId)) && memberCount(store10.get(u7.groupId)) === 0, "H: User 7's old lone group is marked empty (no orphan waiting groups)");
+
+  // I: OLD payment state must NOT unlock the NEW pairing.
+  check(getPairingId(gAfterRemove) !== getPairingId(gRefilled), "I: replacement created a NEW pairing id");
+  check(!isPaidForPairing(gRefilled, "9000000002") && !isPaidForPairing(gRefilled, "9000000007") && !chatUnlocked(gRefilled), "I: new pairing starts with BOTH payments pending — chat locked");
+  const rp1 = payProcess(store10, u1.groupId, "9000000002");
+  check(rp1.ok && !chatUnlocked(store10.get(u1.groupId)), "I: only User 2 pays again → chat still locked (no carry-over)");
+  const rp2 = payProcess(store10, u1.groupId, "9000000007");
+  check(rp2.ok && chatUnlocked(store10.get(u1.groupId)), "I: User 7 also pays → chat unlocks for the NEW pair");
+
+  // Join-time FIFO fill: when a user clicks AFTER a vacancy exists, they fill
+  // the oldest open slot directly (no extra group created).
+  removeProcess(store10, u1.groupId, "9000000002"); // User 2 leaves again
+  const u9 = join("9000000009", "vault-gym");
+  check(u9.groupId === u1.groupId && u9.status === "ready" && memberCount(store10.get(u1.groupId)) === 2, "FIFO join-time fill: User 9 clicking after the vacancy joins the open slot directly");
+}
+
+/* ------------------------------------------------------------------ */
+/* SCENARIO 11 — Multiple pairs stay independent (J) + capacity (Q)    */
+/* ------------------------------------------------------------------ */
+console.log("\n== Scenario 11: multiple independent pairs + FIFO fill + capacity ==");
+{
+  const storeJ = makeStore();
+  const LOC = { state: "Andhra Pradesh", district: "Prakasam", city: "Addanki" };
+  const joinJ = (phone) => routeProcess(storeJ, {
+    category: "gym", option: "split", phone, ...LOC, collaboratorId: "vault-gym",
+  });
+  const g1 = joinJ("8000000001"); joinJ("8000000002"); // Group A 2/2
+  const g2 = joinJ("8000000003"); joinJ("8000000004"); // Group B 2/2
+  const g3 = joinJ("8000000005"); joinJ("8000000006"); // Group C 2/2
+  check(g1.groupId !== g2.groupId && g2.groupId !== g3.groupId, "J: three separate 2-person groups formed (1+2, 3+4, 5+6)");
+
+  // User 7 arrives while ALL pairs are full → creates a lone 1/2 waiting group.
+  const u7 = joinJ("8000000007");
+  check(u7.status === "created" && memberCount(storeJ.get(u7.groupId)) === 1, "J: User 7 creates lone 1/2 waiting group (all pairs full)");
+  check(u7.groupId !== g1.groupId && u7.groupId !== g2.groupId && u7.groupId !== g3.groupId, "J: User 7 is NOT in any existing full group");
+
+  const beforeA = JSON.stringify(storeJ.get(g1.groupId));
+  const beforeB = JSON.stringify(storeJ.get(g2.groupId));
+  const beforeC = JSON.stringify(storeJ.get(g3.groupId));
+
+  // User 2 leaves Group A → Group A drops to 1/2 (User 1 remains).
+  removeProcess(storeJ, g1.groupId, "8000000002");
+  check(memberCount(storeJ.get(g1.groupId)) === 1 && isOpen(storeJ.get(g1.groupId)), "J: User 2 leaves → Group A becomes 1/2 Waiting (User 1 remains)");
+
+  // FIFO refill: User 7 (the oldest lone waiting user) fills Group A's slot.
+  const refillJ = refillProcess(storeJ, g1.groupId);
+  check(!!refillJ && refillJ.movedPhone === "8000000007" && memberCount(storeJ.get(g1.groupId)) === 2 && storeJ.get(g1.groupId).status === "ready", "J: User 2 leaves → waiting User 7 FIFO-fills Group A (1 + 7 = 2/2)");
+  check(!isOpen(storeJ.get(u7.groupId)) && memberCount(storeJ.get(u7.groupId)) === 0, "J: User 7's old lone group is emptied after FIFO refill");
+  check(JSON.stringify(storeJ.get(g2.groupId)) === beforeB && JSON.stringify(storeJ.get(g3.groupId)) === beforeC, "J: Groups 3+4 and 5+6 remain completely unchanged");
+
+  // User 1 leaves → Group A drops to 1/2 (User 7 remains).
+  removeProcess(storeJ, g1.groupId, "8000000001");
+  check(memberCount(storeJ.get(g1.groupId)) === 1 && isOpen(storeJ.get(g1.groupId)), "J: User 1 leaves → Group A becomes 1/2 Waiting (User 7 remains)");
+
+  // User 8 joins AFTER the vacancy exists → join-time fill: fills the open slot directly.
+  const u8 = joinJ("8000000008");
+  check(u8.groupId === g1.groupId && u8.status === "ready" && memberCount(storeJ.get(g1.groupId)) === 2, "J: continuous FIFO — User 8 fills the next vacancy at join time (1 + 8 = 2/2)");
+
+  check(!storeJ.all().some((g) => resolveRequired(g, g.option) === 2 && memberCount(g) > 2), "Q: no group ever exceeds 2/2 (no 3/2 anywhere)");
+  check(storeJ.all().every((g) => g.status !== "waiting" || memberCount(g) === 1 || memberCount(g) === 2), "Q: waiting groups are only lone (1/2) groups — FIFO queue integrity");
 }
 
 /* ------------------------------------------------------------------ */

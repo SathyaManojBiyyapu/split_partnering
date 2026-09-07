@@ -2,6 +2,7 @@ export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
 import Razorpay from "razorpay";
+import admin, { adminCredentialsConfigured } from "@/firebase/admin";
 
 /* =========================
    FIXED ACTIVATION PRICE
@@ -50,13 +51,42 @@ export async function POST(req: Request) {
     const razorpay = getRazorpay();
 
     const body = await req.json();
-    const { groupId, uid } = body;
+    const { groupId } = body;
 
-    if (!groupId || !uid) {
+    if (!groupId) {
       return NextResponse.json(
         { error: "Missing required fields" },
         { status: 400 }
       );
+    }
+
+    // Identity is derived from the VERIFIED Firebase ID token — never trust a
+    // client-supplied uid (prevents one user paying for/acting as another).
+    const authorization = req.headers.get("authorization") || "";
+    const idToken = authorization.replace(/^Bearer\s+/i, "").trim();
+    if (!idToken) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (!adminCredentialsConfigured) {
+      return NextResponse.json(
+        { error: "Server configuration error: Firebase admin credentials missing." },
+        { status: 503 }
+      );
+    }
+
+    let uid = "";
+    let phone = "";
+    try {
+      const decoded = await admin.auth().verifyIdToken(idToken);
+      uid = decoded?.uid || "";
+      if (decoded?.phone_number) {
+        phone = String(decoded.phone_number).replace(/^\+91/, "").trim();
+      }
+    } catch (error: any) {
+      if (String(error?.code || "").startsWith("auth/")) {
+        return NextResponse.json({ error: "Invalid token" }, { status: 401 });
+      }
+      throw error;
     }
 
     // Verify the user is actually a member of this group before creating an order
@@ -74,7 +104,10 @@ export async function POST(req: Request) {
     const group = groupSnap.data();
     const members = group?.members || [];
     const memberUIDs = group?.memberUIDs || [];
-    const isMember = members.some((m: any) => m?.phone === uid || m?.uid === uid) || memberUIDs.includes(uid);
+    const identities = [uid, phone, `+91${phone}`, `91${phone}`].filter(Boolean);
+    const isMember =
+      members.some((m: any) => identities.includes(m?.phone) || identities.includes(m?.uid)) ||
+      identities.some((id) => memberUIDs.includes(id));
 
     if (!isMember) {
       return NextResponse.json(
@@ -92,7 +125,7 @@ export async function POST(req: Request) {
       currency: "INR",
       receipt: `grp_${Date.now()}`,
       notes: {
-        uid: uid || "",
+        uid: phone || uid || "",
         groupId: groupId || "",
         platform: "partnersync",
         amount: String(ACTIVATION_PRICE),

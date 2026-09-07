@@ -19,17 +19,25 @@ import {
 import {
   doc,
   getDoc,
+  getDocs,
   collection,
   addDoc,
   serverTimestamp,
-  getDocs,
   query,
   where,
+  onSnapshot,
 } from "firebase/firestore";
 
 import {
   onAuthStateChanged,
 } from "firebase/auth";
+
+import {
+  isGroupMatched,
+  isPaidForPairing,
+  chatUnlocked,
+  activeMemberPhones,
+} from "@/app/lib/groupMatching";
 
 function PaymentContent() {
 
@@ -185,63 +193,62 @@ function PaymentContent() {
   }, [router]);
 
   /* -----------------------------
-     FETCH GROUP
+     LIVE GROUP + PAYMENT LISTENER
+     onSnapshot keeps BOTH users' payment pages in sync: when the partner
+     joins, pays, or leaves, this listener fires immediately — no manual
+     refresh needed. The shared group doc (memberPayments, membersCount,
+     pairingId) is the single source of truth for payment/chat state.
   ----------------------------- */
 
   useEffect(() => {
 
-    if (!groupId)
+    if (!groupId) {
+      setLoading(false);
       return;
+    }
 
-    const fetchGroup =
-      async () => {
+    const unsub = onSnapshot(
+      doc(db, "groups", groupId),
+      (snap) => {
+        if (!snap.exists()) {
+          alert("Group not found");
+          router.push("/dashboard");
+          return;
+        }
 
-        try {
+        const gData = snap.data() as any;
+        setGroupData(gData);
 
-          const snap =
-            await getDoc(
-              doc(
-                db,
-                "groups",
-                groupId
-              )
-            );
+        /* ---- AUTHORITATIVE per-pairing payment check (group doc) ---- */
+        const userId = getUserId();
+        if (userId) {
+          const mePaid = isPaidForPairing(gData, userId);
+          setPaymentCompleted(mePaid);
 
-          if (
-            snap.exists()
-          ) {
-
-            setGroupData(
-              snap.data()
-            );
-
-          } else {
-
-            alert(
-              "Group not found"
-            );
-
-            router.push(
-              "/dashboard"
-            );
+          /* Live redirect: once chat is unlocked, take the user to chat. */
+          if (chatUnlocked(gData) && mePaid) {
+            setSuccessAnim(true);
           }
-
-        } catch (err) {
-
-          console.error(
-            err
-          );
         }
 
         setLoading(false);
-      };
+      },
+      (err) => {
+        console.warn("Group listener error:", err);
+        setLoading(false);
+      }
+    );
 
-    fetchGroup();
+    return () => unsub();
 
-  }, [groupId, router]);
+  }, [groupId, phone, router]);
 
   /* -----------------------------
-     CHECK PAYMENT STATUS
+     CHECK PAYMENT STATUS (best-effort fallback)
+     The authoritative check lives above (group doc via onSnapshot). This
+     one-time lookup of the /payments collection is kept as a fallback for
+     logins whose payment docs were written by the server webhook (e.g.
+     Google login without a phone claim).
   ----------------------------- */
 
   useEffect(() => {
@@ -319,11 +326,14 @@ function PaymentContent() {
 
         } catch (err) {
 
-          console.error(
-            "Payment check error:",
-            err
+          // Rule-gated for some login types — non-fatal; the live listener
+          // above is the authoritative source of truth.
+          console.warn(
+            "Payment lookup skipped:",
+            (err as any)?.code || (err as any)?.message || err
           );
         }
+
       };
 
     checkPayment();
@@ -363,7 +373,12 @@ function PaymentContent() {
           true
         );
 
-        await addDoc(
+        // Best-effort pending doc. Firestore rules only allow OWN payment docs —
+        // Google-login users without a phone claim are denied here. That must
+        // never block payment: /api/verify-razorpay-payment records the paid
+        // doc server-side regardless.
+        try {
+          await addDoc(
           collection(
             db,
             "payments"
@@ -396,6 +411,9 @@ function PaymentContent() {
               serverTimestamp(),
           }
         );
+        } catch {
+          console.warn("Pending payment doc skipped (rule-gated) — server records it on verification.");
+        }
 
         const response =
           await fetch(
@@ -406,6 +424,8 @@ function PaymentContent() {
               headers: {
                 "Content-Type":
                   "application/json",
+                Authorization:
+                  `Bearer ${await firebaseUser.getIdToken()}`,
               },
 
               body: JSON.stringify(
@@ -488,7 +508,10 @@ function PaymentContent() {
           true
         );
 
-        await addDoc(
+        // Best-effort pending doc (see the Stripe handler note — Google-login
+        // users are rule-denied here; the server records the paid doc).
+        try {
+          await addDoc(
           collection(
             db,
             "payments"
@@ -524,6 +547,9 @@ function PaymentContent() {
               serverTimestamp(),
           }
         );
+        } catch {
+          console.warn("Pending payment doc skipped (rule-gated) — server records it on verification.");
+        }
 
         const orderRes =
           await fetch(
@@ -535,6 +561,8 @@ function PaymentContent() {
               headers: {
                 "Content-Type":
                   "application/json",
+                Authorization:
+                  `Bearer ${await firebaseUser.getIdToken()}`,
               },
 
               body:
@@ -615,6 +643,8 @@ function PaymentContent() {
                         {
                           "Content-Type":
                             "application/json",
+                          Authorization:
+                            `Bearer ${await firebaseUser.getIdToken()}`,
                         },
 
                       body:
@@ -749,6 +779,28 @@ function PaymentContent() {
     };
 
   /* -----------------------------
+     LIVE PAYMENT/GROUP STATE (derived from the shared group doc)
+  ----------------------------- */
+
+  const userId = getUserId();
+  const groupMatched = groupData ? isGroupMatched(groupData) : false;
+  const mePaidForPair =
+    !!(userId && groupData && isPaidForPairing(groupData, userId));
+  const canPayNow =
+    !!userId && !!groupData && groupMatched && !mePaidForPair;
+  const partnerPhone =
+    (groupData ? activeMemberPhones(groupData).find((p) => p !== userId) : "") || "";
+  const partnerPaidForPair =
+    !!partnerPhone && !!groupData && isPaidForPairing(groupData, partnerPhone);
+  const chatReady =
+    !!groupData && chatUnlocked(groupData);
+  const membersNow =
+    groupData && Number.isFinite(Number(groupData.membersCount))
+      ? Number(groupData.membersCount)
+      : (Array.isArray(groupData?.members) ? groupData.members.length : 0);
+  const requiredNow = Number(groupData?.requiredSize) || 2;
+
+  /* -----------------------------
      LOADING
   ----------------------------- */
 
@@ -853,21 +905,32 @@ function PaymentContent() {
 
             </p>
 
-            <p className="text-gray-400 text-sm mt-2">
-
-              Members Synced:
-
-              {" "}
-
-              {
-                groupData.membersCount
-              }
-              /
-              {
-                groupData.requiredSize
-              }
-
-            </p>
+            {/* LIVE grouping + payment state */}
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              {groupMatched ? (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 border border-green-500/20">
+                  {membersNow}/{requiredNow} Matched
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                  {membersNow}/{requiredNow} Waiting
+                </span>
+              )}
+              {partnerPhone ? (
+                <span className={"inline-flex items-center gap-1 px-2 py-0.5 rounded-full border " + (partnerPaidForPair ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-yellow-500/10 text-yellow-400 border-yellow-500/20")}>
+                  👤 Partner: {partnerPaidForPair ? "Paid" : "Payment Pending"}
+                </span>
+              ) : null}
+              {chatReady ? (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                  💬 Chat: Unlocked
+                </span>
+              ) : groupMatched ? (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-500/10 text-gray-400 border border-gray-500/20">
+                  🔒 Chat: Locked (waiting for both payments)
+                </span>
+              ) : null}
+            </div>
 
           </div>
         )}
@@ -880,7 +943,7 @@ function PaymentContent() {
           ₹29
         </div>
 
-        {paymentCompleted ? (
+        {chatReady ? (
 
           <button
             onClick={() =>
@@ -897,9 +960,38 @@ function PaymentContent() {
             Open Chat
           </button>
 
+        ) : !groupMatched ? (
+
+          <button
+            disabled
+            className="
+              w-full py-3 rounded-xl
+              bg-gray-800
+              text-gray-400 font-bold
+            "
+          >
+            ⏳ {membersNow}/{requiredNow} Waiting — pay once a partner joins
+          </button>
+
+        ) : mePaidForPair ? (
+
+          <button
+            disabled
+            className="
+              w-full py-3 rounded-xl
+              bg-gray-800
+              text-gray-400 font-bold
+            "
+          >
+            ⏳ Waiting for partner&apos;s payment
+          </button>
+
         ) : (
 
           <>
+            <div className="mb-2 text-[11px] text-gray-500 text-center">
+              Match complete ({membersNow}/{requiredNow}) — unlock chat for ₹29.
+            </div>
 
             {stripeEnabled ? (
               <button
@@ -907,7 +999,7 @@ function PaymentContent() {
                   handlePayment
                 }
                 disabled={
-                  processing
+                  processing || !canPayNow
                 }
                 className="
                   w-full py-3 rounded-xl
@@ -931,7 +1023,7 @@ function PaymentContent() {
                 handleRazorpay
               }
               disabled={
-                processing
+                processing || !canPayNow
               }
               className="
                 w-full py-3 rounded-xl

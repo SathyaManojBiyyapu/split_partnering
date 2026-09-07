@@ -139,6 +139,93 @@ export function memberCount(g: any): number {
   return memberList(g).length;
 }
 
+/** Match/session id — changes on EVERY membership change so old payment state
+ * can never unlock a different pairing (pairing reset). */
+export function getPairingId(g: any): string {
+  return String(g?.pairingId || "");
+}
+
+/** Per-member payment state for the CURRENT pairing. */
+export function memberPayment(g: any, phone: string): { paid: boolean; pairingId: string } {
+  const pay = g?.memberPayments?.[phone];
+  if (pay && typeof pay === "object") {
+    return { paid: pay.paid === true, pairingId: String(pay.pairingId || "") };
+  }
+  return { paid: false, pairingId: "" };
+}
+
+/** True when THIS member has paid FOR THE CURRENT PAIRING (not a previous one). */
+export function isPaidForPairing(g: any, phone: string): boolean {
+  const pay = memberPayment(g, phone);
+  return pay.paid === true && pay.pairingId !== "" && pay.pairingId === getPairingId(g);
+}
+
+/** Phones of every active member (ignoring stale/zero entries). */
+export function activeMemberPhones(g: any): string[] {
+  return memberList(g)
+    .map((m: any) => (typeof m === "string" ? m : m?.phone || m?.uid || ""))
+    .filter((p: string) => p && p.trim() !== "");
+}
+
+/** Count of members who have PAID in the current pairing. */
+export function paidMemberCountForPairing(g: any): number {
+  const pId = getPairingId(g);
+  if (!pId) return 0;
+  return activeMemberPhones(g).filter((p) => isPaidForPairing(g, p)).length;
+}
+
+/** True when EVERY active member paid for the CURRENT pairing. */
+export function allMembersPaidForPairing(g: any): boolean {
+  const phones = activeMemberPhones(g);
+  const required = resolveRequired(g, String(g?.option || ""));
+  if (phones.length < required) return false;
+  const pId = getPairingId(g);
+  if (!pId) return false;
+  return phones.every((p) => isPaidForPairing(g, p));
+}
+
+/** CHAT UNLOCK rule — the single source of truth everywhere:
+ *   group has exactly its required member count AND both/observed members
+ *   have paid for the CURRENT pairing. */
+export function chatUnlocked(g: any): boolean {
+  if (!isGroupMatched(g)) return false;
+  return allMembersPaidForPairing(g);
+}
+
+/** Oldest OPEN compatible group that has EXACTLY ONE member and one free slot.
+ * Used by remove-match to automatically FIFO-refill the vacated slot from an
+ * existing waiting lone user (never creates a new group when a slot exists). */
+export interface GroupDoc<T = any> {
+  id: string;
+  data(): T;
+}
+export function pickOldestRefillable<T extends { data(): any; id: string }>(
+  docs: T[],
+  args: { state: string; district: string; city: string; option: string; phone?: string; collaboratorId?: string },
+  excludeGroupId?: string
+): T | null {
+  let best: T | null = null;
+  let bestKey = Number.MAX_SAFE_INTEGER;
+
+  for (const d of docs) {
+    if (excludeGroupId && d.id === excludeGroupId) continue;
+    const g = d.data();
+    if (!isOpen(g)) continue;
+    if (memberCount(g) !== 1) continue; // a lone waiting member = 1 free slot
+    if (!matchesLocation(g, args.state, args.district, args.city)) continue;
+    if (!matchesGroupKey(g, args.collaboratorId || "")) continue;
+    if (args.phone && isMember(g, args.phone)) continue;
+    let key = Number.MAX_SAFE_INTEGER;
+    const c = g?.createdAt as any;
+    if (c?.toMillis) key = c.toMillis();
+    else if (c?.seconds) key = c.seconds * 1000;
+    else if (typeof c === "number") key = c;
+    else if (typeof c === "object" && c?._seconds != null) key = c._seconds * 1000;
+    if (key < bestKey) { bestKey = key; best = d; }
+  }
+  return best;
+}
+
 /**
  * Pick the OLDEST compatible, open, not-full, not-joined group doc.
  * Generic over the doc wrapper so it works against admin query snapshots

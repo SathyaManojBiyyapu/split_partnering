@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import admin, { adminDb, adminCredentialsConfigured } from "@/firebase/admin";
-import { chatUnlocked } from "@/app/lib/groupMatching";
+import {
+  chatUnlocked,
+  activeMemberPhones,
+  isPaidForPairing,
+} from "@/app/lib/groupMatching";
 
 /**
  * SERVER-SIDE chat access verification.
@@ -98,11 +102,31 @@ export async function POST(req: Request) {
     //    caller). A replaced partner creates a new pairingId, so the old
     //    member's payment can never unlock the new pairing.
     if (!chatUnlocked(group)) {
+      // Distinguish "you haven't paid" from "waiting for the partner" so the
+      // UI can show the correct state — a member who HAS paid must never see
+      // a "Complete Payment" button (double-payment trap).
+      const phones = activeMemberPhones(group);
+      const callerKey =
+        phones.find((p) => identities.includes(p)) ||
+        (Array.isArray(group?.memberUIDs) ? group.memberUIDs : [])
+          .map((id: any) => String(id || "").trim())
+          .find((id: string) => identities.includes(id)) ||
+        "";
+      const callerPaid = callerKey ? isPaidForPairing(group, callerKey) : false;
+      const othersAllPaid = callerKey
+        ? phones.filter((p) => p !== callerKey).every((p) => isPaidForPairing(group, p))
+        : false;
+
       return NextResponse.json(
         {
           error:
-            "Chat is locked. Your match must be complete (2/2) AND both members must have paid.",
+            callerPaid && !othersAllPaid
+              ? "Your payment was verified successfully. Waiting for your partner's payment — the chat unlocks automatically once everyone in this pairing has paid."
+              : "Chat is locked. Your match must be complete (2/2) AND both members must have paid.",
           code: "CHAT_LOCKED",
+          callerPaid,
+          othersAllPaid,
+          chatUnlocked: false,
         },
         { status: 403 }
       );

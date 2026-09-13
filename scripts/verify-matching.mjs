@@ -21,6 +21,7 @@ import {
   chatUnlocked,
   isPaidForPairing,
   getPairingId,
+  activeMemberPhones,
 } from "../app/lib/groupMatching.ts";
 import {
   shouldLockName,
@@ -929,6 +930,259 @@ console.log("\n== Scenario 11: multiple independent pairs + FIFO fill + capacity
 
   check(!storeJ.all().some((g) => resolveRequired(g, g.option) === 2 && memberCount(g) > 2), "Q: no group ever exceeds 2/2 (no 3/2 anywhere)");
   check(storeJ.all().every((g) => g.status !== "waiting" || memberCount(g) === 1 || memberCount(g) === 2), "Q: waiting groups are only lone (1/2) groups — FIFO queue integrity");
+}
+/* ------------------------------------------------------------------ */
+/* SCENARIO 12 — Post-payment ENTITLEMENT flow (server-side semantics) */
+/* Replicates the entitlement writes of /api/verify-razorpay-payment   */
+/* and /api/razorpay-webhook against the SAME shared pure logic the    */
+/* routes import (memberList/getPairingId/chatUnlocked), including     */
+/* callerKey resolution (phone-based, NEVER the Firebase Auth UID)     */
+/* and ensureChatDoc-on-unlock — the fixes for the payment → chat      */
+/* unlock chain.                                                       */
+/* ------------------------------------------------------------------ */
+console.log("\n== Scenario 12: post-payment entitlement flow (verify + webhook → chat unlock) ==");
+{
+  // In-memory chats collections, scoped PER STORE (mirrors one Firestore's
+  // "chats" collection; group ids like "g1" repeat across the per-section
+  // stores, so the docs must be keyed by the owning store too).
+  const chatDocs = new WeakMap(); // store -> Map<groupId, chatDoc>
+  function chatsFor(store) {
+    let m = chatDocs.get(store);
+    if (!m) {
+      m = new Map();
+      chatDocs.set(store, m);
+    }
+    return m;
+  }
+  async function ensureChatDoc(store, groupId, group) {
+    const m = chatsFor(store);
+    if (m.has(groupId)) return; // mirrors where("groupId","==",groupId).limit(1) hit
+    m.set(groupId, {
+      groupId,
+      members: memberList(group),
+      memberUIDs: activeMemberPhones(group),
+      isActive: true,
+    });
+  }
+
+  // Mirrors /api/verify-razorpay-payment: verified ID-token identities →
+  // callerKey resolution (members[].phone → memberUIDs match → phone
+  // identity; never the auth UID) → memberPayments[callerKey] write →
+  // re-read → chatUnlocked → ensureChatDoc when fully paid.
+  async function verifyEntitlement(store, groupId, decoded) {
+    const group = store.get(groupId);
+    if (!group) return { status: 404 };
+    const members = memberList(group);
+
+    const identities = [decoded?.uid || ""];
+    if (decoded?.phone_number) {
+      const raw = String(decoded.phone_number).trim();
+      identities.push(raw, raw.replace(/^\+91/, ""));
+      const digits = raw.replace(/[^0-9]/g, "");
+      if (digits.length === 12 && digits.startsWith("91")) identities.push(digits.slice(2));
+    }
+    const cleanIds = [...new Set(identities.filter(Boolean))];
+
+    const callerMember = members.find((m) => {
+      const p = typeof m === "string" ? m : m?.phone || m?.uid || "";
+      return cleanIds.includes(p);
+    });
+    const isPartOfGroup =
+      !!callerMember || cleanIds.some((id) => (group?.memberUIDs || []).includes(id));
+    if (!isPartOfGroup) return { status: 403 };
+
+    const required = resolveRequired(group, group.option);
+    if (memberCount(group) < required) return { status: 409 };
+
+    const pairingId = getPairingId(group);
+    const phoneIdentity = decoded?.phone_number
+      ? String(decoded.phone_number).trim().replace(/^\+91/, "")
+      : "";
+    const storedKeyMatch = (Array.isArray(group?.memberUIDs) ? group.memberUIDs : [])
+      .map((id) => String(id || "").trim())
+      .find((id) => cleanIds.includes(id));
+
+    let callerKey = "";
+    if (typeof callerMember === "string") {
+      callerKey = callerMember; // legacy string-member groups
+    } else if (callerMember) {
+      callerKey = String(callerMember?.phone || callerMember?.uid || "").trim();
+    }
+    callerKey = callerKey || storedKeyMatch || phoneIdentity || "";
+
+    if (!callerKey) return { status: 500, orphan: true };
+
+    store.set(groupId, {
+      ...group,
+      members: members.map((m) =>
+        typeof m === "string"
+          ? m
+          : cleanIds.includes(m?.phone || m?.uid || "")
+            ? { ...m, paid: true }
+            : m
+      ),
+      memberPayments: {
+        ...(group?.memberPayments || {}),
+        [callerKey]: { paid: true, pairingId },
+      },
+    });
+
+    // Re-read AFTER the entitlement write (route semantics) so the response
+    // reflects committed state — the frontend redirects on THIS value.
+    const groupAfter = store.get(groupId);
+    const unlockedNow = chatUnlocked(groupAfter);
+    if (unlockedNow) await ensureChatDoc(store, groupId, groupAfter);
+    return { status: 200, chatUnlocked: unlockedNow, callerKey };
+  }
+
+  // Mirrors /api/razorpay-webhook's markMemberPaid (payment.captured):
+  // resolves the group's OWN key for the payer from notes.uid, writes the
+  // memberPayments entitlement, ensureChatDoc when fully paid.
+  async function webhookMarkMemberPaid(store, groupId, userId) {
+    const group = store.get(groupId);
+    if (!group) return;
+    const pairingId = getPairingId(group);
+    const members = memberList(group);
+    const member = members.find((m) => {
+      const p = typeof m === "string" ? m : m?.phone || m?.uid || "";
+      return p === userId;
+    });
+    const key =
+      (typeof member === "string"
+        ? member
+        : String(member?.phone || member?.uid || "")) || userId;
+    store.set(groupId, {
+      ...group,
+      members: members.map((m) =>
+        typeof m === "string"
+          ? m
+          : (m?.phone || m?.uid || "") === userId
+            ? { ...m, paid: true }
+            : m
+      ),
+      memberPayments: {
+        ...(group?.memberPayments || {}),
+        [key]: { paid: true, pairingId },
+      },
+    });
+    const groupAfter = store.get(groupId);
+    if (chatUnlocked(groupAfter)) await ensureChatDoc(store, groupId, groupAfter);
+  }
+
+  const LOC = { state: "Andhra Pradesh", district: "Prakasam", city: "Addanki" };
+  const join = (store, phone) =>
+    routeProcess(store, {
+      category: "gym", option: "split", phone, ...LOC,
+      collaboratorId: "vault-gym", extra: { collaboratorName: "Vault" },
+    });
+
+  // ---- A: both members finalize via the normal callback (verify route) ----
+  const storeA = makeStore();
+  const u1 = join(storeA, "7000000001");
+  join(storeA, "7000000002");
+  check(memberCount(storeA.get(u1.groupId)) === 2 && storeA.get(u1.groupId).status === "ready",
+    "A: pair matched 2/2 before any payment");
+
+  const v1 = await verifyEntitlement(storeA, u1.groupId, {
+    uid: "fX8randomAuthUidA1", // random Firebase Auth UID
+    phone_number: "+917000000001",
+  });
+  check(v1.status === 200 && v1.callerKey === "7000000001",
+    "A: verify route resolved callerKey = clean PHONE (+91 stripped), never the Auth UID");
+  const gAfter1 = storeA.get(u1.groupId);
+  check(gAfter1.memberPayments["7000000001"]?.paid === true,
+    "A: entitlement written to memberPayments[<phone>] — the exact key chatUnlocked() reads");
+  check(!gAfter1.memberPayments["fX8randomAuthUidA1"],
+    "A: NO orphan memberPayments[<auth-uid>] entry (the old orphan-key bug)");
+  check(v1.chatUnlocked === false && !chatUnlocked(gAfter1),
+    "A: one verified payment → response chatUnlocked=false → UI shows 'waiting for partner' (no premature redirect)");
+
+  const v2 = await verifyEntitlement(storeA, u1.groupId, {
+    uid: "fX8randomAuthUidA2",
+    phone_number: "+917000000002",
+  });
+  check(v2.status === 200 && v2.chatUnlocked === true && chatUnlocked(storeA.get(u1.groupId)),
+    "A: second verified payment → response chatUnlocked=true → payment page redirects to chat");
+  check(chatsFor(storeA).has(u1.groupId),
+    "A: ensureChatDoc created the chats doc → /api/verify-chat-access cannot 404 after unlock");
+
+  // ---- B: member 1's callback was LOST (tab closed); only Razorpay's ----
+  // ---- webhook finalized it. Member 2 pays via the normal callback. ----
+  const storeB = makeStore();
+  const w1 = join(storeB, "7000000011");
+  join(storeB, "7000000012");
+  const beforeB = storeB.get(w1.groupId);
+
+  await webhookMarkMemberPaid(storeB, w1.groupId, "7000000011");
+  const gB1 = storeB.get(w1.groupId);
+  check(gB1.memberPayments["7000000011"]?.paid === true,
+    "B: webhook wrote the memberPayments entitlement (previously webhook-only payments never unlocked chat)");
+  check(gB1.memberPayments["7000000011"]?.pairingId === getPairingId(beforeB),
+    "B: webhook entitlement is bound to the CURRENT pairing id");
+  check(!chatUnlocked(gB1), "B: webhook + one payment → chat still locked until partner pays");
+  check(!chatsFor(storeB).has(w1.groupId), "B: no chat doc while only one member is paid");
+
+  const w2 = await verifyEntitlement(storeB, w1.groupId, {
+    uid: "authW2",
+    phone_number: "+917000000012",
+  });
+  check(w2.status === 200 && w2.callerKey === "7000000012",
+    "B: normal verify route works alongside the webhook for the partner");
+  check(w2.chatUnlocked === true && chatUnlocked(storeB.get(w1.groupId)),
+    "B: webhook + verify mixed finalize → both paid → chat UNLOCKS");
+  check(chatsFor(storeB).has(w1.groupId), "B: chat doc exists after mixed finalize (no 404)");
+
+
+
+
+  // ---- C: BOTH payments arrive via the webhook ONLY (both users closed ----
+  // ---- the tab before Razorpay's checkout callback ever fired)         ----
+  const storeC = makeStore();
+  const c1 = join(storeC, "7000000021");
+  join(storeC, "7000000022");
+  await webhookMarkMemberPaid(storeC, c1.groupId, "7000000021");
+  await webhookMarkMemberPaid(storeC, c1.groupId, "7000000022");
+  check(chatUnlocked(storeC.get(c1.groupId)),
+    "C: both payments webhook-only → chat UNLOCKS (money captured + access granted)");
+  check(chatsFor(storeC).has(c1.groupId),
+    "C: webhook ensureChatDoc → chat doc exists for the fully-paid pair");
+
+  // ---- D: guards — 1/2 groups and non-members can NEVER pay ----
+  const storeD = makeStore();
+  const d1 = join(storeD, "7000000031"); // 1/2 waiting
+  const dReject = await verifyEntitlement(storeD, d1.groupId, {
+    uid: "authD1",
+    phone_number: "+917000000031",
+  });
+  check(dReject.status === 409 && !chatUnlocked(storeD.get(d1.groupId)),
+    "D: paying at 1/2 → 409, no entitlement written (Pay only unlocks a complete pair)");
+  const dForeign = await verifyEntitlement(storeD, u1.groupId, {
+    uid: "authStranger",
+    phone_number: "+9170000000099",
+  });
+  check(dForeign.status === 403, "D: a non-member's verified payment → 403, group untouched");
+
+  // ---- E: partner replaced → the OLD payment cannot unlock the NEW pairing ----
+  const storeE = makeStore();
+  const e1 = join(storeE, "7000000041");
+  join(storeE, "7000000042");
+  await verifyEntitlement(storeE, e1.groupId, { uid: "authE1", phone_number: "+917000000041" });
+  removeProcess(storeE, e1.groupId, "7000000042"); // partner leaves → NEW pairing on refill/join
+  join(storeE, "7000000043"); // vacancy exists → join-time fill, 2/2 fresh pairing
+  const gE = storeE.get(e1.groupId);
+  check(!chatUnlocked(gE) && !isPaidForPairing(gE, "7000000041"),
+    "E: after partner replacement the OLD payment no longer unlocks the NEW pairing");
+  const eAgain = await verifyEntitlement(storeE, e1.groupId, {
+    uid: "authE1",
+    phone_number: "+917000000041",
+  });
+  const ePartner = await verifyEntitlement(storeE, e1.groupId, {
+    uid: "authE3",
+    phone_number: "+917000000043",
+  });
+  check(eAgain.chatUnlocked === false && ePartner.chatUnlocked === true,
+    "E: re-paying for the NEW pairing (both members) unlocks chat");
+  check(chatsFor(storeE).has(e1.groupId), "E: chat doc exists for the re-paid new pairing");
 }
 
 /* ------------------------------------------------------------------ */

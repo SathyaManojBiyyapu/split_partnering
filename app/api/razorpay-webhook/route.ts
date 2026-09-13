@@ -4,6 +4,12 @@ import { NextResponse } from "next/server";
 import crypto from "crypto";
 
 import { adminDb, adminTimestamp } from "@/firebase/admin";
+import {
+  memberList,
+  getPairingId,
+  chatUnlocked,
+  activeMemberPhones,
+} from "@/app/lib/groupMatching";
 
 const ACTIVATION_PRICE = 29;
 
@@ -26,7 +32,40 @@ function verifyWebhookSignature(
 }
 
 /* =========================
+   ENSURE CHAT DOC
+   A fully-paid pair must always have a chats doc — mirrors
+   /api/join-group's ensureChat. Without it /api/verify-chat-access
+   returns 404 "Chat not available yet" even when both members paid.
+========================== */
+
+async function ensureChatDoc(groupId: string, group: any) {
+  const existing = await adminDb
+    .collection("chats")
+    .where("groupId", "==", groupId)
+    .limit(1)
+    .get();
+  if (!existing.empty) return;
+  await adminDb.collection("chats").add({
+    groupId,
+    createdAt: adminTimestamp(),
+    members: memberList(group),
+    memberUIDs: activeMemberPhones(group),
+    lastMessage: "",
+    lastMessageAt: adminTimestamp(),
+    unreadCounts: {},
+    isActive: true,
+  });
+}
+
+/* =========================
    MARK GROUP MEMBER PAID
+   Writes the ACTUAL chat-unlock entitlement: groups.memberPayments[key]
+   = { paid: true, pairingId } for the CURRENT pairing.
+   chatUnlocked() (used by /api/verify-chat-access) reads ONLY
+   memberPayments — it ignores members[].paid — so a webhook that only
+   set members[].paid would capture money while chat stayed locked
+   forever. The key must be the group's OWN key for this member (same
+   resolution as /api/verify-razorpay-payment).
 ========================== */
 
 async function markMemberPaid(
@@ -39,17 +78,46 @@ async function markMemberPaid(
   if (!groupSnap.exists) return;
 
   const group = groupSnap.data();
-  const updatedMembers = (group?.members || []).map((m: any) => {
+  const pairingId = getPairingId(group);
+  const members = memberList(group);
+
+  // Resolve the group's canonical key for this payer (never the webhook
+  // notes verbatim — they can drift from how members[] is keyed).
+  const member = members.find((m: any) => {
+    const p = typeof m === "string" ? m : m?.phone || m?.uid || "";
+    return p === userId;
+  });
+  const key =
+    (typeof member === "string"
+      ? member
+      : String(member?.phone || member?.uid || "")) || userId;
+
+  const updatedMembers = members.map((m: any) => {
     if (typeof m === "string") return m;
-
-    if (m.phone === userId || m.uid === userId) {
-      return { ...m, paid: true };
-    }
-
+    const p = m?.phone || m?.uid || "";
+    if (p === userId) return { ...m, paid: true };
     return m;
   });
 
-  await groupRef.update({ members: updatedMembers });
+  const memberPayments = {
+    ...(group?.memberPayments || {}),
+    [key]: { paid: true, pairingId, paidAt: adminTimestamp() },
+  };
+
+  await groupRef.update({ members: updatedMembers, memberPayments });
+
+  // If this was the last missing payment, the pair is now fully paid →
+  // guarantee the chat doc exists so /api/verify-chat-access cannot 404.
+  const afterSnap = await groupRef.get();
+  const groupAfter = afterSnap.exists ? afterSnap.data() : group;
+  if (chatUnlocked(groupAfter)) {
+    await ensureChatDoc(groupId, groupAfter);
+  }
+
+  console.log(
+    `[razorpay-webhook] entitlement updated: group=${groupId} key=${key} ` +
+      `pairingId=${pairingId} chatUnlocked=${chatUnlocked(groupAfter)}`
+  );
 }
 
 /* =========================

@@ -14,6 +14,7 @@ import {
   setDoc,
   doc,
 } from "firebase/firestore";
+import { chatUnlocked } from "@/app/lib/groupMatching";
 
 export default function ChatPage() {
   const router = useRouter();
@@ -27,6 +28,13 @@ export default function ChatPage() {
   const [loading, setLoading] = useState(true);
   const [authorized, setAuthorized] = useState(false);
   const [accessError, setAccessError] = useState<string | null>(null);
+  /* True when THIS user has already paid but the partner has not — show a
+     waiting screen (never a "Complete Payment" button → no double pay). */
+  const [waitingForPartner, setWaitingForPartner] = useState(false);
+  /* Bumped by the live group listener when the pairing becomes fully paid —
+     re-runs server verification so the chat unlocks WITHOUT a manual
+     refresh (answers "frontend listener that detects the user is now paid"). */
+  const [retryNonce, setRetryNonce] = useState(0);
   const [groupInfo, setGroupInfo] = useState<any>(null);
   const [onlineUsers, setOnlineUsers] = useState<string[]>([]);
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
@@ -93,10 +101,12 @@ export default function ChatPage() {
         if (!res.ok || !data.success) {
           setAccessError(data.error || "Chat access denied.");
           setAuthorized(false);
+          setWaitingForPartner(data.callerPaid === true);
           setLoading(false);
           return;
         }
 
+        setWaitingForPartner(false);
         setChatId(data.chatId);
         setGroupInfo({
           category: data.category || "",
@@ -115,7 +125,34 @@ export default function ChatPage() {
     };
 
     verifyAccess();
-  }, [firebaseUser, groupId, phone]);
+  }, [firebaseUser, groupId, phone, retryNonce]);
+
+  /* ---------------- LIVE UNLOCK LISTENER ----------------
+     While this member is waiting for the partner's payment, watch the
+     shared group doc. The moment the pairing is fully paid (server wrote
+     memberPayments → chatUnlocked), re-run server verification so the chat
+     opens live — no manual refresh. The onSnapshot listener fires on
+     every group update; it only bumps the nonce when the chat actually
+     unlocks, so there is no loop. */
+  useEffect(() => {
+    if (!waitingForPartner || !groupId) return;
+
+    const unsub = onSnapshot(
+      doc(db, "groups", groupId),
+      (snap) => {
+        if (!snap.exists()) return;
+        if (chatUnlocked(snap.data())) {
+          setRetryNonce((n) => n + 1);
+        }
+      },
+      () => {
+        /* listener errors are non-fatal here — access verification above
+           already reported the state */
+      }
+    );
+
+    return () => unsub();
+  }, [waitingForPartner, groupId]);
 
   /* ---------------- REALTIME MESSAGES (only after verified access) ---------------- */
   useEffect(() => {
@@ -189,6 +226,43 @@ export default function ChatPage() {
 
   /* ---------------- ACCESS DENIED ---------------- */
   if (!authorized) {
+
+    /* PAID, waiting for the partner: never show a "Complete Payment"
+       button — the user already paid and clicking it again would be a
+       DOUBLE PAYMENT. Show the verified-payment state and rely on the
+       live unlock listener above to open the chat automatically. */
+    if (waitingForPartner) {
+      return (
+        <div className="min-h-screen flex flex-col items-center justify-center bg-black text-white px-6">
+          <div className="text-6xl mb-4">✅</div>
+          <h1 className="text-2xl font-bold text-green-400 mb-2">
+            Payment Verified
+          </h1>
+          <p className="text-gray-400 text-sm text-center mb-2 max-w-md">
+            Waiting for your partner&apos;s payment — the chat unlocks
+            automatically the moment they pay.
+          </p>
+          <p className="text-gray-600 text-xs text-center mb-6 max-w-md">
+            {accessError || ""}
+          </p>
+          <div className="flex gap-3">
+            <button
+              onClick={() => setRetryNonce((n) => n + 1)}
+              className="px-6 py-3 rounded-xl border border-white/20 text-gray-300 hover:bg-white/5 transition"
+            >
+              ↻ Re-check access
+            </button>
+            <button
+              onClick={() => router.push("/dashboard")}
+              className="px-6 py-3 rounded-xl border border-white/20 text-gray-300 hover:bg-white/5 transition"
+            >
+              Back to Dashboard
+            </button>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-black text-white px-6">
         <div className="text-6xl mb-4">🔒</div>

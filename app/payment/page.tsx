@@ -3,6 +3,7 @@
 import {
   Suspense,
   useEffect,
+  useRef,
   useState,
 } from "react";
 
@@ -91,6 +92,11 @@ function PaymentContent() {
     razorpayLoaded,
     setRazorpayLoaded,
   ] = useState(false);
+
+  /* Latest group doc, always in sync via the onSnapshot listener below.
+     The async Razorpay handler reads this ref (state would be stale inside
+     the closure) to decide "go to chat" vs "waiting for partner". */
+  const groupDataRef = useRef<any>(null);
 
   /* PHONE UID */
 
@@ -218,6 +224,7 @@ function PaymentContent() {
 
         const gData = snap.data() as any;
         setGroupData(gData);
+        groupDataRef.current = gData;
 
         /* ---- AUTHORITATIVE per-pairing payment check (group doc) ---- */
         const userId = getUserId();
@@ -345,6 +352,35 @@ function PaymentContent() {
   ]);
 
   /* -----------------------------
+     CHAT REDIRECT — single source of truth
+     Navigates whenever the success screen is showing AND the LIVE group
+     doc says the chat is unlocked. This covers every path:
+       - own payment verified and the partner already paid
+       - partner pays while this user waits on this page
+       - user re-opens /payment when the pair is already fully paid
+     Previously the listener-only path set the "Redirecting to private
+     group chat..." screen but NEVER scheduled a navigation — the user was
+     stuck on a success screen that never redirected.
+  ----------------------------- */
+
+  useEffect(() => {
+
+    if (!successAnim || !groupId) return;
+
+    const latest =
+      groupDataRef.current;
+
+    if (!latest || !chatUnlocked(latest)) return; // wait for the live doc
+
+    const t = setTimeout(() => {
+      router.push(`/chat/${groupId}`);
+    }, 1500);
+
+    return () => clearTimeout(t);
+
+  }, [successAnim, groupData, groupId, router]);
+
+  /* -----------------------------
      STRIPE PAYMENT
   ----------------------------- */
 
@@ -403,6 +439,12 @@ function PaymentContent() {
 
             status:
               "pending",
+
+            // Firestore rules REQUIRE a pairingId on payments.create —
+            // without it every client pending-doc write is rule-denied and
+            // the verify route cannot find/update it.
+            pairingId:
+              groupData?.pairingId || "",
 
             paymentMethod:
               "stripe",
@@ -539,6 +581,12 @@ function PaymentContent() {
 
             verified:
               false,
+
+            // Firestore rules REQUIRE a pairingId on payments.create —
+            // without it every client pending-doc write is rule-denied and
+            // the verify route cannot find/update it.
+            pairingId:
+              groupData?.pairingId || "",
 
             paymentMethod:
               "razorpay",
@@ -693,20 +741,24 @@ function PaymentContent() {
                   true
                 );
 
-                setSuccessAnim(
-                  true
-                );
-
-                setTimeout(
-                  () => {
-
-                    router.push(
-                      `/chat/${groupId}`
-                    );
-
-                  },
-                  1800
-                );
+                /* Navigate ONLY when the SERVER says the whole pairing has
+                   paid (the verify route re-reads the group doc AFTER the
+                   entitlement write and returns chatUnlocked). When the
+                   partner has not paid yet, stay on this page — the live
+                   onSnapshot listener flips the UI to "Waiting for
+                   partner's payment" and the redirect effect below
+                   navigates automatically the moment the partner pays.
+                   (The old code redirected unconditionally → paying users
+                   landed on the locked-chat screen and could pay twice.) */
+                if (verifyData.chatUnlocked) {
+                  setSuccessAnim(
+                    true
+                  );
+                } else {
+                  console.log(
+                    "Payment verified. Chat unlocks automatically once your partner pays."
+                  );
+                }
 
               } catch (err) {
 
@@ -975,16 +1027,26 @@ function PaymentContent() {
 
         ) : mePaidForPair ? (
 
-          <button
-            disabled
-            className="
-              w-full py-3 rounded-xl
-              bg-gray-800
-              text-gray-400 font-bold
-            "
-          >
-            ⏳ Waiting for partner&apos;s payment
-          </button>
+          <>
+            <div className="mb-2 text-[11px] text-green-400 text-center">
+              ✅ Your payment was verified — waiting for your partner to pay.
+            </div>
+
+            <button
+              disabled
+              className="
+                w-full py-3 rounded-xl
+                bg-gray-800
+                text-gray-400 font-bold
+              "
+            >
+              ⏳ Waiting for partner&apos;s payment
+            </button>
+
+            <div className="mt-2 text-[11px] text-gray-500 text-center">
+              Chat unlocks automatically the moment your partner pays.
+            </div>
+          </>
 
         ) : (
 

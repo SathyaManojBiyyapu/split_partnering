@@ -969,7 +969,7 @@ console.log("\n== Scenario 12: post-payment entitlement flow (verify + webhook �
   // callerKey resolution (members[].phone → memberUIDs match → phone
   // identity; never the auth UID) → memberPayments[callerKey] write →
   // re-read → chatUnlocked → ensureChatDoc when fully paid.
-  async function verifyEntitlement(store, groupId, decoded) {
+  async function verifyEntitlement(store, groupId, decoded, opts = {}) {
     const group = store.get(groupId);
     if (!group) return { status: 404 };
     const members = memberList(group);
@@ -993,6 +993,22 @@ console.log("\n== Scenario 12: post-payment entitlement flow (verify + webhook �
 
     const required = resolveRequired(group, group.option);
     if (memberCount(group) < required) return { status: 409 };
+
+    // ---- Mirror /api/verify-razorpay-payment's payment→order→group binding ----
+    // The REAL route fetches the payment (which carries the real order_id) and
+    // the order (whose notes carry the real groupId). The submitted body ids
+    // are never trusted alone. Harness callers inject the REAL values via opts;
+    // any mismatch must 400 and never write entitlement.
+    if (opts.paymentOrderId !== undefined || opts.orderGroupId !== undefined) {
+      const submittedOrder = String(opts.submittedOrderId || "").trim();
+      const realOrder = String(opts.paymentOrderId || "").trim();
+      if (!submittedOrder || realOrder !== submittedOrder) {
+        return { status: 400, code: "PAYMENT_ORDER_MISMATCH" };
+      }
+      if (String(opts.orderGroupId || "").trim() !== String(groupId).trim()) {
+        return { status: 400, code: "PAYMENT_GROUP_MISMATCH" };
+      }
+    }
 
     const pairingId = getPairingId(group);
     const phoneIdentity = decoded?.phone_number
@@ -1047,6 +1063,11 @@ console.log("\n== Scenario 12: post-payment entitlement flow (verify + webhook �
       const p = typeof m === "string" ? m : m?.phone || m?.uid || "";
       return p === userId;
     });
+    // Mirror the route's active-member guard (see /api/razorpay-webhook):
+    // a payer who is not an active member must not leave an orphan key.
+    const isActiveMember =
+      !!member || (Array.isArray(group?.memberUIDs) ? group.memberUIDs : []).includes(userId);
+    if (!isActiveMember) return;
     const key =
       (typeof member === "string"
         ? member
@@ -1067,6 +1088,15 @@ console.log("\n== Scenario 12: post-payment entitlement flow (verify + webhook �
     });
     const groupAfter = store.get(groupId);
     if (chatUnlocked(groupAfter)) await ensureChatDoc(store, groupId, groupAfter);
+  }
+
+  // Mirrors /api/razorpay-webhook's POST dispatch: ONLY signature-verified
+  // payment.captured events touch state; every other event (failed,
+  // cancelled, etc.) is a no-op as far as entitlement is concerned.
+  async function webhookEvent(store, groupId, event, userId) {
+    if (event !== "payment.captured") return { processed: false };
+    await webhookMarkMemberPaid(store, groupId, userId);
+    return { processed: true };
   }
 
   const LOC = { state: "Andhra Pradesh", district: "Prakasam", city: "Addanki" };
@@ -1183,6 +1213,79 @@ console.log("\n== Scenario 12: post-payment entitlement flow (verify + webhook �
   check(eAgain.chatUnlocked === false && ePartner.chatUnlocked === true,
     "E: re-paying for the NEW pairing (both members) unlocks chat");
   check(chatsFor(storeE).has(e1.groupId), "E: chat doc exists for the re-paid new pairing");
+
+  // ---- F: duplicate callbacks (double POST / network retry) are idempotent ----
+  const storeF = makeStore();
+  const f1 = join(storeF, "7000000051");
+  join(storeF, "7000000052");
+  await verifyEntitlement(storeF, f1.groupId, { uid: "authF1", phone_number: "+917000000051" });
+  const fDup = await verifyEntitlement(storeF, f1.groupId, { uid: "authF1", phone_number: "+917000000051" });
+  const gF = storeF.get(f1.groupId);
+  check(fDup.status === 200 && fDup.callerKey === "7000000051" && fDup.chatUnlocked === false,
+    "F: duplicate verify callback → 200 with the SAME callerKey, no premature unlock while the partner is unpaid");
+  check(Object.keys(gF.memberPayments || {}).length === 2 &&
+        gF.memberPayments["7000000051"]?.paid === true &&
+        gF.memberPayments["7000000052"]?.paid === false,
+    "F: repeat callback adds NO stray entitlement — memberPayments holds exactly one entry per member");
+
+  // ---- G: webhook event gating — failed/cancelled + non-member never touch ----
+  const storeG = makeStore();
+  const g1 = join(storeG, "7000000061");
+  join(storeG, "7000000062");
+  await webhookEvent(storeG, g1.groupId, "payment.failed", "7000000061");
+  await webhookEvent(storeG, g1.groupId, "payment.failed", "7000000062");
+  const gG = storeG.get(g1.groupId);
+  check(!isPaidForPairing(gG, "7000000061") && !isPaidForPairing(gG, "7000000062") && !chatUnlocked(gG),
+    "G: payment.failed webhook events write NO entitlement — chat stays locked");
+  check(!chatsFor(storeG).has(g1.groupId), "G: failed/cancelled events create no chat doc");
+  await webhookEvent(storeG, g1.groupId, "payment.captured", "7000000099"); // non-member / stale notes
+  const gG2 = storeG.get(g1.groupId);
+  check(!isPaidForPairing(gG2, "7000000099") && Object.keys(gG2.memberPayments || {}).length === 2,
+    "G: webhook for a NON-MEMBER (stale notes.uid / partner who left) writes NO orphan entitlement");
+
+  // ---- H: payment → order → group binding rejects wrong order / wrong group ----
+  const storeH = makeStore();
+  const h1 = join(storeH, "7000000071");
+  join(storeH, "7000000072");
+  const hOrder = "order_H_1";
+
+  const hWrongOrder = await verifyEntitlement(storeH, h1.groupId, {
+    uid: "authH1",
+    phone_number: "+917000000071",
+  }, {
+    // REAL payment entity belongs to a different order than the submitted id.
+    submittedOrderId: hOrder,
+    paymentOrderId: "order_OTHER",
+    orderGroupId: h1.groupId,
+  });
+  check(hWrongOrder.status === 400 &&
+        !isPaidForPairing(storeH.get(h1.groupId), "7000000071"),
+    "H: payment whose REAL order_id differs from the submitted order → 400 payment/order mismatch, NO entitlement written");
+
+  const hWrongGroup = await verifyEntitlement(storeH, h1.groupId, {
+    uid: "authH1",
+    phone_number: "+917000000071",
+  }, {
+    // Order was actually created for a different group (replay across groups).
+    submittedOrderId: hOrder,
+    paymentOrderId: hOrder,
+    orderGroupId: "group_OTHER",
+  });
+  check(hWrongGroup.status === 400 &&
+        !isPaidForPairing(storeH.get(h1.groupId), "7000000071"),
+    "H: order created for a DIFFERENT group than the submitted groupId → 400 payment/group mismatch, NO entitlement written");
+
+  const hValid = await verifyEntitlement(storeH, h1.groupId, {
+    uid: "authH1",
+    phone_number: "+917000000071",
+  }, {
+    submittedOrderId: hOrder,
+    paymentOrderId: hOrder,
+    orderGroupId: h1.groupId,
+  });
+  check(hValid.status === 200 &&
+        isPaidForPairing(storeH.get(h1.groupId), "7000000071"),
+    "H: payment correctly bound to the order → group → entitlement written normally");
 }
 
 /* ------------------------------------------------------------------ */

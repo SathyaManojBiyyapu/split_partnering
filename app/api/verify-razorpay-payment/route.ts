@@ -166,6 +166,39 @@ export async function POST(req: Request) {
     }
 
     // ============================================================
+    // BIND payment → order → group. The frontend supplies all three ids in
+    // the body, so NONE are trusted alone: the fetched payment carries the
+    // REAL order_id, and the order's notes carry the real groupId this order
+    // was created for. This prevents replaying a valid (payment, signature)
+    // against a DIFFERENT order or a different group the caller belongs to.
+    // (This mirrors the trust model of the webhook path, which is bound by
+    // Razorpay's own order notes.)
+    // ============================================================
+    if (!razorpay_order_id || payment.order_id !== razorpay_order_id) {
+      return NextResponse.json(
+        { error: "Payment/order mismatch" },
+        { status: 400 }
+      );
+    }
+
+    let order: any = null;
+    try {
+      order = await razorpay.orders.fetch(razorpay_order_id);
+    } catch (error: any) {
+      return NextResponse.json(
+        { error: "Order not found" },
+        { status: 400 }
+      );
+    }
+    const orderGroup = String(order?.notes?.groupId || "").trim();
+    if (!orderGroup || orderGroup !== groupId) {
+      return NextResponse.json(
+        { error: "Payment/group mismatch" },
+        { status: 400 }
+      );
+    }
+
+    // ============================================================
     // Identity comes from the VERIFIED Firebase ID token — never from
     // a client-supplied body uid (prevents paying for another user).
     // ============================================================
@@ -289,22 +322,32 @@ export async function POST(req: Request) {
       }
     }
     if (!updatedAny) {
-      await paymentsRef.add({
-        uid: callerKey,
-        phone: callerKey,
-        groupId,
-        category: group?.category || "",
-        option: group?.option || "",
-        amount: ACTIVATION_PRICE,
-        status: "paid",
-        verified: true,
-        paymentMethod: "razorpay",
-        razorpayPaymentId: razorpay_payment_id,
-        razorpayOrderId: razorpay_order_id,
-        pairingId,
-        paidAt: adminTimestamp(),
-        createdAt: adminTimestamp(),
-      });
+      // Idempotency guard: the pending match above only finds status=="pending"
+      // docs, so a retried/duplicate callback (double POST, network retry, user
+      // reload) would otherwise ADD a SECOND paid /payments doc for the SAME
+      // razorpay payment id. Skip when this payment is already recorded.
+      const dupSnap = await paymentsRef
+        .where("razorpayPaymentId", "==", razorpay_payment_id)
+        .limit(1)
+        .get();
+      if (dupSnap.empty) {
+        await paymentsRef.add({
+          uid: callerKey,
+          phone: callerKey,
+          groupId,
+          category: group?.category || "",
+          option: group?.option || "",
+          amount: ACTIVATION_PRICE,
+          status: "paid",
+          verified: true,
+          paymentMethod: "razorpay",
+          razorpayPaymentId: razorpay_payment_id,
+          razorpayOrderId: razorpay_order_id,
+          pairingId,
+          paidAt: adminTimestamp(),
+          createdAt: adminTimestamp(),
+        });
+      }
     }
 
     // ============================================================

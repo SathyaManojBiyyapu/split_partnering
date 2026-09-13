@@ -92,6 +92,24 @@ async function markMemberPaid(
       ? member
       : String(member?.phone || member?.uid || "")) || userId;
 
+  // NEVER write a stray entitlement for someone who is not an ACTIVE member.
+  // chatUnlocked() only counts the current members' keys, so an orphan entry
+  // (stale notes.uid, a Google-login uid with no phone claim, or a partner who
+  // has since left) would be dead state — and for a replaced partner it could
+  // later LOOK like a valid payment on the new pairing. The payment is still
+  // recorded in /payments by finalizePayment(); the group entitlement stays
+  // untouched so it can never conflict with the pairing-scoped state.
+  const isActiveMember =
+    !!member ||
+    (Array.isArray(group?.memberUIDs) ? group.memberUIDs : []).includes(userId);
+  if (!isActiveMember) {
+    console.warn(
+      `[razorpay-webhook] payment.captured for NON-ACTIVE member group=${groupId} ` +
+        `uid=${userId} — skipped entitlement (payment recorded in /payments).`
+    );
+    return;
+  }
+
   const updatedMembers = members.map((m: any) => {
     if (typeof m === "string") return m;
     const p = m?.phone || m?.uid || "";

@@ -356,3 +356,53 @@ https://partnering.in/api/razorpay-webhook
 | Webhook event filter | ✅ Correct | Only `payment.captured` |
 | Webhook idempotency | ✅ Partial | `where("status", "==", "pending")` prevents double-processing |
 | Webhook error handling | ✅ Correct | Returns 200 for skips, 400 for invalid sig, 500 for processing errors |
+---
+
+## APPENDIX: Final Payment & Entitlement Architecture — Rules to Preserve
+
+**Status:** Implemented and verified. `scripts/verify-matching.mjs` Scenario 12 (A–H) all pass; `tsc --noEmit` clean; production build clean.
+**Commits:** `4777517` (verification rework + webhook/verify hardening), `391305a` (phone-keyed entitlement).
+
+### The atomic flow (must never be reordered or bypassed)
+
+```text
+POST /api/create-razorpay-order   -> order.notes = { uid, groupId } (price pinned server-side)
+        |  (user pays in Razorpay checkout)
+        v
+POST /api/verify-razorpay-payment -> body: { razorpay_order_id, razorpay_payment_id, razorpay_signature }
+   1. Required-field check
+   2. Server-side HMAC-SHA256 signature verification against RAZORPAY_KEY_SECRET (raw orderId|paymentId)
+   3. Fetch payment; require status == "captured" and amount == canonical price
+   4. Bind payment -> order:  payment.order_id must equal the submitted order id
+   5. Bind order  -> group:  order.notes.groupId must equal the submitted groupId
+   6. Identity from the VERIFIED Firebase ID token only (never a client body uid)
+   7. Caller must be an active member of groupId
+   8. Pairing-scoped entitlement: memberPayments[<canonical phone>] = { paid, pairingId }
+   9. Re-read group; chatUnlocked == true only if EVERY current member paid for the CURRENT pairing
+  10. ensureChatDoc(groupId) creates the chats subcollection on unlock
+POST /api/razorpay-webhook       -> identical entitlement logic for payment.captured (raw-body HMAC verified)
+Chat page                        -> /api/verify-chat-access (server-authoritative) gates the chat UI
+```
+
+### Non-negotiable rules
+
+| # | Rule | Enforced by |
+|---|------|-------------|
+| 1 | **Always verify Razorpay signatures server-side** | HMAC-SHA256 in `verify-razorpay-payment` and `razorpay-webhook`; the raw request body is required |
+| 2 | **Never bypass payment verification** | Signature/order/group failures return 400 with no writes; `chatUnlocked` is computed server-side from paid entitlements only |
+| 3 | **Never expose Razorpay secrets** | `RAZORPAY_KEY_SECRET` / `RAZORPAY_WEBHOOK_SECRET` are server-env only; the `razorpay` SDK instance is server-only; only `NEXT_PUBLIC_RAZORPAY_KEY_ID` may be public |
+| 4 | **Entitlement uses the canonical member identity** | `callerKey` is the group's own phone key (resolved from members -> memberUIDs -> member.phone), never a client-supplied uid |
+| 5 | **Do not mix Firebase Auth UID and phone identity** | Identity always comes from the verified Firebase ID token; it is resolved to the phone-keyed entitlement through the group membership, not conflated |
+| 6 | **Chat unlocks only when the payment condition is satisfied** | `chatUnlocked()` requires group complete AND every current member's `memberPayments[phone].paid == true` AND matching current `pairingId` |
+| 7 | **Webhook and callback are safe against duplicates** | Pending-match filter + `razorpayPaymentId` existence check before creating paid docs; retries are idempotent |
+| 8 | **Invalid/failed payments never grant access** | `payment.failed` / `cancelled` webhook events are no-ops; wrong-order / wrong-group / bad-signature requests are rejected with 400 and no entitlement |
+| 9 | **Server-only payment records stay protected by rules** | `payments` is not client-readable beyond own-pending docs (`firestore.rules`); entitlement derives from `groups` + server verification — do not weaken these rules |
+| 10 | **Preserve the 12 verification scenarios** | `node scripts/verify-matching.mjs` must keep exiting 0; Scenario 12 covers duplicates, failed/cancelled, wrong order/group, non-members, and pairing replacement |
+| 11 | **Payment -> verification -> entitlement -> Chat access stays atomic and valid** | No step may move client-side; every entitlement write is preceded by verification + binding + active-member checks on the server |
+
+### Operational notes for future work
+
+- Signature verification must always use the exact raw request body sent by Razorpay — never a parsed/re-serialized JSON.
+- A deployed `RAZORPAY_KEY_SECRET` that is not the current secret of the live key produces `400 Invalid payment signature`. That is an environment mismatch, not a code path; the server logs a secret-safe mismatch diagnostic. Fix it in the deployment env vars, never by disabling verification.
+- `memberPayments[phone]` is the pairing-scoped entitlement record. Orphan/non-member keys are refused (webhook active-member guard, verify-route active-member check).
+- Always run before landing a change that touches payment/entitlement: `node scripts/verify-matching.mjs`, `npx tsc --noEmit`, `npm run build`.

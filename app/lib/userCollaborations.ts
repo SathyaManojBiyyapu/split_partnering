@@ -109,6 +109,30 @@ export async function approveUserCollaboration(
   }
 
   const data = collabSnap.data() as UserCollaboration & { categorySlug?: string };
+
+  // Idempotent approval: if this collaboration was already approved, return the
+  // previously created marketplace business instead of creating a duplicate.
+  if (
+    data.status === "approved" &&
+    (data as any).businessId
+  ) {
+    const existingRef = doc(
+      db,
+      "marketplace",
+      data.categorySlug || data.category?.toLowerCase().replace(/\s+/g, "-") || "unknown",
+      "businesses",
+      (data as any).businessId
+    );
+    const existingSnap = await getDoc(existingRef);
+    if (existingSnap.exists()) {
+      return {
+        businessId: existingSnap.id,
+        business: existingSnap.data() as any,
+        alreadyApproved: true,
+      };
+    }
+  }
+
   const categorySlug = data.categorySlug || data.category?.toLowerCase().replace(/\s+/g, "-") || "unknown";
 
   // Create the business in the SCOPE-BASED marketplace path:
@@ -198,6 +222,109 @@ export async function getUserCollaborations(): Promise<UserCollaboration[]> {
     console.error("Error fetching user collaborations:", error);
     return [];
   }
+}
+
+/**
+ * Robust fetch of ALL user collaborations that surfaces errors instead of
+ * silently returning [].
+ *
+ * Firestore `getDocs` is the reliable primary source (no composite index
+ * required); results are sorted client-side. `onSnapshot` is used as a
+ * real-time supplement but never hides an initial read failure.
+ */
+export function fetchUserCollaborationsWithError(): Promise<{
+  data: UserCollaboration[];
+  error: string | null;
+}> {
+  const collabRef = collection(db, "userCollaborations");
+  return getDocs(collabRef)
+    .then((snap) => {
+      const collaborations: UserCollaboration[] = [];
+      snap.forEach((d) => {
+        collaborations.push({ id: d.id, ...(d.data() as any) } as UserCollaboration);
+      });
+      collaborations.sort((a, b) => {
+        const at = (a.submittedAt as any)?.seconds || 0;
+        const bt = (b.submittedAt as any)?.seconds || 0;
+        return bt - at;
+      });
+      return { data: collaborations, error: null };
+    })
+    .catch((err: any) => ({
+      data: [],
+      error: err?.message || "Failed to load user collaborations",
+    }));
+}
+
+/**
+ * Real-time listener with the same getDocs-first + onSnapshot-fallback pattern
+ * used by the marketplace (subscribeToBusinessesByScope). The error callback is
+ * invoked on any initial read failure so the admin UI can surface it instead of
+ * silently showing "no records".
+ */
+export function subscribeToUserCollaborationsWithError(
+  callback: (collaborations: UserCollaboration[], error?: string | null) => void
+): () => void {
+  const collabRef = collection(db, "userCollaborations");
+  let hasInitialData = false;
+  let isUnmounted = false;
+  let unsubscribe: (() => void) | null = null;
+
+  getDocs(collabRef)
+    .then((snap) => {
+      if (isUnmounted) return;
+      const collaborations: UserCollaboration[] = [];
+      snap.forEach((d) => {
+        collaborations.push({ id: d.id, ...(d.data() as any) } as UserCollaboration);
+      });
+      collaborations.sort((a, b) => {
+        const at = (a.submittedAt as any)?.seconds || 0;
+        const bt = (b.submittedAt as any)?.seconds || 0;
+        return bt - at;
+      });
+      callback(collaborations, null);
+      hasInitialData = true;
+    })
+    .catch((err: any) => {
+      if (isUnmounted) return;
+      console.error("getDocs failed for userCollaborations:", err?.message);
+      callback([], err?.message || "Failed to load user collaborations");
+    });
+
+  try {
+    unsubscribe = onSnapshot(
+      collabRef,
+      (snapshot) => {
+        if (isUnmounted) return;
+        const collaborations: UserCollaboration[] = [];
+        snapshot.forEach((d) => {
+          collaborations.push({ id: d.id, ...(d.data() as any) } as UserCollaboration);
+        });
+        collaborations.sort((a, b) => {
+          const at = (a.submittedAt as any)?.seconds || 0;
+          const bt = (b.submittedAt as any)?.seconds || 0;
+          return bt - at;
+        });
+        if (!hasInitialData) {
+          callback(collaborations, null);
+          hasInitialData = true;
+        }
+      },
+      (error) => {
+        if (!hasInitialData) {
+          console.warn("onSnapshot failed for userCollaborations:", error?.message);
+          hasInitialData = true;
+        }
+      }
+    );
+  } catch (err) {
+    console.warn("Could not set up onSnapshot for userCollaborations:", err);
+  }
+
+  return () => {
+    isUnmounted = true;
+    if (typeof unsubscribe === "function") unsubscribe();
+  };
 }
 
 /* ----------------------------------------

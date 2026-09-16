@@ -21,6 +21,11 @@ import {
   ScopeType,
 } from "@/app/lib/marketplaceManager";
 import { categoryConfigs, getCategoryName, allCategorySlugs } from "@/app/data/categoryConfig";
+import {
+  subscribeToUserCollaborationsWithError,
+  approveUserCollaboration,
+  rejectUserCollaboration,
+} from "@/app/lib/userCollaborations";
 import toast from "react-hot-toast";
 
 /* ----------------------------------------
@@ -43,6 +48,134 @@ const scopeColors: Record<ScopeType, string> = {
   district: "bg-green-600/20 text-green-400 border-green-500/30",
   city: "bg-yellow-600/20 text-yellow-400 border-yellow-500/30",
 };
+
+/* ----------------------------------------
+   PENDING USER COLLABORATIONS (Marketplace → User Collaborations → Pending)
+   Shows user-created collaboration submissions that are waiting for admin
+   action, grouped by Parent → Collaboration/category → user-created entity.
+---------------------------------------- */
+
+const pendingStatusBadge = (status: string) =>
+  status === "approved" ? "bg-green-600" : status === "rejected" ? "bg-red-600" : "bg-yellow-500 text-black";
+
+function PendingUserCollaborationsSection() {
+  const [collabs, setCollabs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    return subscribeToUserCollaborationsWithError((cols, err) => {
+      setCollabs(cols);
+      setLoadError(err || null);
+      setLoading(false);
+    });
+  }, []);
+
+  const pending = collabs.filter(
+    (c) => String(c?.status || "pending").toLowerCase() === "pending"
+  );
+
+  // Group by Category → SubCategory so every user-created entity appears under
+  // its parent collaboration/category (Gym → Personal Trainer Split → JS Gym).
+  const groups = new Map<string, { category: string; subCategory: string; children: any[] }>();
+  for (const c of pending) {
+    const category = (c.category || "Uncategorized").trim();
+    const subCategory = (c.subCategory || "").trim();
+    const key = `${category}::${subCategory}`;
+    if (!groups.has(key)) groups.set(key, { category, subCategory, children: [] });
+    groups.get(key)!.children.push(c);
+  }
+  const groupList = Array.from(groups.values()).map((g) => ({
+    ...g,
+    children: g.children.sort(
+      (a, b) => ((b.submittedAt as any)?.seconds || 0) - ((a.submittedAt as any)?.seconds || 0)
+    ),
+  }));
+
+  if (loading) {
+    return (
+      <div className="border border-[#FFD166]/20 rounded-xl p-4 mb-6">
+        <div className="text-center text-gray-400 py-4 text-xs animate-pulse">Loading user collaborations...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="border border-[#FFD166]/20 rounded-xl mb-6 overflow-hidden">
+      <div className="bg-[#D4AF37]/10 border-b border-[#FFD166]/20 px-4 py-2.5 flex flex-wrap items-center gap-2">
+        <h2 className="text-sm font-bold text-[#FFD166]">🕓 User Collaborations — Pending Approval</h2>
+        <span className="ml-auto text-[10px] text-gray-400">{pending.length} pending submission{pending.length === 1 ? "" : "s"}</span>
+      </div>
+
+      {loadError ? (
+        <div className="text-center text-red-400 py-4 bg-red-500/10 px-4 text-xs">
+          ⚠️ Could not load user collaborations: {loadError}
+        </div>
+      ) : pending.length === 0 ? (
+        <div className="text-center text-gray-400 py-5 text-xs">No pending user collaborations</div>
+      ) : (
+        <div className="divide-y divide-white/5">
+          {groupList.map((group) => (
+            <div key={`${group.category}::${group.subCategory}`}>
+              <div className="px-4 py-2 bg-black/30 text-xs flex flex-wrap gap-1.5 items-center">
+                <span className="text-white font-bold">{group.category}</span>
+                {group.subCategory && <span className="text-[#FFD166]">→ {group.subCategory}</span>}
+              </div>
+              {group.children.map((c) => (
+                <div key={c.id} className="px-4 py-3 flex flex-wrap items-start gap-3 justify-between">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-sm font-bold text-white break-words">{c.businessName}</h3>
+                      <span className={`px-2 py-0.5 text-[9px] font-bold rounded-full ${pendingStatusBadge(c.status)}`}>{c.status}</span>
+                    </div>
+                    <p className="text-[10px] text-gray-500 mt-0.5">
+                      {c.city}, {c.district}, {c.state} · by {c.createdByName || "Anonymous"} ({c.createdByPhone || "—"})
+                    </p>
+                  </div>
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={async () => {
+                        if (!c.id) return;
+                        if (!confirm(`Approve "${c.businessName}"? This will create it in ${c.city} marketplace.`)) return;
+                        try {
+                          const adminPhone = typeof window !== "undefined" ? localStorage.getItem("phone") || "admin" : "admin";
+                          await approveUserCollaboration(c.id, adminPhone);
+                          toast.success(`"${c.businessName}" approved and created in ${c.city}!`);
+                        } catch (err: any) {
+                          console.error(err);
+                          toast.error("Failed to approve: " + (err.message || ""));
+                        }
+                      }}
+                      className="px-2.5 py-1 bg-green-600 hover:bg-green-500 rounded text-[10px] font-bold transition"
+                    >
+                      ✅ Approve
+                    </button>
+                    <button
+                      onClick={async () => {
+                        if (!c.id) return;
+                        if (!confirm(`Reject "${c.businessName}"?`)) return;
+                        try {
+                          await rejectUserCollaboration(c.id);
+                          toast.success(`"${c.businessName}" rejected.`);
+                        } catch (err: any) {
+                          console.error(err);
+                          toast.error("Failed to reject: " + (err.message || ""));
+                        }
+                      }}
+                      className="px-2.5 py-1 bg-red-600 hover:bg-red-500 rounded text-[10px] font-bold transition"
+                    >
+                      ❌ Reject
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 /* ----------------------------------------
    MARKETPLACE MANAGER COMPONENT
@@ -185,6 +318,9 @@ export default function MarketplaceManager() {
 
   return (
     <div>
+      {/* User-created collaboration submissions waiting for admin action */}
+      <PendingUserCollaborationsSection />
+
       {/* Stats Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2 mb-6">
         <StatCard value={stats.total} label="Total" color="text-blue-400" />

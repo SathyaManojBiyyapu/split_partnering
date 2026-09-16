@@ -1180,7 +1180,14 @@ export default function AdminPage() {
                             }`}>{c.status || "pending"}</span>
                           </div>
                           <p className="text-xs text-gray-400 mt-1">
-                            {c.category} → {c.brandName}
+                            {c.category}
+                            {" → "}
+                            {c.subcategory || c.brandName || "Collaboration"}
+                            {c.businessName && c.businessName !== (c.subcategory || c.brandName) ? (
+                              <span>{" → "}{c.businessName}</span>
+                            ) : (
+                              ""
+                            )}
                           </p>
                         </div>
                         <div className="text-[10px] text-gray-500">

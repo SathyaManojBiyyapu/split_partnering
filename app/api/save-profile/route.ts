@@ -73,6 +73,31 @@ async function resolveOwnDoc(decoded: any) {
   }
   return null;
 }
+
+/**
+ * Validate a doc ID claimed by the client (the doc the PROFILE page resolved
+ * and reads). It is only accepted when it is provably the caller's OWN
+ * document — the Firebase UID, or one of the phone-number forms derived from
+ * the VERIFIED token's phone_number claim. Anything else is rejected so a
+ * caller can never steer the admin-SDK write onto another user's document.
+ */
+function isClaimedOwnDoc(decoded: any, claimedDocId: string): boolean {
+  if (!claimedDocId) return false;
+  if (claimedDocId === decoded?.uid) return true;
+
+  const rawPhone = typeof decoded?.phone_number === "string" ? decoded.phone_number : "";
+  if (!rawPhone) return false;
+
+  let canonical = rawPhone.replace(/[^0-9]/g, "");
+  if (canonical.length === 12 && canonical.startsWith("91")) canonical = canonical.slice(2);
+  if (canonical.length === 11 && canonical.startsWith("0")) canonical = canonical.slice(1);
+  const legacy = canonical && canonical.length === 10 ? `91${canonical}` : "";
+  return (
+    claimedDocId === canonical ||
+    claimedDocId === rawPhone ||
+    claimedDocId === legacy
+  );
+}
 export async function POST(req: Request) {
   try {
     if (!adminCredentialsConfigured) {
@@ -134,7 +159,21 @@ export async function POST(req: Request) {
     }
 
     /* --- Resolve the caller's own document (never another user's) --- */
-    const existing = await resolveOwnDoc(decoded);
+    // The client resolves the SAME doc it reads (via resolveExistingUserDoc)
+    // and sends it back. When the claimed id is provably the caller's own
+    // (token phone forms or the Firebase UID), checking it FIRST guarantees the
+    // write lands on exactly the document the Profile page displays — fixing
+    // the "saved successfully but still shows the old location" divergence
+    // (server previously picked a different doc/new doc than the client read).
+    const claimedDocId = String(payload?.docId || "").trim();
+    let existing: { docId: string; data: Record<string, any> } | null = null;
+    if (claimedDocId && isClaimedOwnDoc(decoded, claimedDocId)) {
+      const claimedSnap = await adminDb.collection("users").doc(claimedDocId).get();
+      if (claimedSnap.exists) {
+        existing = { docId: claimedDocId, data: claimedSnap.data() || {} };
+      }
+    }
+    if (!existing) existing = await resolveOwnDoc(decoded);
 
     // New document key: canonical 10-digit phone when the token has one,
     // otherwise the Firebase UID (Google-login users without a phone claim).
@@ -157,6 +196,10 @@ export async function POST(req: Request) {
         ? String(existingData.phone).trim()
         : docId;
 
+    const savedState = pick(state, "state");
+    const savedDistrict = pick(district, "district");
+    const savedCity = pick(city, "city");
+
     await adminDb.collection("users").doc(docId).set(
       {
         // Preserve the stored identity (existing field wins).
@@ -166,9 +209,9 @@ export async function POST(req: Request) {
           existingData.name && String(existingData.name).trim() !== ""
             ? String(existingData.name).trim()
             : name,
-        city: pick(city, "city"),
-        district: pick(district, "district"),
-        state: pick(state, "state"),
+        city: savedCity,
+        district: savedDistrict,
+        state: savedState,
         gender: pick(gender, "gender"),
         bio: pick(String(payload?.bio ?? ""), "bio"),
         interests: pick(String(payload?.interests ?? ""), "interests"),
@@ -188,7 +231,9 @@ export async function POST(req: Request) {
       { merge: true }
     );
 
-    return NextResponse.json({ ok: true, docId });
+    // Return the persisted values so the client can refresh its local state
+    // with the exact values now stored in the database.
+    return NextResponse.json({ ok: true, docId, state: savedState, district: savedDistrict, city: savedCity });
   } catch (error: any) {
     console.error("SAVE-PROFILE ERROR:", error?.code || "", error?.message || error);
     return NextResponse.json(

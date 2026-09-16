@@ -28,6 +28,21 @@ export interface ResolvedUserDoc {
 const docIdCache = new Map<string, string>();
 
 /**
+ * Invalidate the cached doc-ID mapping for a canonical phone (or all entries
+ * when no phone is given). Profile save flows call this AFTER a successful
+ * server-side write so the NEXT resolve re-scans from the database instead of
+ * returning a stale doc id/value that was cached earlier in the same session.
+ */
+export function invalidateUserDocCache(rawPhone: string | null | undefined): void {
+  if (rawPhone) {
+    const phone = normalizePhone(rawPhone);
+    if (phone) docIdCache.delete(phone);
+  } else {
+    docIdCache.clear();
+  }
+}
+
+/**
  * Resolve the CURRENT user's existing users document efficiently.
  *
  * Strategy (NOT a collection scan):
@@ -67,6 +82,24 @@ export async function resolveExistingUserDoc(
   }
 
   const candidates: string[] = [];
+  // A previously pinned doc ID (set from a successful server/profile save) is
+  // the FIRST candidate — it is the exact document the server writes to, so
+  // reads land on the same doc the save updated (no stale/duplicate read).
+  // It is only honored when it is one of the caller's OWN identifier forms
+  // (canonical/raw/+91/legacy-91/UID), so it can never point at another user's
+  // document; the Firestore own-doc get rule still gates the actual read.
+  if (typeof window !== "undefined") {
+    const pinnedId = (localStorage.getItem("phoneDocId") || "").trim();
+    if (pinnedId && pinnedId !== phone && !candidates.includes(pinnedId)) {
+      const pinnedIsOwn =
+        pinnedId === uid ||
+        pinnedId === raw ||
+        (phone && pinnedId === phone) ||
+        (phone && pinnedId === "+91" + phone) ||
+        (phone && pinnedId === "91" + phone);
+      if (pinnedIsOwn) candidates.push(pinnedId);
+    }
+  }
   if (phone) candidates.push(phone);
   if (raw && raw !== phone) candidates.push(raw);
   const withCC = phone ? "+91" + phone : "";

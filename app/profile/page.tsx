@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { db, storage, auth } from "@/firebase/config";
 import { signOut, onAuthStateChanged, type User } from "firebase/auth";
 import { doc, setDoc } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { resolveExistingUserDoc, normalizePhone } from "@/app/lib/userLookup";
+import { resolveExistingUserDoc, normalizePhone, invalidateUserDocCache } from "@/app/lib/userLookup";
 import { shouldLockName, resolveSavedName } from "@/app/lib/profileName";
 import { indiaStates } from "@/app/data/indiaStates";
 import { districts } from "@/app/data/districts";
@@ -49,68 +49,75 @@ export default function ProfilePage() {
   const selectedDistrictCities = district && citiesByDistrict ? (citiesByDistrict as any)[stateVal]?.[district] || [] : [];
 
   /* Fetch profile */
-  useEffect(() => {
+  const loadProfile = useCallback(async () => {
     if (!phone) {
       setLoading(false);
       return;
     }
 
-    const fetchProfile = async () => {
-      try {
-        // Force-refresh auth user BEFORE any Firestore operation
-        if (auth.currentUser) {
-          try {
-            await auth.currentUser.reload();
-            await auth.currentUser.getIdToken(true);
-          } catch (_) {}
-        }
-
-        // Find the EXISTING member doc regardless of its ID format
-        // (10-digit phone, +91 phone, raw stored value, or Firebase UID).
-        const resolved = await resolveExistingUserDoc(phone);
-
-        if (resolved) {
-          // Existing member: the actual doc ID (may be +91/uid-keyed) is kept
-          // separate from the canonical phone so matching stays intact while
-          // this page reads the real document.
-          if (resolved.docId !== phone) {
-            localStorage.setItem("phoneDocId", resolved.docId);
-          }
-          const data = resolved.data as any;
-          setName(data.name || "");
-          // Existing member whose name is already persisted → the field stays
-          // fixed (intended design). A member doc WITHOUT a saved name (or a
-          // brand-new user) leaves the field editable until they save.
-          setNameSaved(!!(data.name || "").trim());
-          setCity(data.city || "");
-          setDistrict(data.district || "");
-          setStateVal(data.state || "");
-          setGender(data.gender || "");
-          setBio(data.bio || "");
-          setInterests(data.interests || "");
-          setCollege(data.college || "");
-          setPhotoURL(data.photoURL || "");
-          setProfileCompleted(data.profileCompleted === true);
-          setPaymentVerified(data.paymentVerified === true);
-        }
-
-        // Count completed partnerships from paid payments
-        const { collection, query, where, getDocs } = await import("firebase/firestore");
-        const paymentsQuery = query(
-          collection(db, "payments"),
-          where("uid", "==", phone),
-          where("status", "==", "paid")
-        );
-        const paySnap = await getDocs(paymentsQuery);
-        setCompletedPartnerships(paySnap.size);
-      } catch (error) {
-        console.error(error);
+    try {
+      // Force-refresh auth user BEFORE any Firestore operation
+      if (auth.currentUser) {
+        try {
+          await auth.currentUser.reload();
+          await auth.currentUser.getIdToken(true);
+        } catch (_) {}
       }
-      setLoading(false);
-    };
 
-    fetchProfile();
+      // Find the EXISTING member doc regardless of its ID format
+      // (10-digit phone, +91 phone, raw stored value, or Firebase UID).
+      const resolved = await resolveExistingUserDoc(phone);
+
+      if (resolved) {
+        // Existing member: the actual doc ID (may be +91/uid-keyed) is kept
+        // separate from the canonical phone so matching stays intact while
+        // this page reads the real document.
+        if (resolved.docId !== phone) {
+          localStorage.setItem("phoneDocId", resolved.docId);
+        }
+        const data = resolved.data as any;
+        setName(data.name || "");
+        // Existing member whose name is already persisted → the field stays
+        // fixed (intended design). A member doc WITHOUT a saved name (or a
+        // brand-new user) leaves the field editable until they save.
+        setNameSaved(!!(data.name || "").trim());
+        setCity(data.city || "");
+        setDistrict(data.district || "");
+        setStateVal(data.state || "");
+        setGender(data.gender || "");
+        setBio(data.bio || "");
+        setInterests(data.interests || "");
+        setCollege(data.college || "");
+        setPhotoURL(data.photoURL || "");
+        setProfileCompleted(data.profileCompleted === true);
+        setPaymentVerified(data.paymentVerified === true);
+        if (data.notificationPrefs) {
+          setNotificationPrefs({
+            matchAlerts: data.notificationPrefs.matchAlerts !== false,
+            paymentAlerts: data.notificationPrefs.paymentAlerts !== false,
+            chatAlerts: data.notificationPrefs.chatAlerts !== false,
+          });
+        }
+      }
+
+      // Count completed partnerships from paid payments
+      const { collection, query, where, getDocs } = await import("firebase/firestore");
+      const paymentsQuery = query(
+        collection(db, "payments"),
+        where("uid", "==", phone),
+        where("status", "==", "paid")
+      );
+      const paySnap = await getDocs(paymentsQuery);
+      setCompletedPartnerships(paySnap.size);
+    } catch (error) {
+      console.error(error);
+    }
+    setLoading(false);
   }, [phone]);
+
+  useEffect(() => {
+    loadProfile();
+  }, [loadProfile]);
 
   /* Image upload */
   const handleImageUpload = async (e: any) => {
@@ -232,6 +239,10 @@ export default function ProfilePage() {
             college: college,
             photoURL: photoURL || "",
             notificationPrefs,
+            // Tell the server which document the client actually reads, so it
+            // updates THAT SAME document (no divergent/stale-dup doc is left
+            // showing the old location after "saved successfully").
+            docId: docPhone,
           }),
         });
         if (res.ok) {
@@ -298,6 +309,14 @@ export default function ProfilePage() {
       if (docPhone !== phone) {
         localStorage.setItem("phoneDocId", docPhone);
       }
+
+      // The write to the backend/database has SUCCEEDED at this point. Invalidate
+      // any session doc-id cache and re-fetch the profile from Firestore so the
+      // page immediately reflects the newly persisted State/District/City (and
+      // never shows a stale cached location). The success toast is only shown
+      // AFTER this fresh read returns the updated document.
+      invalidateUserDocCache(phone);
+      await loadProfile();
 
       toast.success("Profile saved successfully!");
       setProfileCompleted(true);

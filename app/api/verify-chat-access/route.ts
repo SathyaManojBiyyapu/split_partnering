@@ -6,6 +6,10 @@ import {
   isPaidForPairing,
 } from "@/app/lib/groupMatching";
 import { ensureChatIdentityForGroup } from "@/app/lib/chatIdentity";
+import {
+  resolveCallerIdentity,
+  identityMatchesKey,
+} from "@/app/lib/serverIdentity";
 
 /**
  * SERVER-SIDE chat access verification.
@@ -37,8 +41,8 @@ export async function POST(req: Request) {
       );
     }
 
-    const body = await req.json();
-    const { groupId } = body;
+    const body = await req.json().catch(() => ({}));
+    const { groupId, phone: claimedPhone } = body;
 
     if (!groupId) {
       return NextResponse.json(
@@ -54,16 +58,14 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    let identities: string[] = [];
+    let caller: Awaited<ReturnType<typeof resolveCallerIdentity>>;
     try {
       const decoded = await admin.auth().verifyIdToken(idToken);
-      identities = [decoded.uid || ""];
-      if (decoded.phone_number) {
-        const raw = decoded.phone_number.trim();
-        // Cover every historical identity format: +91-prefixed, 10-digit, raw
-        identities.push(raw, raw.replace(/^\+91/, ""));
-      }
-      identities = [...new Set(identities.filter(Boolean))];
+      // Resolves the canonical phone for phone-OTP users from the token claim,
+      // and for Google-login users from their own users doc / corroborated
+      // session phone (see serverIdentity.ts — the "paid but not a member"
+      // 403 root cause). Token problems → 401; infra failures → 500 below.
+      caller = await resolveCallerIdentity(decoded, claimedPhone);
     } catch (error: any) {
       // Only genuine token problems → 401; infra/credential failures must
       // surface with their real cause (see the 500 handler below).
@@ -88,8 +90,11 @@ export async function POST(req: Request) {
     const members = group?.members || [];
     const memberUIDs = group?.memberUIDs || [];
     const isMember =
-      members.some((m: any) => identities.includes(m?.phone) || identities.includes(m?.uid)) ||
-      identities.some((id) => memberUIDs.includes(id));
+      members.some(
+        (m: any) =>
+          identityMatchesKey(caller, m?.phone) ||
+          identityMatchesKey(caller, m?.uid)
+      ) || memberUIDs.some((id: any) => identityMatchesKey(caller, id));
 
     if (!isMember) {
       return NextResponse.json(
@@ -108,10 +113,11 @@ export async function POST(req: Request) {
       // a "Complete Payment" button (double-payment trap).
       const phones = activeMemberPhones(group);
       const callerKey =
-        phones.find((p) => identities.includes(p)) ||
+        phones.find((p) => identityMatchesKey(caller, p)) ||
         (Array.isArray(group?.memberUIDs) ? group.memberUIDs : [])
           .map((id: any) => String(id || "").trim())
-          .find((id: string) => identities.includes(id)) ||
+          .find((id: string) => identityMatchesKey(caller, id)) ||
+        caller.phone ||
         "";
       const callerPaid = callerKey ? isPaidForPairing(group, callerKey) : false;
       const othersAllPaid = callerKey

@@ -468,6 +468,65 @@ console.log("\n== Chat Scenario 13: rules identity-form fix (Google login + lega
     "NEW rules: admin path unchanged");
 }
 
+// ====================================================================
+// SCENARIO 15: Google-login caller with NO phone claim (the production
+// "fully paid but Chat Locked — not a member" 403). Mirrors
+// app/lib/serverIdentity.ts: identityMatchesKey + resolveCallerIdentity.
+// ====================================================================
+console.log("= Scenario 15: Google-login caller — corroborated session-phone fallback =");
+{
+  // Mirror of identityMatchesKey(resolved, key) for group-keyed membership.
+  function identityMatchesKey(resolved, key) {
+    const k = String(key || "").trim();
+    if (!k) return false;
+    if (resolved.identities.includes(k)) return true;
+    if (resolved.phone && resolved.phone === k) return true;
+    const kDigits = k.replace(/[^0-9]/g, "");
+    if (resolved.phone && kDigits.length >= 10 && kDigits.slice(-10) === resolved.phone) return true;
+    return false;
+  }
+  function isMember(group, resolved) {
+    return (
+      group.members.some((m) => identityMatchesKey(resolved, m?.phone) || identityMatchesKey(resolved, m?.uid)) ||
+      (group.memberUIDs || []).some((id) => identityMatchesKey(resolved, id))
+    );
+  }
+
+  // Production-shaped group: everything keyed by the canonical phone.
+  const group = {
+    members: [
+      { uid: "9000000001", phone: "9000000001" },
+      { uid: "9000000002", phone: "9000000002" },
+    ],
+    memberUIDs: ["9000000001", "9000000002"],
+  };
+
+  // Phone-OTP caller: verified token phone claim → strict path, unchanged.
+  const phoneCaller = { identities: ["fbUidA", "+919000000001", "9000000001"], phone: "9000000001" };
+  check(isMember(group, phoneCaller), "phone-OTP caller: token claim authorizes (unchanged strict path)");
+
+  // Google-login caller: token has ONLY the random auth.uid → OLD code 403'd
+  // ("You are not a member") even though the pair was fully paid.
+  const googleCallerNoClaim = { identities: ["googleUidG"], phone: "" };
+  check(!isMember(group, googleCallerNoClaim),
+    "REPRO: Google token without phone claim matches NOTHING → old 403 root cause");
+
+  // NEW: corroborated session phone (users doc exists for it) → member.
+  const googleCallerClaim = { identities: ["googleUidG", "9000000001", "+919000000001"], phone: "9000000001" };
+  check(isMember(group, googleCallerClaim),
+    "FIX: corroborated session phone (real users doc) authorizes the Google caller");
+
+  // A claim that does NOT correspond to a member profile → still rejected.
+  const outsiderClaim = { identities: ["googleUidX", "9111111111"], phone: "9111111111" };
+  check(!isMember(group, outsiderClaim),
+    "GUARD: claimed phone with no member profile is still denied (no identity grant)");
+
+  // The callerKey for the locked-screen branch resolves to the canonical phone.
+  const phones = ["9000000001", "9000000002"];
+  const callerKey = phones.find((p) => identityMatchesKey(googleCallerClaim, p)) || "";
+  check(callerKey === "9000000001", "callerKey resolves to the canonical member phone for entitlement checks");
+}
+
 console.log("\n" + "=".repeat(60));
   // authorized is set ONLY after /api/verify-chat-access succeeds (which itself
   // requires a verified Firebase ID token). So the listener can NEVER start

@@ -95,7 +95,11 @@ export default function ChatPage() {
             "Content-Type": "application/json",
             Authorization: `Bearer ${idToken}`,
           },
-          body: JSON.stringify({ groupId }),
+          // Session phone is a CORROBORATED CLAIM only — the server accepts it
+          // solely for tokens without a phone_number claim (Google logins) AND
+          // only when a real member profile exists for it (serverIdentity.ts).
+          // Phone-OTP users are authorized strictly from their token claim.
+          body: JSON.stringify({ groupId, phone: phone || firebaseUser?.phoneNumber || "" }),
         });
 
         const data = await res.json();

@@ -14,6 +14,11 @@ import {
   maybeRematchAfterPayment,
   shouldAttemptRematch,
 } from "@/app/lib/serverRematching";
+import {
+  resolveCallerIdentity,
+  identityMatchesKey,
+  tokenIdentities,
+} from "@/app/lib/serverIdentity";
 
 const ACTIVATION_PRICE = 29;
 
@@ -85,16 +90,10 @@ function verifySignature(
   return { valid: expected === signature, expected };
 }
 
-/* Identity forms derived ONLY from the verified Firebase ID token. */
-function tokenIdentities(decoded: any): string[] {
-  const ids: string[] = [decoded?.uid || ""];
-  if (decoded?.phone_number) {
-    const raw = String(decoded.phone_number).trim();
-    ids.push(raw, raw.replace(/^\+91/, ""));
-    const digits = raw.replace(/[^0-9]/g, "");
-    if (digits.length === 12 && digits.startsWith("91")) ids.push(digits.slice(2));
-  }
-  return [...new Set(ids.filter(Boolean))];
+/* Identity forms derived ONLY from the verified Firebase ID token. Kept as a
+   thin alias of the shared serverIdentity helper (same behavior as before). */
+function tokenIdentitiesLocal(decoded: any): string[] {
+  return tokenIdentities(decoded);
 }
 
 export async function POST(req: Request) {
@@ -235,7 +234,14 @@ export async function POST(req: Request) {
       throw error;
     }
 
-    const identities = tokenIdentities(decoded);
+    const identities = tokenIdentitiesLocal(decoded);
+    // Resolve the caller's canonical phone server-side: token claim → own
+    // users doc → corroborated session phone (Google-login users). Mirrors
+    // verify-chat-access so both routes authorize the SAME member key.
+    const caller = await resolveCallerIdentity(
+      decoded,
+      String(body?.uid || "")
+    );
 
     // ============================================================
     // Load the group; the caller must be an active member and the
@@ -252,11 +258,13 @@ export async function POST(req: Request) {
 
     const callerMember = members.find((m: any) => {
       const p = typeof m === "string" ? m : m?.phone || m?.uid || "";
-      return identities.includes(p);
+      return identityMatchesKey(caller, p);
     });
     const isPartOfGroup =
       !!callerMember ||
-      identities.some((id) => (group?.memberUIDs || []).includes(id));
+      (Array.isArray(group?.memberUIDs) ? group.memberUIDs : []).some((id: any) =>
+        identityMatchesKey(caller, id)
+      );
 
     if (!isPartOfGroup) {
       return NextResponse.json(
@@ -292,12 +300,14 @@ export async function POST(req: Request) {
     // an orphan entry that chatUnlocked() never reads — the payment would
     // be recorded but chat would stay locked forever.
     // ============================================================
-    const phoneIdentity = decoded?.phone_number
-      ? String(decoded.phone_number).trim().replace(/^\+91/, "")
-      : "";
+    const phoneIdentity = caller.phone
+      ? caller.phone
+      : decoded?.phone_number
+        ? String(decoded.phone_number).trim().replace(/^\+91/, "")
+        : "";
     const storedKeyMatch = (Array.isArray(group?.memberUIDs) ? group.memberUIDs : [])
       .map((id: any) => String(id || "").trim())
-      .find((id: string) => identities.includes(id));
+      .find((id: string) => identityMatchesKey(caller, id));
 
     let callerKey = "";
     if (typeof callerMember === "string") {
@@ -329,7 +339,10 @@ export async function POST(req: Request) {
       const ddata = d.data() as any;
       if (
         identities.includes(String(ddata?.uid || "")) ||
-        identities.includes(String(ddata?.phone || ""))
+        identities.includes(String(ddata?.phone || "")) ||
+        (caller.phone &&
+          (caller.phone === String(ddata?.phone || "") ||
+            caller.phone === String(ddata?.uid || "")))
       ) {
         await d.ref.update({
           status: "paid",
@@ -381,7 +394,7 @@ export async function POST(req: Request) {
       const updatedMembers = members.map((m: any) => {
         if (typeof m === "string") return m;
         const p = m?.phone || m?.uid || "";
-        if (identities.includes(p)) return { ...m, paid: true };
+        if (identityMatchesKey(caller, p)) return { ...m, paid: true };
         return m;
       });
       const memberPayments = {

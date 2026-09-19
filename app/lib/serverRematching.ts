@@ -14,6 +14,7 @@ import {
   resolveRequired,
 } from "@/app/lib/groupMatching";
 import { buildRematchPlan } from "@/app/lib/rematching";
+import { buildMemberIdentitySet } from "@/app/lib/chatIdentity";
 
 export type RematchResult = {
   rematched: boolean;
@@ -109,27 +110,40 @@ export async function maybeRematchAfterPayment(
   }
 }
 
-/** Idempotent chat-doc creation for a fully-paid rematch pairing. */
-async function ensureChatForGroup(groupId: string, memberUIDs: string[], members: any[]) {
+/** Idempotent chat-doc creation for a fully-paid rematch pairing.
+ *  memberUIDs is written as the FULL rule-accepted identity set (all phone
+ *  forms + real Firebase Auth UIDs) so both members pass the Firestore
+ *  rules on the very first open — no permission-denied on fresh pairings. */
+async function ensureChatForGroup(groupId: string, memberKeys: string[], members: any[]) {
   try {
+    const desired = await buildMemberIdentitySet(
+      memberKeys.map((k) => ({ phone: k }))
+    );
     const existing = await adminDb
       .collection("chats")
       .where("groupId", "==", groupId)
       .limit(1)
       .get();
     if (!existing.empty) {
-      await existing.docs[0].ref.update({
-        members: members || [],
-        memberUIDs: memberUIDs || [],
-        updatedAt: adminTimestamp(),
-      });
+      // Union-only heal (never removes identities).
+      const current = Array.isArray(existing.docs[0].data()?.memberUIDs)
+        ? existing.docs[0].data().memberUIDs.map((u: any) => String(u).trim())
+        : [];
+      const missing = desired.filter((id) => !current.includes(id));
+      if (missing.length > 0) {
+        await existing.docs[0].ref.update({
+          members: members || [],
+          memberUIDs: [...current, ...missing],
+          updatedAt: adminTimestamp(),
+        });
+      }
       return;
     }
     await adminDb.collection("chats").add({
       groupId,
       createdAt: adminTimestamp(),
       members: members || [],
-      memberUIDs: memberUIDs || [],
+      memberUIDs: desired,
       lastMessage: "",
       lastMessageAt: adminTimestamp(),
       unreadCounts: {},

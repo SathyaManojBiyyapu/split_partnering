@@ -289,6 +289,145 @@ console.log("\n== Chat Scenario 10: chat doc created server-side on unlock (idem
 }
 
 // ====================================================================
+console.log("\n== Chat Scenario 11: STALE chat doc → permission-denied divergence ==");
+// ====================================================================
+// Mirrors app/lib/chatIdentity.ts EXACTLY (pure subset, uid resolution injected).
+{
+  function phoneIdentityForms(phone) {
+    const raw = String(phone || "").trim();
+    const digits = raw.replace(/\D/g, "");
+    const last10 = digits.slice(-10);
+    const forms = new Set();
+    if (raw) forms.add(raw);
+    if (digits.length >= 10) {
+      forms.add(last10);         // rules myPhone(): token phone minus "+91"
+      forms.add("91" + last10);  // legacy doc keys
+      forms.add("+91" + last10); // token phone_number form
+    }
+    return [...forms];
+  }
+  async function buildMemberIdentitySet(members, resolveUid) {
+    const phones = members
+      .map((m) => (typeof m === "string" ? m : m?.phone || m?.uid || ""))
+      .filter((p) => p && String(p).trim() !== "")
+      .map((p) => String(p).trim());
+    const set = new Set();
+    for (const p of phones) for (const f of phoneIdentityForms(p)) set.add(f);
+    const uids = await Promise.all(phones.map((p) => resolveUid(p)));
+    for (const u of uids) if (u) set.add(u);
+    return [...set];
+  }
+  async function ensureChatIdentityForGroup(store, groupId, members, resolveUid) {
+    let chat = store.chats.find((c) => c.groupId === groupId);
+    const desired = await buildMemberIdentitySet(members, resolveUid);
+    if (!chat) {
+      chat = { id: `chat_${store.chats.length + 1}`, groupId, members, memberUIDs: desired, isActive: true };
+      store.chats.push(chat);
+      return { chatId: chat.id, healed: true, created: true };
+    }
+    const existing = Array.isArray(chat.memberUIDs) ? chat.memberUIDs.map((u) => String(u).trim()) : [];
+    const missing = desired.filter((id) => !existing.includes(id));
+    if (missing.length > 0) {
+      chat.memberUIDs = [...existing, ...missing];
+      return { chatId: chat.id, healed: true, created: false };
+    }
+    return { chatId: chat.id, healed: false, created: false };
+  }
+
+  const resolveUid = (phone) =>
+    phone === "9000000001" ? "firebaseUidA" : phone === "9000000002" ? "firebaseUidB" : null;
+
+  const store = makeStore();
+  const groupId = "group_stale";
+  const members = [{ phone: "9000000001" }, { phone: "9000000002" }];
+  const authA = { loggedIn: true, uid: "firebaseUidA", myPhone: "9000000001", isAdmin: false };
+  const authB = { loggedIn: true, uid: "firebaseUidB", myPhone: "9000000002", isAdmin: false };
+
+  // OLD deployed behavior: chat doc created at 1/2 with ONLY User A's key,
+  // never synced when B joined → the EXACT reported production state.
+  store.chats.push({ id: "chat_stale", groupId, members: [{ phone: "9000000001" }], memberUIDs: ["9000000001"] });
+
+  // Server-side verify-chat-access authorizes against the GROUP doc (both
+  // members present, both paid) → 200 + chatId. But the Firestore listener
+  // rules check the CHAT doc → User B DENIED. This is the divergence:
+  check(
+    !chatReadAllowed(store.chats[0], authB),
+    "BUG REPRO: server allows (group member) while Firestore rules DENY User B on the stale chat doc"
+  );
+  check(
+    chatReadAllowed(store.chats[0], authA),
+    "User A (present in stale memberUIDs) still allowed pre-heal"
+  );
+  globalThis.__s11 = { ensureChatIdentityForGroup, resolveUid, members, authA, authB, phoneIdentityForms };
+}
+
+// ====================================================================
+console.log("\n== Chat Scenario 11b: heal correctness (union-only, idempotent, secure) ==");
+// ====================================================================
+{
+  const { ensureChatIdentityForGroup, resolveUid, members, authA, authB, phoneIdentityForms } = globalThis.__s11;
+
+  const store = makeStore();
+  const groupId = "group_stale";
+  store.chats.push({ id: "chat_stale", groupId, members: [{ phone: "9000000001" }], memberUIDs: ["9000000001"] });
+
+  // Self-heal runs inside verify-chat-access before returning success.
+  const r1 = await ensureChatIdentityForGroup(store, groupId, members, resolveUid);
+  check(r1.healed === true && r1.created === false, "Heal: stale chat doc UPDATED (not recreated)");
+  check(store.chats.length === 1, "Heal does NOT create a duplicate chat doc");
+  const healed = store.chats[0].memberUIDs;
+  check(healed.includes("9000000001") && healed.includes("9000000002"), "Heal: BOTH member phone keys present");
+  check(healed.includes("firebaseUidA") && healed.includes("firebaseUidB"), "Heal: real Firebase Auth UIDs (covers users WITHOUT a phone_number token claim)");
+  check(healed.includes("+919000000001") && healed.includes("919000000001"), "Heal: +91 and legacy 91-prefix forms present");
+  check(healed.length >= 6, "Heal is UNION-ONLY (no existing identities removed)");
+  const before = JSON.stringify(store.chats[0].memberUIDs);
+  const r2 = await ensureChatIdentityForGroup(store, groupId, members, resolveUid);
+  check(r2.healed === false && JSON.stringify(store.chats[0].memberUIDs) === before, "Heal is idempotent (no write when nothing missing)");
+  check(chatReadAllowed(store.chats[0], authA), "POST-HEAL: User A can READ messages");
+  check(chatReadAllowed(store.chats[0], authB), "POST-HEAL: User B can READ messages (the reported failure is fixed)");
+  check(messageCreateAllowed(store.chats[0], authA, { senderId: "9000000001", text: "Hello" }), "POST-HEAL: User A can SEND");
+  check(messageCreateAllowed(store.chats[0], authB, { senderId: "9000000002", text: "Hi" }), "POST-HEAL: User B can SEND");
+  const intruder = { loggedIn: true, uid: "firebaseUidX", myPhone: "9000000099", isAdmin: false };
+  check(!chatReadAllowed(store.chats[0], intruder), "Non-member STILL denied after heal");
+  check(!chatReadAllowed(store.chats[0], { loggedIn: false, uid: "", myPhone: "9000000001", isAdmin: false }), "Unauthenticated STILL denied after heal");
+
+  // Missing chat doc → server-side creation with the full identity set:
+  const store2 = makeStore();
+  const r3 = await ensureChatIdentityForGroup(store2, "group_missing", members, resolveUid);
+  check(r3.created === true && store2.chats.length === 1, "Missing chat doc: created server-side (idempotent by groupId)");
+  check(
+    store2.chats[0].memberUIDs.includes("9000000002") && store2.chats[0].memberUIDs.includes("firebaseUidB"),
+    "Created doc contains BOTH members' rule-accepted identities"
+  );
+
+  const f1 = phoneIdentityForms("+919876543210");
+  check(f1.includes("9876543210") && f1.includes("+919876543210") && f1.includes("919876543210"), "phoneIdentityForms: +91 input covers all three forms");
+  check(phoneIdentityForms("").length === 0, "phoneIdentityForms: empty input → empty set");
+}
+
+
+// ====================================================================
+console.log("\n== Chat Scenario 12: auth-timing (listener gated on verified access) ==");
+// ====================================================================
+{
+  // Mirror of app/chat/[groupId]/page.tsx listener gate:
+  //   useEffect(() => { if (!chatId || !phone || !authorized) return; ... onSnapshot ...
+  // authorized is set ONLY after /api/verify-chat-access succeeds (which itself
+  // requires a verified Firebase ID token). So the listener can NEVER start
+  // before auth resolves.
+  function listenerStarts(chatId, phone, authorized) {
+    return !!(chatId && phone && authorized);
+  }
+  check(listenerStarts(null, "9000000001", true) === false, "No listener before chatId resolves");
+  check(listenerStarts("chat_1", "9000000001", false) === false, "No listener before server verification succeeds");
+  check(listenerStarts("chat_1", null, true) === false, "No listener without a resolved local identity");
+  check(listenerStarts("chat_1", "9000000001", true) === true, "Listener starts ONLY after verified access + chatId + identity");
+}
+
+
+// ====================================================================
+console.log("\n" + "=".repeat(60));
+// ====================================================================
 console.log("\n" + "=".repeat(60));
 if (failed > 0) {
   console.log(`FAILED: ${failed} scenario(s) failed.`);

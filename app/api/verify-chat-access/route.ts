@@ -5,6 +5,7 @@ import {
   activeMemberPhones,
   isPaidForPairing,
 } from "@/app/lib/groupMatching";
+import { ensureChatIdentityForGroup } from "@/app/lib/chatIdentity";
 
 /**
  * SERVER-SIDE chat access verification.
@@ -132,32 +133,57 @@ export async function POST(req: Request) {
       );
     }
 
-    // 3. Check chat exists for this group
-    const chatsRef = adminDb.collection("chats");
-    const chatSnap = await chatsRef
-      .where("groupId", "==", groupId)
-      .limit(1)
-      .get();
-
-    if (chatSnap.empty) {
-      return NextResponse.json(
-        { error: "Chat not available yet" },
-        { status: 404 }
+    // 3. Guarantee the chat doc exists AND its memberUIDs pass the Firestore
+    //    rules for BOTH members. The rules authorize the messages listener
+    //    against the CHAT doc (hasAny([request.auth.uid, myPhone()])), not the
+    //    group doc — a stale chat doc here is exactly what produces
+    //    "server says unlocked, listener gets permission-denied". Self-heal is
+    //    idempotent and union-only (never removes identities, never weakens rules).
+    const memberPhones = activeMemberPhones(group);
+    let chatId: string;
+    try {
+      const result = await ensureChatIdentityForGroup(groupId, members);
+      if (!result) throw new Error("chat identity resolution returned null");
+      chatId = result.chatId;
+      if (result.healed || result.created) {
+        console.log(
+          `[verify-chat-access] chat doc ${result.created ? "created" : "healed"} for group=${groupId} ` +
+            `(members=${memberPhones.length})`
+        );
+      }
+    } catch (healErr: any) {
+      // Fall back to the pre-existing lookup so access isn't blocked by a
+      // transient heal failure — but surface it in logs.
+      console.error(
+        `[verify-chat-access] chat identity heal failed for group=${groupId}:`,
+        healErr?.message || healErr
       );
+      const fallback = await adminDb
+        .collection("chats")
+        .where("groupId", "==", groupId)
+        .limit(1)
+        .get();
+      if (fallback.empty) {
+        return NextResponse.json(
+          { error: "Chat not available yet" },
+          { status: 404 }
+        );
+      }
+      chatId = fallback.docs[0].id;
     }
 
-    // Return the chat ID + member info (masked, no phone numbers)
-    const chatDoc = chatSnap.docs[0];
-    const chatData = chatDoc.data();
-
-    const memberPhones = Array.isArray(chatData?.memberUIDs) ? chatData.memberUIDs : [];
-    const maskedMembers = memberPhones.map((p: string) => ({
-      userId: `PS-${p.replace(/\D/g, "").slice(-5)}`,
-    }));
+    // Return the chat ID + member info (masked, no phone numbers/UIDs).
+    // Masked from the GROUP's active member phones — one identity per member,
+    // deduped, and never exposing Firebase UIDs or raw document data.
+    const seen = new Set<string>();
+    const maskedMembers = memberPhones
+      .map((p: string) => `PS-${p.replace(/\D/g, "").slice(-5)}`)
+      .filter((m: string) => (seen.has(m) ? false : (seen.add(m), true)))
+      .map((userId: string) => ({ userId }));
 
     return NextResponse.json({
       success: true,
-      chatId: chatDoc.id,
+      chatId,
       groupId,
       category: group?.category || "",
       option: group?.option || "",

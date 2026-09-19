@@ -39,6 +39,8 @@ export default function ChatPage() {
   const [onlineUsers, setOnlineUsers] = useState<string[]>([]);
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
   const [mounted, setMounted] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [messagesError, setMessagesError] = useState<string | null>(null);
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
@@ -161,6 +163,8 @@ export default function ChatPage() {
     const messagesRef = collection(db, "chats", chatId, "messages");
     const qMessages = query(messagesRef, orderBy("createdAt", "asc"));
 
+    setMessagesError(null);
+
     const unsub = onSnapshot(
       qMessages,
       (snapshot) => {
@@ -169,6 +173,7 @@ export default function ChatPage() {
           msgs.push({ id: docSnap.id, ...docSnap.data() });
         });
         setMessages(msgs);
+        setMessagesError(null);
 
         setTimeout(() => {
           bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -176,6 +181,13 @@ export default function ChatPage() {
       },
       (error) => {
         console.error("Messages subscription error:", error);
+        const code = (error as any)?.code || "";
+        const msg = (error as any)?.message || "Unable to load messages.";
+        if (code === "permission-denied") {
+          setMessagesError("You do not have access to this chat. Please verify your membership and payment status.");
+        } else {
+          setMessagesError(msg);
+        }
       }
     );
 
@@ -184,14 +196,16 @@ export default function ChatPage() {
 
   /* ---------------- SEND MESSAGE ---------------- */
   const sendMessage = async () => {
-    if (!newMessage.trim() || !chatId || !phone || !authorized) return;
+    const text = newMessage.trim();
+    if (!text || !chatId || !phone || !authorized || sending) return;
 
+    setSending(true);
     try {
       const messagesRef = collection(db, "chats", chatId, "messages");
       await addDoc(messagesRef, {
-        text: newMessage,
+        text,
         senderId: phone,
-        senderName: phone.slice(-5),
+        senderName: `PS-${phone.slice(-5)}`,
         senderPhoto: "",
         createdAt: serverTimestamp(),
         seenBy: [phone],
@@ -202,14 +216,22 @@ export default function ChatPage() {
       const chatRef = doc(db, "chats", chatId);
       try {
         await setDoc(chatRef, {
-          lastMessage: newMessage,
+          lastMessage: text,
           lastMessageAt: serverTimestamp(),
         }, { merge: true });
       } catch {}
 
       setNewMessage("");
-    } catch (error) {
+    } catch (error: any) {
       console.error("Send message error:", error);
+      const code = error?.code || "";
+      if (code === "permission-denied") {
+        alert("Unable to send message. Please verify your chat access.");
+      } else {
+        alert("Failed to send message. Please try again.");
+      }
+    } finally {
+      setSending(false);
     }
   };
 
@@ -295,12 +317,15 @@ export default function ChatPage() {
       <div className="p-4 border-b border-gray-700 flex justify-between items-center">
         <div>
           <h1 className="text-[#E6C972] text-lg font-bold">
-            {groupInfo?.option || "Group Chat"}
+            {groupInfo?.option || "Partnership Chat"}
           </h1>
           <p className="text-xs text-gray-400">
             {groupInfo?.category ? `${groupInfo.category} · ` : ""}
             {groupInfo?.collaboratorBrand ? `${groupInfo.collaboratorBrand} · ` : ""}
-            {mounted && onlineUsers.length > 1 ? `${onlineUsers.length} online` : "Private Group"}
+            <span className="text-green-400 font-medium">Chat Unlocked</span>
+          </p>
+          <p className="text-[10px] text-gray-500 mt-0.5">
+            Your ID: <span className="font-mono text-gray-400">PS-{phone?.slice(-5) || "XXXXX"}</span>
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -322,11 +347,18 @@ export default function ChatPage() {
 
       {/* MESSAGES */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {messages.length === 0 && (
+        {messagesError && (
+          <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4 text-center">
+            <p className="text-red-400 text-sm font-medium mb-1">⚠️ Unable to load messages</p>
+            <p className="text-red-300/80 text-xs">{messagesError}</p>
+          </div>
+        )}
+
+        {!messagesError && messages.length === 0 && (
           <div className="text-center py-16">
             <div className="text-4xl mb-3">💬</div>
-            <p className="text-gray-400 text-sm">No messages yet. Say hello to your partners!</p>
-            <p className="text-gray-600 text-xs mt-1">Identity is masked until you mutually share details.</p>
+            <p className="text-gray-400 text-sm">No messages yet</p>
+            <p className="text-gray-500 text-xs mt-1">Start the conversation with your partner.</p>
           </div>
         )}
 
@@ -369,21 +401,28 @@ export default function ChatPage() {
       </div>
 
       {/* INPUT */}
-      <div className="p-4 border-t border-gray-700 flex gap-2 pb-[calc(1rem+env(safe-area-inset-bottom))]">
-        <input
-          type="text"
-          value={newMessage}
-          onChange={(e) => setNewMessage(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-          placeholder="Type message..."
-          className="flex-1 p-3 rounded-lg bg-gray-800 text-white outline-none focus:border-[#D4AF37] border border-transparent transition"
-        />
-        <button
-          onClick={sendMessage}
-          className="px-5 py-3 rounded-lg bg-[#E6C972] text-black font-semibold hover:scale-105 transition"
-        >
-          Send
-        </button>
+      <div className="p-4 border-t border-gray-700 flex flex-col gap-2 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={newMessage}
+            onChange={(e) => setNewMessage(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && sendMessage()}
+            placeholder="Type message..."
+            disabled={sending || !!messagesError}
+            className="flex-1 p-3 rounded-lg bg-gray-800 text-white outline-none focus:border-[#D4AF37] border border-transparent transition disabled:opacity-50 disabled:cursor-not-allowed"
+          />
+          <button
+            onClick={sendMessage}
+            disabled={sending || !!messagesError || !newMessage.trim()}
+            className="px-5 py-3 rounded-lg bg-[#E6C972] text-black font-semibold hover:scale-105 transition disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+          >
+            {sending ? "..." : "Send"}
+          </button>
+        </div>
+        <p className="text-[10px] text-gray-500 text-center">
+          You control what personal information you share. PartnerSync never automatically reveals your contact details.
+        </p>
       </div>
     </div>
   );

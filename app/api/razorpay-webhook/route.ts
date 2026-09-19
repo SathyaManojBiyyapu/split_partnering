@@ -10,6 +10,10 @@ import {
   chatUnlocked,
   activeMemberPhones,
 } from "@/app/lib/groupMatching";
+import {
+  maybeRematchAfterPayment,
+  shouldAttemptRematch,
+} from "@/app/lib/serverRematching";
 
 const ACTIVATION_PRICE = 29;
 
@@ -44,7 +48,18 @@ async function ensureChatDoc(groupId: string, group: any) {
     .where("groupId", "==", groupId)
     .limit(1)
     .get();
-  if (!existing.empty) return;
+  if (!existing.empty) {
+    // Chat doc exists — sync memberUIDs with current group membership.
+    // Without this, a chat doc created at 1/2 membership would retain stale
+    // memberUIDs and deny the second user access via Firestore rules.
+    const chatDoc = existing.docs[0];
+    await chatDoc.ref.update({
+      members: memberList(group),
+      memberUIDs: activeMemberPhones(group),
+      updatedAt: adminTimestamp(),
+    });
+    return;
+  }
   await adminDb.collection("chats").add({
     groupId,
     createdAt: adminTimestamp(),
@@ -130,6 +145,10 @@ async function markMemberPaid(
   const groupAfter = afterSnap.exists ? afterSnap.data() : group;
   if (chatUnlocked(groupAfter)) {
     await ensureChatDoc(groupId, groupAfter);
+  } else if (shouldAttemptRematch(groupAfter)) {
+    // FIFO re-matching: payer is paid but their pairing is still incomplete —
+    // pair them with the earliest compatible PAID member (server-side only).
+    await maybeRematchAfterPayment(groupId, key);
   }
 
   console.log(

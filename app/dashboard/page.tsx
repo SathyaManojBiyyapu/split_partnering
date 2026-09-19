@@ -344,7 +344,7 @@ export default function DashboardPage() {
         // logins without a phone claim are denied here. That denial must NEVER
         // stop groups/matches from rendering — so fetch payments separately and
         // keep paid-state badges as a graceful fallback.
-        let paidGroups = new Set<string>();
+        const paidGroups = new Set<string>();
         let paidCount = 0;
         let paidTotal = 0;
         try {
@@ -535,9 +535,13 @@ export default function DashboardPage() {
     const mePaid = isPaidForPairing(group, phone);
     const partnerPaid = !!partnerPhone && isPaidForPairing(group, partnerPhone);
     const unlocked = chatUnlocked(group);
-    // Payment/Unlock is ENABLED only when the pair is complete (2/2) and the
-    // CURRENT user has not yet paid for the current pairing.
-    const canPay = isGroupMatched(group) && !mePaid;
+    // Payment/Unlock is ENABLED for the CURRENT user when they have not yet
+    // paid for the current pairing — including while the group is still
+    // WAITING (1/2): paying early "secures" the slot and makes the member
+    // eligible for FIFO re-matching (1↔3 instead of 1↔2 waiting forever).
+    // The server (/api/verify-razorpay-payment) remains the gate for what a
+    // payment entitles — the client only decides which CTA to show.
+    const canPay = !isExpiredGroup && !mePaid;
     const paidForPair = paidMemberCountForPairing(group);
     const isPaid = unlocked || group.isPaid; // chat unlocked = both paid (group doc)
     const businessName = group.collaboratorBrand || group.collaboratorId || latestSelection?.collaboratorName || latestSelection?.collaboratorId || "";

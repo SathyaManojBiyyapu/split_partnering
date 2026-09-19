@@ -69,7 +69,20 @@ async function updateUserCategory(phone: string, category: string, option: strin
 // Ensure a chat document exists once a group forms.
 async function ensureChat(groupId: string, members: any[], memberUIDs: string[]) {
   const existing = await adminDb.collection("chats").where("groupId", "==", groupId).limit(1).get();
-  if (!existing.empty) return;
+  if (!existing.empty) {
+    // Chat doc exists — UPDATE memberUIDs to match current group membership.
+    // Without this, the second user joining a 2/2 group would find the chat
+    // doc created when User A joined (1/2), with memberUIDs = [A only]. User B
+    // would then be denied by Firestore rules when accessing messages.
+    const chatDoc = existing.docs[0];
+    await chatDoc.ref.update({
+      members: members || [],
+      memberUIDs: memberUIDs || [],
+      updatedAt: adminTimestamp(),
+    });
+    return;
+  }
+  // First time — create the chat doc.
   await adminDb.collection("chats").add({
     groupId,
     createdAt: adminTimestamp(),

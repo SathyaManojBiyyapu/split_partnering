@@ -10,6 +10,10 @@ import {
   chatUnlocked,
   activeMemberPhones,
 } from "@/app/lib/groupMatching";
+import {
+  maybeRematchAfterPayment,
+  shouldAttemptRematch,
+} from "@/app/lib/serverRematching";
 
 const ACTIVATION_PRICE = 29;
 
@@ -32,7 +36,20 @@ async function ensureChatDoc(groupId: string, group: any) {
     .where("groupId", "==", groupId)
     .limit(1)
     .get();
-  if (!existing.empty) return;
+  if (!existing.empty) {
+    // Chat doc exists — sync memberUIDs with current group membership.
+    // This is critical: the chat doc may have been created when only one
+    // member had joined (1/2), with memberUIDs containing only that member.
+    // When the second user joins and both pay, memberUIDs must include both
+    // members or Firestore rules will deny the second user's access.
+    const chatDoc = existing.docs[0];
+    await chatDoc.ref.update({
+      members: memberList(group),
+      memberUIDs: activeMemberPhones(group),
+      updatedAt: adminTimestamp(),
+    });
+    return;
+  }
   await adminDb.collection("chats").add({
     groupId,
     createdAt: adminTimestamp(),
@@ -248,11 +265,15 @@ export async function POST(req: Request) {
       );
     }
 
+    // NOTE: paying while WAITING (1/2) is allowed — a user may secure their
+    // spot before a partner joins (this is what enables FIFO re-matching:
+    // User 3 can pay before being paired). Chat is NEVER unlocked by a single
+    // payment — chatUnlocked() still requires BOTH members paid for the
+    // current pairing, enforced server-side in /api/verify-chat-access.
     const required = resolveRequired(group, group.option);
     if (memberCount(group) < required) {
-      return NextResponse.json(
-        { error: "Your match is not complete yet (1/2). You can pay once a partner joins." },
-        { status: 409 }
+      console.log(
+        `[verify-razorpay-payment] caller is paying into a WAITING group (${memberCount(group)}/${required}) group=${groupId} — allowed; entitlement binds to the current pairing.`
       );
     }
 
@@ -390,20 +411,49 @@ export async function POST(req: Request) {
       await ensureChatDoc(groupId, groupAfter);
     }
 
+    // ============================================================
+    // FIFO RE-MATCHING — triggered ONLY by server-verified payment.
+    // If the payer is now paid but their pairing is STILL incomplete
+    // (partner hasn't paid), pair them with the earliest FIFO compatible
+    // PAID member of another incomplete pairing (e.g. 1↔3 instead of
+    // 1↔2 waiting forever). Never runs for already-complete pairings;
+    // idempotent on duplicate callbacks (see serverRematching.ts).
+    // ============================================================
+    let rematchResult: Awaited<ReturnType<typeof maybeRematchAfterPayment>> | null = null;
+    if (callerKey && shouldAttemptRematch(groupAfter)) {
+      rematchResult = await maybeRematchAfterPayment(groupId, callerKey);
+    }
+
+    // The response must reflect the payer's ACTIVE pairing state AFTER the
+    // rematch — if they moved to a new group, its (not the old group's)
+    // unlock state decides "go to chat" vs "waiting".
+    let activeGroupId = groupId;
+    let activeUnlocked = unlockedNow;
+    if (rematchResult?.rematched && rematchResult.newGroupId) {
+      activeGroupId = rematchResult.newGroupId;
+      const newSnap = await adminDb.collection("groups").doc(activeGroupId).get();
+      activeUnlocked = newSnap.exists ? chatUnlocked(newSnap.data()) : false;
+    }
+
     console.log(
       `[verify-razorpay-payment] payment=${razorpay_payment_id} verified. ` +
-        `chatUnlocked=${unlockedNow} for group=${groupId} pairingId=${pairingId}`
+        `chatUnlocked=${activeUnlocked} activeGroup=${activeGroupId} pairingId=${pairingId}` +
+        (rematchResult?.rematched ? ` REMATCHED from ${groupId}` : "")
     );
 
     return NextResponse.json({
       success: true,
       paymentId: razorpay_payment_id,
       orderId: razorpay_order_id,
-      // Server-computed unlock state AFTER the entitlement write — the
-      // frontend uses this to decide between "go to chat" and
-      // "waiting for partner's payment" (prevents premature redirects).
-      chatUnlocked: unlockedNow,
+      // Server-computed unlock state AFTER the entitlement write (and after
+      // any rematch) — the frontend uses this to decide between "go to chat"
+      // and "waiting for partner's payment" (prevents premature redirects).
+      chatUnlocked: activeUnlocked,
       callerKey,
+      // When a rematch happened, the payer's ACTIVE pairing is now a NEW
+      // group — the frontend must redirect there (never the old group).
+      rematched: !!rematchResult?.rematched,
+      activeGroupId,
     });
   } catch (error) {
     console.error("Razorpay verification error:", error);

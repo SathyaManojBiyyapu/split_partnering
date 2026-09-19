@@ -36,6 +36,11 @@ import {
 
 import UserCollaborationsPanel from "@/app/components/admin/UserCollaborationsPanel";
 import MarketplaceManager from "@/app/components/admin/MarketplaceManager";
+import {
+  chatUnlocked,
+  isGroupMatched,
+  isPaidForPairing,
+} from "@/app/lib/groupMatching";
 
 /* ---------------------------------------
    HELPERS
@@ -155,14 +160,24 @@ export default function AdminPage() {
       snapshot.forEach((d) => {
         const data = d.data();
         const members = Array.isArray(data.members) ? data.members : [];
+        /* PAID status is derived from memberPayments (the entitlement store
+           written by /api/verify-razorpay-payment + webhook), NOT from the
+           stale members[].paid flag. isPaidForPairing() also validates the
+           entry belongs to the CURRENT pairingId, so a member who paid for
+           an older pairing is correctly shown as Not Paid for this one.
+           Live via onSnapshot — admin sees payment updates in real time. */
         const cleaned = members.map((m: any) => {
-          if (typeof m === "string") return { uid: m.trim(), phone: m.trim(), name: "User", photoURL: "", paid: false };
+          if (typeof m === "string") {
+            const key = m.trim();
+            return { uid: key, phone: key, name: "User", photoURL: "", paid: isPaidForPairing(data, key) };
+          }
+          const key = m?.phone || m?.uid || "";
           return {
             uid: m?.uid || m?.phone || "",
             phone: m?.phone || "N/A",
             name: m?.name || "User",
             photoURL: m?.photoURL || "",
-            paid: m?.paid || false,
+            paid: key ? isPaidForPairing(data, key) : false,
           };
         });
         gs.push({
@@ -733,16 +748,32 @@ export default function AdminPage() {
                     <div>
                       <p className="text-base sm:text-lg font-bold text-[#FFD166]">{g.category} → {g.option}</p>
                       <p className="text-[9px] text-gray-500 font-mono mt-0.5">ID: {g.id}</p>
+                      <p className="text-[9px] text-gray-500 font-mono">Pairing: {g.pairingId || "—"}</p>
                     </div>
                     <div className="flex gap-2 flex-wrap">
-                      <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${
-                        g.status === "completed" ? "bg-green-600" : g.status === "ready" ? "bg-blue-600" : "bg-yellow-500 text-black"
-                      }`}>{g.status}</span>
+                      {/* SERVER-DERIVED payment status: SUCCESS only when the
+                          required payments for THIS pairing are all confirmed
+                          (chatUnlocked). A 2/2 group with 1 paid = PENDING. */}
+                      {(() => {
+                        const unlocked = chatUnlocked(g);
+                        const paidCount = (g.membersDetailed || []).filter((m: any) => m.paid).length;
+                        const total = g.membersCount || (g.membersDetailed || []).length || 0;
+                        const matched = isGroupMatched(g);
+                        const label = unlocked ? "SUCCESS" : matched ? (paidCount > 0 ? `PENDING (${paidCount}/${total} paid)` : "PENDING") : "WAITING";
+                        const color = unlocked ? "bg-green-600" : matched ? (paidCount > 0 ? "bg-amber-600" : "bg-yellow-500 text-black") : "bg-gray-600";
+                        return <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${color}`}>{label}</span>;
+                      })()}
                       {/* Payment status */}
                       <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${
                         paidMembers ? "bg-emerald-600" : paidCount > 0 ? "bg-amber-600" : "bg-red-700"
                       }`}>
                         {paidMembers ? "All Paid" : paidCount > 0 ? `${paidCount}/${g.membersCount || 0} Paid` : "Not Paid"}
+                      </span>
+                      {/* Chat entitlement */}
+                      <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${
+                        chatUnlocked(g) ? "bg-emerald-600" : "bg-gray-700"
+                      }`}>
+                        {chatUnlocked(g) ? "Chat Unlocked" : "Chat Locked"}
                       </span>
                     </div>
                   </div>

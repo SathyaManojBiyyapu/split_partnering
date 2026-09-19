@@ -741,6 +741,22 @@ function PaymentContent() {
                   true
                 );
 
+                /* FIFO RE-MATCH: when the payer's old pairing is replaced
+                   by a new paid pairing, the SERVER returns the NEW active
+                   groupId. Rebind this page to it - the live onSnapshot
+                   listener on the new group decides "go to chat" vs
+                   "waiting for partner's payment" (the old group doc is
+                   historical only). */
+                if (
+                  verifyData.activeGroupId &&
+                  verifyData.activeGroupId !== groupId
+                ) {
+                  router.replace(
+                    `/payment?groupId=${verifyData.activeGroupId}`
+                  );
+                  return;
+                }
+
                 /* Navigate ONLY when the SERVER says the whole pairing has
                    paid (the verify route re-reads the group doc AFTER the
                    entitlement write and returns chatUnlocked). When the

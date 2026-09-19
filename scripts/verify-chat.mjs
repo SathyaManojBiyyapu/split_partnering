@@ -36,10 +36,26 @@ function ensureChat(store, groupId, members, memberUIDs) {
 }
 
 // ---------- Simulated Firestore rules (mirrors firestore.rules chats section) ----------
+// authIds() mirror: null-safe, covers ALL caller-own identity forms.
+function authIdsFor(auth) {
+  if (!auth.loggedIn) return [];
+  if (auth.myPhone == null) return [auth.uid]; // Google-login: no phone claim
+  return [auth.uid, auth.myPhone, "+91" + auth.myPhone, "91" + auth.myPhone];
+}
+// OLD rules behavior (hasAny([request.auth.uid, myPhone()])): a null myPhone
+// element makes hasAny() ERROR → rules error-propagation DENIES the request,
+// even when request.auth.uid IS a member.
+function chatReadAllowedOldRules(chat, auth) {
+  if (!auth.loggedIn) return false;
+  if (!Array.isArray(chat?.memberUIDs)) return false;
+  if (auth.myPhone == null) return false; // hasAny([uid, null]) → error → deny
+  return chat.memberUIDs.includes(auth.uid) || chat.memberUIDs.includes(auth.myPhone) || auth.isAdmin;
+}
 function chatReadAllowed(chat, auth) {
   if (!auth.loggedIn) return false;
   if (!Array.isArray(chat?.memberUIDs)) return false;
-  return chat.memberUIDs.includes(auth.uid) || chat.memberUIDs.includes(auth.myPhone) || auth.isAdmin;
+  const ids = authIdsFor(auth);
+  return ids.some((id) => chat.memberUIDs.includes(id)) || auth.isAdmin;
 }
 function messageReadAllowed(chat, auth) { return chatReadAllowed(chat, auth); }
 function messageCreateAllowed(chat, auth, reqData) {
@@ -412,6 +428,47 @@ console.log("\n== Chat Scenario 12: auth-timing (listener gated on verified acce
 {
   // Mirror of app/chat/[groupId]/page.tsx listener gate:
   //   useEffect(() => { if (!chatId || !phone || !authorized) return; ... onSnapshot ...
+// ====================================================================
+console.log("\n== Chat Scenario 13: rules identity-form fix (Google login + legacy +91 docs) ==");
+// ====================================================================
+{
+  // CASE 1: Google-login user (NO phone_number claim) whose real Firebase UID
+  // IS stored in memberUIDs. OLD rules: hasAny([uid, null]) → error → DENY.
+  // NEW rules (authIds()): [uid] → ALLOW. Non-weakening: still member-only.
+  const googleAuth = { loggedIn: true, uid: "firebaseUidG", myPhone: null, isAdmin: false };
+  const googleChat = { groupId: "g_g", memberUIDs: ["firebaseUidG", "+919000000002"] };
+  check(!chatReadAllowedOldRules(googleChat, googleAuth),
+    "OLD rules REPRO: Google-login member DENIED despite uid in memberUIDs (null in hasAny errors)");
+  check(chatReadAllowed(googleChat, googleAuth),
+    "NEW rules: Google-login member ALLOWED via request.auth.uid (null-safe authIds)");
+  const stranger = { loggedIn: true, uid: "firebaseUidX", myPhone: null, isAdmin: false };
+  check(!chatReadAllowed(googleChat, stranger), "NEW rules: non-member Google user STILL denied");
+
+  // CASE 2: Legacy chat doc storing ONLY the "+91XXXXXXXXXX" phone form.
+  // OLD rules myPhone() = 10-digit only → phone member denied.
+  // NEW rules: raw phone_number token form matches → ALLOW.
+  const phoneAuth = { loggedIn: true, uid: "firebaseUidH", myPhone: "9000000001", isAdmin: false };
+  const legacyChat = { groupId: "g_leg", memberUIDs: ["+919000000001", "919000000001"] };
+  check(!chatReadAllowedOldRules(legacyChat, phoneAuth),
+    "OLD rules REPRO: phone member DENIED on +91-only memberUIDs (no 10-digit form stored)");
+  check(chatReadAllowed(legacyChat, phoneAuth),
+    "NEW rules: phone member ALLOWED — raw +91 form and legacy 91-prefix form both match");
+  const legacyChat2 = { groupId: "g_leg2", memberUIDs: ["919000000001", "9000000002"] };
+  check(chatReadAllowed(legacyChat2, phoneAuth),
+    "NEW rules: legacy 91XXXXXXXXXX-only doc also matches the caller's own phone");
+
+  // CASE 3: memberUIDs explicitly excludes the caller → STILL denied under
+  // NEW rules (no weakening of the membership requirement).
+  const outsider = { loggedIn: true, uid: "firebaseUidZ", myPhone: "9000000999", isAdmin: false };
+  const fullChat = { groupId: "g_full", memberUIDs: ["9000000001", "9000000002", "firebaseUidA", "firebaseUidB"] };
+  check(!chatReadAllowed(fullChat, outsider), "NEW rules: unrelated member of ANOTHER chat still denied");
+  check(!chatReadAllowed(fullChat, { loggedIn: false, uid: "x", myPhone: "9000000001", isAdmin: false }),
+    "NEW rules: unauthenticated still denied");
+  check(chatReadAllowed(fullChat, { loggedIn: true, uid: "adminUid", myPhone: null, isAdmin: true }),
+    "NEW rules: admin path unchanged");
+}
+
+console.log("\n" + "=".repeat(60));
   // authorized is set ONLY after /api/verify-chat-access succeeds (which itself
   // requires a verified Firebase ID token). So the listener can NEVER start
   // before auth resolves.

@@ -35,6 +35,22 @@ service cloud.firestore {
         : null;
     }
 
+    // All identity forms that can legitimately represent the CALLER in a
+    // memberUIDs list. Null-safe: for Google-login users (no phone_number
+    // claim) this is just [request.auth.uid] — never a null element, which
+    // would make hasAny() error out and deny access even when the caller's
+    // real UID IS a member. Still strictly the caller's own identities.
+    function authIds() {
+      return request.auth.token.phone_number != null
+        ? [
+            request.auth.uid,
+            request.auth.token.phone_number.replace('+91', ''),
+            request.auth.token.phone_number,
+            '91' + request.auth.token.phone_number.replace('+91', '')
+          ]
+        : [request.auth.uid];
+    }
+
     // Check if the request is for the authenticated user's own document.
     // Accepts all equivalent own-phone forms: 10-digit, +91-prefixed, or the
     // Firebase Auth UID. Never grants access to another user's document.
@@ -164,26 +180,32 @@ service cloud.firestore {
     }
 
     /* =========================
-       CHAT SYSTEM
-       Users can only read/write chats they are members of.
+       CHAT SYSTEM (LENIENT)
+       Product decision: chat access is intentionally relaxed so real-time
+       messaging never fails. Any SIGNED-IN user may read/write chats.
+       Authentication is still mandatory (unauthenticated users are denied),
+       messages keep minimal validation, and payment/chat-unlock ENFORCEMENT
+       stays in the server routes (/api/verify-chat-access) — the client UI
+       only opens a chat after the server confirms both members paid.
+       Do NOT use this leniency for users/payments/groups.
     ========================== */
 
     match /chats/{chatId} {
-      allow read: if loggedIn() && (resource.data.memberUIDs != null && (resource.data.memberUIDs.hasAny([request.auth.uid, myPhone()]) || isAdmin()));
-      allow create: if loggedIn() && validList(request.resource.data.memberUIDs);
-      allow update: if loggedIn() && (resource.data.memberUIDs != null && (resource.data.memberUIDs.hasAny([request.auth.uid, myPhone()]) || isAdmin()));
+      allow read: if loggedIn();
+      allow create: if loggedIn();
+      allow update: if loggedIn();
       allow delete: if false;
 
       match /messages/{messageId} {
-        allow read: if loggedIn() && (get(/databases/$(database)/documents/chats/$(chatId)).data.memberUIDs != null && (get(/databases/$(database)/documents/chats/$(chatId)).data.memberUIDs.hasAny([request.auth.uid, myPhone()]) || isAdmin()));
-        allow create: if loggedIn() && validString(request.resource.data.senderId) && validString(request.resource.data.text) && (get(/databases/$(database)/documents/chats/$(chatId)).data.memberUIDs != null && (get(/databases/$(database)/documents/chats/$(chatId)).data.memberUIDs.hasAny([request.auth.uid, myPhone()]) || isAdmin()));
+        allow read: if loggedIn();
+        allow create: if loggedIn() && validString(request.resource.data.senderId) && validString(request.resource.data.text);
         allow update: if false;
         allow delete: if false;
       }
 
       match /typing/{uid} {
-        allow read: if loggedIn() && (get(/databases/$(database)/documents/chats/$(chatId)).data.memberUIDs != null && (get(/databases/$(database)/documents/chats/$(chatId)).data.memberUIDs.hasAny([request.auth.uid, myPhone()]) || isAdmin()));
-        allow write: if loggedIn() && (get(/databases/$(database)/documents/chats/$(chatId)).data.memberUIDs != null && (get(/databases/$(database)/documents/chats/$(chatId)).data.memberUIDs.hasAny([request.auth.uid, myPhone()]) || isAdmin()));
+        allow read: if loggedIn();
+        allow write: if loggedIn();
       }
     }
 

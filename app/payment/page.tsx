@@ -217,8 +217,56 @@ function PaymentContent() {
       doc(db, "groups", groupId),
       (snap) => {
         if (!snap.exists()) {
-          alert("Group not found");
-          router.push("/dashboard");
+          /* Stale-link recovery: a FIFO rematch may have moved this user
+             into a NEW pairing (or the old group was emptied/deleted).
+             Instead of dead-ending with "Group not found", send them to
+             their CURRENT pairing — same flow, correct URL. Only groups
+             the user genuinely belongs to (memberUIDs contains their
+             session phone) qualify. */
+          const recover = async () => {
+            const userId = getUserId();
+            let replacement: string | null = null;
+            if (userId) {
+              try {
+                const qs = await getDocs(
+                  query(
+                    collection(db, "groups"),
+                    where("memberUIDs", "array-contains", userId)
+                  )
+                );
+                const mine = qs.docs
+                  .filter((d) => d.id !== groupId)
+                  .map((d) => ({ id: d.id, g: d.data() as any }))
+                  .filter(
+                    ({ g }) =>
+                      Array.isArray(g?.members) &&
+                      g.members.some(
+                        (m: any) => String(m?.phone || "").trim() === userId
+                      )
+                  );
+                if (mine.length > 0) {
+                  mine.sort((a, b) => {
+                    const ua = chatUnlocked(a.g) ? 1 : 0;
+                    const ub = chatUnlocked(b.g) ? 1 : 0;
+                    if (ua !== ub) return ub - ua; // unlocked pairing wins
+                    const ta = a.g?.updatedAt?.toMillis?.() || 0;
+                    const tb = b.g?.updatedAt?.toMillis?.() || 0;
+                    return tb - ta; // most recently active wins
+                  });
+                  replacement = mine[0].id;
+                }
+              } catch {
+                /* rules/permission — fall back to the dashboard */
+              }
+            }
+            if (replacement) {
+              router.replace("/payment?groupId=" + replacement);
+            } else {
+              alert("Group not found");
+              router.push("/dashboard");
+            }
+          };
+          recover();
           return;
         }
 

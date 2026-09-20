@@ -542,6 +542,96 @@ console.log("\n" + "=".repeat(60));
 
 
 // ====================================================================
+console.log("\n== Chat Scenario 14: STALE-LINK RECOVERY (rematch moved the pairing) ==");
+// ====================================================================
+// A member pays → FIFO rematch moves them into a NEW group; their browser
+// still opens /chat/<OLD_GROUP> (old tab / bookmark / raced redirect). The
+// server must send them to their CURRENT pairing instead of dead-ending
+// with "Chat Locked — You are not a member of this group".
+// Mirrors findActivePairingForCaller (app/api/verify-chat-access/route.ts)
+// and the redirectGroupId handling (app/chat/[groupId]/page.tsx).
+{
+  const OLD = "group_old";
+  const NEW = "group_new";
+  const groups = [
+    // Old group: exists but the caller was REMOVED by the rematch.
+    { id: OLD, status: "ready", members: [{ phone: "9000000009" }], memberUIDs: ["9000000009"], memberPayments: {} },
+    // Current pairing: caller + partner, both paid → chat unlocked.
+    {
+      id: NEW, status: "ready",
+      members: [{ phone: "9000000001" }, { phone: "9000000002" }],
+      memberUIDs: ["9000000001", "9000000002"],
+      memberPayments: {
+        "9000000001": { paid: true, pairingId: "p_new" },
+        "9000000002": { paid: true, pairingId: "p_new" },
+      },
+      pairingId: "p_new",
+    },
+  ];
+  const chatUnlockedMini = (g) => {
+    const phones = (g.memberUIDs || []).filter((p) => g.memberPayments?.[p]?.paid && g.memberPayments[p].pairingId === g.pairingId);
+    return phones.length >= 2;
+  };
+
+  const matchesKey = (resolved, key) => {
+    const k = String(key || "").trim();
+    if (!k) return false;
+    return (
+      resolved.identities.includes(k) ||
+      (resolved.phone && resolved.phone === k) ||
+      (resolved.phone && k.replace(/[^0-9]/g, "").slice(-10) === resolved.phone)
+    );
+  };
+
+  // Mirror of findActivePairingForCaller — only groups the VERIFIED caller
+  // genuinely belongs to qualify; unlocked pairings win.
+  function findActivePairingForCaller(caller, requestedGroupId) {
+    const candidates = groups
+      .filter((g) => g.id !== requestedGroupId)
+      .filter((g) => {
+        const members = Array.isArray(g.members) ? g.members : [];
+        const uids = Array.isArray(g.memberUIDs) ? g.memberUIDs : [];
+        return (
+          members.some((m) => matchesKey(caller, m.phone) || matchesKey(caller, m.uid)) ||
+          uids.some((id) => matchesKey(caller, id))
+        );
+      });
+    if (candidates.length === 0) return null;
+    candidates.sort((a, b) => (chatUnlockedMini(b) ? 1 : 0) - (chatUnlockedMini(a) ? 1 : 0));
+    return { groupId: candidates[0].id };
+  }
+
+  const caller = { identities: ["9000000001"], phone: "9000000001", uid: "9000000001", phoneSource: "token" };
+  const redirect = findActivePairingForCaller(caller, OLD);
+  check(!!redirect && redirect.groupId === NEW,
+    "Stale group + caller moved by rematch → STALE_GROUP_REDIRECT to CURRENT pairing (never 404/403 dead-end)");
+  check(chatUnlockedMini(groups.find((g) => g.id === NEW)) === true,
+    "Redirect target is the fully-paid unlocked pairing (both members paid for the current pairingId)");
+
+  // A stranger with no membership anywhere keeps the original hard error.
+  const stranger = { identities: ["stranger"], phone: "", uid: "uX", phoneSource: "none" };
+  check(findActivePairingForCaller(stranger, OLD) === null,
+    "No current pairing → original 404/403 kept (no cross-member data leak)");
+
+  // The old group's OTHER member is unaffected: their membership in OLD is
+  // real, so verify runs the normal unlock path (no redirect away from OLD).
+  const oldMember = { identities: ["9000000009"], phone: "9000000009", uid: "9000000009", phoneSource: "token" };
+  check(findActivePairingForCaller(oldMember, OLD) === null || findActivePairingForCaller(oldMember, OLD).groupId === OLD,
+    "Genuine member of the requested group is never redirected away");
+
+  // Mirror of the chat page: redirectGroupId re-routes instead of the error.
+  function chatPageAction(data, groupId) {
+    if (data?.redirectGroupId && data.redirectGroupId !== groupId) return "replace:/chat/" + data.redirectGroupId;
+    return "show error";
+  }
+  check(chatPageAction({ success: false, code: "STALE_GROUP_REDIRECT", redirectGroupId: NEW }, OLD) === "replace:/chat/" + NEW,
+    "Chat page follows redirectGroupId seamlessly (same page, re-verified) — no dead-end Chat Locked screen");
+  check(chatPageAction({ success: false, error: "You are not a member of this group" }, OLD) === "show error",
+    "Without a redirect hint the existing error path is unchanged");
+}
+
+
+// ====================================================================
 console.log("\n" + "=".repeat(60));
 // ====================================================================
 console.log("\n" + "=".repeat(60));

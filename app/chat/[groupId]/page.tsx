@@ -105,6 +105,14 @@ export default function ChatPage() {
         const data = await res.json();
 
         if (!res.ok || !data.success) {
+          // Stale-link recovery: the URL's group no longer exists (or this
+          // caller was moved into a new pairing by a rematch). The server
+          // tells us the caller's CURRENT pairing — follow it seamlessly
+          // (same chat page; the redirect re-runs verification there).
+          if (data?.redirectGroupId && data.redirectGroupId !== groupId) {
+            router.replace(`/chat/${data.redirectGroupId}`);
+            return; // loading stays on — the new URL re-verifies on mount
+          }
           setAccessError(data.error || "Chat access denied.");
           setAuthorized(false);
           setWaitingForPartner(data.callerPaid === true);

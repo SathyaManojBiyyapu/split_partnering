@@ -24,6 +24,56 @@ import {
  * chat). The frontend alone can never unlock chat — this endpoint is the
  * source of truth.
  */
+/**
+ * Find the caller's CURRENT active pairing (stale-link recovery).
+ * Only groups where the VERIFIED caller is a genuine member qualify.
+ * Preference order: chat-unlocked pairings first, then most recently active.
+ * Returns null when the caller has no other pairing (→ original error kept).
+ */
+async function findActivePairingForCaller(
+  caller: Awaited<ReturnType<typeof resolveCallerIdentity>>,
+  requestedGroupId: string
+): Promise<{ groupId: string } | null> {
+  if (!caller?.phone) return null;
+  try {
+    const snap = await adminDb
+      .collection("groups")
+      .where("memberUIDs", "array-contains", caller.phone)
+      .limit(20)
+      .get();
+    const candidates = snap.docs
+      .filter((d) => d.id !== requestedGroupId)
+      .map((d) => ({ id: d.id, g: d.data() }))
+      .filter(({ g }) => {
+        const members = Array.isArray(g?.members) ? g.members : [];
+        const uids = Array.isArray(g?.memberUIDs) ? g.memberUIDs : [];
+        return (
+          members.some(
+            (m: any) =>
+              identityMatchesKey(caller, m?.phone) ||
+              identityMatchesKey(caller, m?.uid)
+          ) || uids.some((id: any) => identityMatchesKey(caller, id))
+        );
+      });
+    if (candidates.length === 0) return null;
+    candidates.sort((a, b) => {
+      const ua = chatUnlocked(a.g) ? 1 : 0;
+      const ub = chatUnlocked(b.g) ? 1 : 0;
+      if (ua !== ub) return ub - ua; // unlocked pairing wins
+      const ta = a.g?.updatedAt?.toMillis?.() || 0;
+      const tb = b.g?.updatedAt?.toMillis?.() || 0;
+      return tb - ta; // most recently active wins
+    });
+    return { groupId: candidates[0].id };
+  } catch (err: any) {
+    console.error(
+      "[verify-chat-access] stale-link recovery lookup failed:",
+      err?.message || err
+    );
+    return null;
+  }
+}
+
 export async function POST(req: Request) {
   try {
     // Fail fast with an actionable error when the server has no admin
@@ -80,6 +130,21 @@ export async function POST(req: Request) {
     const groupSnap = await groupRef.get();
 
     if (!groupSnap.exists) {
+      // STALE-LINK RECOVERY: the URL's groupId no longer exists (a rematch
+      // moved this caller into a NEW pairing, the old group was emptied, or
+      // the browser tab/bookmark is outdated). Instead of a dead-end error,
+      // send the caller to their CURRENT active pairing — same chat page,
+      // same UX, correct URL. Only ever redirects to a group the VERIFIED
+      // caller is genuinely a member of.
+      const redirect = await findActivePairingForCaller(caller, groupId);
+      if (redirect) {
+        return NextResponse.json({
+          success: false,
+          code: "STALE_GROUP_REDIRECT",
+          redirectGroupId: redirect.groupId,
+          error: "Your pairing has moved to a new group chat.",
+        });
+      }
       return NextResponse.json(
         { error: "Group not found" },
         { status: 404 }
@@ -97,6 +162,19 @@ export async function POST(req: Request) {
       ) || memberUIDs.some((id: any) => identityMatchesKey(caller, id));
 
     if (!isMember) {
+      // Same stale-link recovery when the group exists but THIS caller was
+      // replaced/moved out (e.g. their payment triggered a FIFO rematch into
+      // a new pairing) — never leak another member's chat: the redirect target
+      // is re-authorized against the caller's verified identity below.
+      const redirect = await findActivePairingForCaller(caller, groupId);
+      if (redirect) {
+        return NextResponse.json({
+          success: false,
+          code: "STALE_GROUP_REDIRECT",
+          redirectGroupId: redirect.groupId,
+          error: "Your pairing has moved to a new group chat.",
+        });
+      }
       return NextResponse.json(
         { error: "You are not a member of this group" },
         { status: 403 }

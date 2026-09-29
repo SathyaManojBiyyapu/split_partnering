@@ -250,21 +250,21 @@ function CreateGroupContent() {
       );
       const finalOption = canonicalMatch?.slug || optionSlug;
 
-      const result = await createOrJoinGroup(category, finalOption, phone, {
-        collaboratorId: brand || undefined,
-        collaboratorName: brand || undefined,
-        requiredSize,
-        budget,
-        dateTime,
-        description,
-        notes,
-        state,
-        district,
-        city,
+      // PAYMENT-FIRST MARKETPLACE: paying enters this group request into
+      // the PAID matching/waiting queue (server-side FIFO pairing; the match
+      // confirms when the required number of members have paid). Location
+      // comes from the saved profile on the server.
+      const qp = new URLSearchParams({
+        category,
+        option: finalOption,
+        ...(brand ? { collaboratorId: brand, collaboratorName: brand } : {}),
+        ...(requiredSize ? { requiredSize: String(requiredSize) } : {}),
+        ...(budget ? { budget } : {}),
+        ...(dateTime ? { dateTime } : {}),
+        ...(description ? { description } : {}),
+        ...(notes ? { notes } : {}),
       });
-
-      toast.success(`Group ready! Status: ${result.status}`);
-      router.push("/dashboard");
+      router.push(`/payment?${qp.toString()}`);
     } catch (error: any) {
       console.error("CREATE GROUP ERROR:", error);
       toast.error(error?.message || error?.code || "Failed to create group.");

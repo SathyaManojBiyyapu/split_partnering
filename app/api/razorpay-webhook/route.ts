@@ -14,6 +14,7 @@ import {
   maybeRematchAfterPayment,
   shouldAttemptRematch,
 } from "@/app/lib/serverRematching";
+import { enterPaidQueue } from "@/app/lib/serverQueueEntry";
 
 const ACTIVATION_PRICE = 29;
 
@@ -232,21 +233,94 @@ export async function POST(req: Request) {
 
       const groupId = notes.groupId;
       const uid = notes.uid;
+      const notesMode = String(notes.mode || "");
 
-      if (!groupId || !uid) {
+      // ============================================================
+      // VERIFY AMOUNT — only finalize if the payment is exactly ₹29
+      // (applies to BOTH the legacy pairing flow and the payment-first
+      //  marketplace entry flow)
+      // ============================================================
+      if (payment.amount !== ACTIVATION_PRICE * 100) {
         console.warn(
-          "Webhook payment.captured missing groupId/uid in notes:",
-          payment.id
+          `Webhook payment amount mismatch: expected ${ACTIVATION_PRICE * 100}, got ${payment.amount} for payment ${payment.id}`
         );
         return NextResponse.json({ received: true, skipped: true });
       }
 
       // ============================================================
-      // VERIFY AMOUNT — only finalize if the payment is exactly ₹29
+      // PAYMENT-FIRST MARKETPLACE ENTRY (mode:"entry") — the captured
+      // payment enters (or completes) the payer's position in the PAID
+      // waiting queue. Idempotent: skipped when this razorpay payment id
+      // has already been processed (by the inline verify route or a
+      // previous webhook delivery).
       // ============================================================
-      if (payment.amount !== ACTIVATION_PRICE * 100) {
+      if (notesMode === "entry") {
+        if (!uid || !notes.category || !notes.option) {
+          console.warn(
+            "Webhook entry payment missing uid/category/option notes:",
+            payment.id
+          );
+          return NextResponse.json({ received: true, skipped: true });
+        }
+
+        const dup = await adminDb
+          .collection("payments")
+          .where("razorpayPaymentId", "==", payment.id)
+          .limit(1)
+          .get();
+        if (!dup.empty) {
+          return NextResponse.json({ received: true, skipped: true });
+        }
+
+        const entry = await enterPaidQueue({
+          webhookPhone: uid,
+          category: String(notes.category || ""),
+          option: String(notes.option || ""),
+          collaboratorId: String(notes.collaboratorId || ""),
+          collaboratorName: String(notes.collaboratorName || ""),
+          ...(notes.requiredSize ? { requiredSize: Number(notes.requiredSize) } : {}),
+          ...(notes.budget ? { budget: String(notes.budget) } : {}),
+          ...(notes.dateTime ? { dateTime: String(notes.dateTime) } : {}),
+          ...(notes.description ? { description: String(notes.description) } : {}),
+          ...(notes.notes ? { notes: String(notes.notes) } : {}),
+        });
+
+        if (entry.ok) {
+          await adminDb.collection("payments").add({
+            uid,
+            phone: uid,
+            groupId: entry.groupId || "",
+            category: String(notes.category || ""),
+            option: String(notes.option || ""),
+            collaboratorId: String(notes.collaboratorId || ""),
+            amount: ACTIVATION_PRICE,
+            status: "paid",
+            verified: true,
+            paymentMethod: "razorpay",
+            razorpayPaymentId: payment.id,
+            razorpayOrderId: payment.order_id,
+            pairingId: entry.pairingId || "",
+            mode: "entry",
+            source: "webhook",
+            paidAt: adminTimestamp(),
+            createdAt: adminTimestamp(),
+          });
+          console.log(
+            `[webhook] ENTRY OK payment=${payment.id} group=${entry.groupId} ` +
+              `status=${entry.status} paid=${entry.paidCount}/${entry.requiredSize}`
+          );
+        } else {
+          console.error(
+            `[webhook] ENTRY FAILED payment=${payment.id}: ${entry.error}`
+          );
+        }
+        return NextResponse.json({ received: true });
+      }
+
+      if (!groupId || !uid) {
         console.warn(
-          `Webhook payment amount mismatch: expected ${ACTIVATION_PRICE * 100}, got ${payment.amount} for payment ${payment.id}`
+          "Webhook payment.captured missing groupId/uid in notes:",
+          payment.id
         );
         return NextResponse.json({ received: true, skipped: true });
       }

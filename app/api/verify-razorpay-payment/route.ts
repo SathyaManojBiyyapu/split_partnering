@@ -14,6 +14,7 @@ import {
   maybeRematchAfterPayment,
   shouldAttemptRematch,
 } from "@/app/lib/serverRematching";
+import { enterPaidQueue } from "@/app/lib/serverQueueEntry";
 import {
   resolveCallerIdentity,
   identityMatchesKey,
@@ -106,13 +107,29 @@ export async function POST(req: Request) {
       razorpay_payment_id,
       razorpay_signature,
       groupId,
+      mode,
+      category,
+      option,
+      collaboratorId,
+      collaboratorName,
+      requiredSize,
+      budget,
+      dateTime,
+      description,
+      notes: entryNotes,
     } = body;
+
+    /* PAYMENT-FIRST MARKETPLACE ENTRY: no groupId yet — the caller paid to
+       ENTER the paid matching/waiting queue. The queue group is resolved or
+       created server-side (enterPaidQueue) only AFTER this payment verifies. */
+    const isEntryMode =
+      String(mode || "") === "entry" || (!groupId && !!category && !!option);
 
     if (
       !razorpay_order_id ||
       !razorpay_payment_id ||
       !razorpay_signature ||
-      !groupId
+      (!groupId && !isEntryMode)
     ) {
       return NextResponse.json(
         { error: "Missing required fields" },
@@ -207,7 +224,25 @@ export async function POST(req: Request) {
       );
     }
     const orderGroup = String(order?.notes?.groupId || "").trim();
-    if (!orderGroup || orderGroup !== groupId) {
+    const orderMode = String(order?.notes?.mode || "").trim();
+    if (isEntryMode) {
+      // Entry orders are bound by their mode + key notes (there is no group yet).
+      if (orderMode !== "entry") {
+        return NextResponse.json(
+          { error: "Payment/order mismatch (not an entry order)" },
+          { status: 400 }
+        );
+      }
+      if (
+        String(order?.notes?.category || "").trim() !== String(category || "").trim() ||
+        String(order?.notes?.option || "").trim() !== String(option || "").trim()
+      ) {
+        return NextResponse.json(
+          { error: "Payment/partnership mismatch" },
+          { status: 400 }
+        );
+      }
+    } else if (!orderGroup || orderGroup !== groupId) {
       return NextResponse.json(
         { error: "Payment/group mismatch" },
         { status: 400 }
@@ -242,6 +277,92 @@ export async function POST(req: Request) {
       decoded,
       String(body?.uid || "")
     );
+
+    // ============================================================
+    // PAYMENT-FIRST MARKETPLACE ENTRY — the verified payment now enters
+    // (or completes) the caller's position in the PAID waiting queue.
+    // A payment NEVER auto-confirms a match: the match is confirmed only
+    // when the REQUIRED number of compatible members have paid, at which
+    // point enterPaidQueue flips the group to "ready" and unlocks chat.
+    // ============================================================
+    if (isEntryMode) {
+      const entry = await enterPaidQueue({
+        decoded,
+        claimedPhone: String(body?.uid || ""),
+        category: String(category || ""),
+        option: String(option || ""),
+        collaboratorId: String(collaboratorId || ""),
+        collaboratorName: String(collaboratorName || ""),
+        ...(requiredSize ? { requiredSize: Number(requiredSize) } : {}),
+        ...(budget ? { budget: String(budget) } : {}),
+        ...(dateTime ? { dateTime: String(dateTime) } : {}),
+        ...(description ? { description: String(description) } : {}),
+        ...(entryNotes ? { notes: String(entryNotes) } : {}),
+      });
+
+      if (!entry.ok) {
+        console.error(
+          `[verify-razorpay-payment] ENTRY FAILED payment=${razorpay_payment_id}: ${entry.error}`
+        );
+        return NextResponse.json(
+          { error: entry.error || "Queue entry failed", entryFailed: true },
+          { status: 422 }
+        );
+      }
+
+      // Record the payment against the RESOLVED queue group (pairing-scoped,
+      // same shape as legacy payments + entry markers). Idempotent: one doc
+      // per razorpay payment id.
+      const payDup = await adminDb
+        .collection("payments")
+        .where("razorpayPaymentId", "==", razorpay_payment_id)
+        .limit(1)
+        .get();
+      if (payDup.empty) {
+        await adminDb.collection("payments").add({
+          uid: caller.phone,
+          phone: caller.phone,
+          groupId: entry.groupId || "",
+          category: String(category || ""),
+          option: String(option || ""),
+          collaboratorId: String(collaboratorId || ""),
+          amount: ACTIVATION_PRICE,
+          status: "paid",
+          verified: true,
+          paymentMethod: "razorpay",
+          razorpayPaymentId: razorpay_payment_id,
+          razorpayOrderId: razorpay_order_id,
+          pairingId: entry.pairingId || "",
+          mode: "entry",
+          profileLocation: entry.profileLocation || null,
+          paidAt: adminTimestamp(),
+          createdAt: adminTimestamp(),
+        });
+      }
+
+      console.log(
+        `[verify-razorpay-payment] ENTRY OK payment=${razorpay_payment_id} ` +
+          `group=${entry.groupId} status=${entry.status} paid=${entry.paidCount}/${entry.requiredSize} ` +
+          `chatUnlocked=${entry.chatUnlocked} loc=${entry.profileLocation?.state}/${entry.profileLocation?.district}/${entry.profileLocation?.city}`
+      );
+
+      return NextResponse.json({
+        success: true,
+        paymentId: razorpay_payment_id,
+        orderId: razorpay_order_id,
+        mode: "entry",
+        alreadyEntry: !!entry.alreadyEntry,
+        status: entry.status,
+        groupId: entry.groupId,
+        activeGroupId: entry.groupId,
+        pairingId: entry.pairingId,
+        membersCount: entry.membersCount,
+        requiredSize: entry.requiredSize,
+        paidCount: entry.paidCount,
+        chatUnlocked: !!entry.chatUnlocked,
+        profileLocation: entry.profileLocation,
+      });
+    }
 
     // ============================================================
     // Load the group; the caller must be an active member and the

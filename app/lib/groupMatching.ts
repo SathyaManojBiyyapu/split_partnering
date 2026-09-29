@@ -191,6 +191,93 @@ export function chatUnlocked(g: any): boolean {
   if (!isGroupMatched(g)) return false;
   return allMembersPaidForPairing(g);
 }
+/** ============================================================
+ *  PAYMENT-FIRST MATCHING QUEUE (Requirement: payment gates the queue)
+ *  AVAILABLE → PAID/WAITING → MATCH CONFIRMED (chat unlocked)
+ *
+ *  In the payment-first model a WAITING group contains ONLY members who
+ *  have paid for the CURRENT pairing. A paid entrant is FIFO-matched with
+ *  the OLDEST compatible group whose members are all paid and that still
+ *  has paid capacity (1 paid → waiting, required paid → confirmed).
+ *  ============================================================ */
+
+/** True when the group has ≥1 member and EVERY member has paid for the
+ *  CURRENT pairing (the payment-first invariant for queue groups). */
+export function allExistingMembersPaid(g: any): boolean {
+  const phones = activeMemberPhones(g);
+  if (phones.length === 0) return false;
+  return phones.every((p) => isPaidForPairing(g, p));
+}
+
+/** The distinct queue states a user can be in for a group — the single
+ *  vocabulary shared by the marketplace, waiting area and chat unlock UI:
+ *    AVAILABLE       not a member of this group (eligible in the marketplace)
+ *    PENDING_PAYMENT member of an open group but has NOT yet paid (legacy path)
+ *    PAID_WAITING    paid, but the required paid-member count is not met yet
+ *    MATCHED         required members paid → match confirmed → chat unlocked
+ */
+export type QueueState = "AVAILABLE" | "PENDING_PAYMENT" | "PAID_WAITING" | "MATCHED";
+
+export function deriveQueueState(g: any, phone: string): QueueState {
+  if (chatUnlocked(g)) return "MATCHED";
+  if (!phone || !isMember(g, phone)) return "AVAILABLE";
+  return isPaidForPairing(g, phone) ? "PAID_WAITING" : "PENDING_PAYMENT";
+}
+
+/** Paid member count + required size for the CURRENT pairing — the "1/2
+ *  members paid" progress used by the waiting area and marketplace UI. */
+export function queueProgress(g: any): { paidCount: number; required: number; memberCount: number } {
+  return {
+    paidCount: paidMemberCountForPairing(g),
+    required: resolveRequired(g, String(g?.option || "")),
+    memberCount: actualMemberCount(g),
+  };
+}
+
+/** Oldest OPEN compatible group whose members are ALL PAID for the current
+ *  pairing and that still has paid capacity (paid count < required).
+ *  This is the FIFO candidate pool for PAYMENT-FIRST queue entry: a paying
+ *  user is paired with users who have ALREADY PAID (never with unpaid
+ *  members, who must stay AVAILABLE in the marketplace instead).
+ *  Generic over the doc wrapper — works against admin snapshots AND plain
+ *  `{ id, data() }` test harness objects. */
+export function pickOldestPaidWaiting<T extends { data(): any; id?: string }>(
+  docs: T[],
+  args: { state: string; district: string; city: string; option: string; phone: string; collaboratorId?: string },
+  excludeGroupId?: string
+): T | null {
+  let best: T | null = null;
+  let bestKey = Number.MAX_SAFE_INTEGER;
+
+  for (const d of docs) {
+    if (excludeGroupId && (d as any).id === excludeGroupId) continue;
+    const g = d.data();
+    if (!isOpen(g)) continue;
+    if (!matchesLocation(g, args.state, args.district, args.city)) continue;
+    if (!matchesGroupKey(g, args.collaboratorId || "")) continue;
+    if (isMember(g, args.phone)) continue;
+    const phones = activeMemberPhones(g);
+    if (phones.length === 0) continue; // empty shells are not waiting queues
+    const required = resolveRequired(g, args.option);
+    if (phones.length >= required) continue; // no capacity
+    if (!phones.every((p) => isPaidForPairing(g, p))) continue; // contains unpaid members → not a paid queue
+
+    let key = Number.MAX_SAFE_INTEGER;
+    const c = g?.createdAt as any;
+    if (c?.toMillis) key = c.toMillis();
+    else if (c?.seconds) key = c.seconds * 1000;
+    else if (typeof c === "number") key = c;
+    else if (typeof c === "object" && c?._seconds != null) key = c._seconds * 1000;
+    if (key < bestKey) {
+      bestKey = key;
+      best = d;
+    }
+  }
+
+  return best;
+}
+
+/** Oldest OPEN compatible group that has EXACTLY ONE member and one free slot.
 
 /** Oldest OPEN compatible group that has EXACTLY ONE member and one free slot.
  * Used by remove-match to automatically FIFO-refill the vacated slot from an

@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
 import admin, { adminDb, adminTimestamp, adminCredentialsConfigured } from "@/firebase/admin";
+import {
+  chatUnlocked,
+  isOpen,
+  memberList,
+} from "@/app/lib/groupMatching";
+import { isGroupExpired } from "@/app/data/matchExpiry";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -230,6 +236,58 @@ export async function POST(req: Request) {
       },
       { merge: true }
     );
+
+    // ============================================================
+    // REQUIREMENT 1 — LOCATION IS THE SINGLE SOURCE OF TRUTH.
+    // When the saved State/District/City CHANGES, the user's ACTIVE
+    // (unmatched, solo) waiting queue entries FOLLOW the new location so
+    // the old location can never override the new marketplace/matching
+    // experience. Confirmed pairs and multi-member groups keep their
+    // historical location (their matching contract is with the other
+    // members, and matched users are out of the marketplace anyway).
+    // ============================================================
+    const locationChanged =
+      String(existingData.state ?? "") !== savedState ||
+      String(existingData.district ?? "") !== savedDistrict ||
+      String(existingData.city ?? "") !== savedCity;
+    if (locationChanged) {
+      try {
+        const canonicalPhone =
+          [String(phoneField || "")].find((v) => /^[0-9]{10}$/.test(v)) ||
+          ownDocCandidates(decoded).find((v) => /^[0-9]{10}$/.test(v)) ||
+          "";
+        const lookupKey = canonicalPhone || phoneField || docId;
+        const mineSnap = await adminDb
+          .collection("groups")
+          .where("memberUIDs", "array-contains", lookupKey)
+          .limit(50)
+          .get();
+        let moved = 0;
+        for (const g of mineSnap.docs) {
+          const gd = g.data() as any;
+          if (!isOpen(gd)) continue;                    // matched/closed stay put
+          if (isGroupExpired(gd?.createdAt)) continue;  // stale never migrates
+          if (chatUnlocked(gd)) continue;               // confirmed pairs stay put
+          if (memberList(gd).length !== 1) continue;    // solo queue entries only
+          await g.ref.update({
+            state: savedState,
+            district: savedDistrict,
+            city: savedCity,
+            locationMovedAt: adminTimestamp(),
+            updatedAt: adminTimestamp(),
+          });
+          moved++;
+        }
+        if (moved > 0) {
+          console.log(
+            `[save-profile] location change migrated ${moved} solo waiting queue ` +
+              `entr(ies) to ${savedState}/${savedDistrict}/${savedCity}`
+          );
+        }
+      } catch (migErr: any) {
+        console.error("[save-profile] location migration failed:", migErr?.message || migErr);
+      }
+    }
 
     // Return the persisted values so the client can refresh its local state
     // with the exact values now stored in the database.

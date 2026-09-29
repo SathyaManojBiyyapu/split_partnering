@@ -10,6 +10,7 @@ import {
   matchesLocation,
   matchesGroupKey,
   activeMemberPhones,
+  isPaidForPairing,
   pickOldestRefillable,
 } from "@/app/lib/groupMatching";
 
@@ -77,6 +78,13 @@ async function refillOpenSlot(targetGroupId: string) {
     );
     if (!best) return; // no compatible lone user waiting yet
 
+    // PAYMENT-FIRST: refill only from PAID waiting members — an unpaid user
+    // must stay AVAILABLE in the marketplace, never auto-joined into a pair.
+    const loneData = typeof (best as any).data === "function" ? (best as any).data() : null;
+    const lonePhoneList = loneData ? activeMemberPhones(loneData) : [];
+    if (lonePhoneList.length !== 1) return;
+    if (!isPaidForPairing(loneData, lonePhoneList[0])) return;
+
     try {
       const outcome = await adminDb.runTransaction(async (tx) => {
         const tRef = groupsRef.doc(targetGroupId);
@@ -102,15 +110,33 @@ async function refillOpenSlot(targetGroupId: string) {
           .filter((p: string) => p);
         if (!movedPhone || targetPhones.includes(movedPhone)) return { retry: true as const };
 
+        // PAYMENT-FIRST invariant: a completed pair must be ALL-PAID. The
+        // refill only proceeds when every existing member AND the incoming
+        // lone member have paid; their paid entitlements are CARRIED INTO
+        // the fresh pairingId (paid membership is never downgraded here).
+        const movedKey =
+          typeof moved === "string" ? moved : String(moved?.phone || moved?.uid || "");
+        if (!movedKey || !isPaidForPairing(sData, movedKey)) return { retry: true as const };
+        if (!targetPhones.every((p) => isPaidForPairing(tData, p))) return { retry: true as const };
+
         const nextPairingId = newPairingId();
-        const resetTargetMembers = tMembersNow.map((m: any) =>
-          typeof m === "string" ? m : { ...m, paid: false }
-        );
         const allPhones = [...targetPhones, movedPhone];
         const memberPayments: Record<string, any> = {};
         for (const p of allPhones) {
-          memberPayments[p] = { paid: false, pairingId: nextPairingId };
+          const prev =
+            p === movedKey
+              ? (sData?.memberPayments || {})[p]
+              : (tData?.memberPayments || {})[p];
+          memberPayments[p] = {
+            ...(prev || {}),
+            paid: true,
+            pairingId: nextPairingId,
+            carriedInto: nextPairingId,
+          };
         }
+        const resetTargetMembers = tMembersNow.map((m: any) =>
+          typeof m === "string" ? m : { ...m, paid: true }
+        );
 
         tx.update(sRef, {
           members: [],
@@ -123,7 +149,7 @@ async function refillOpenSlot(targetGroupId: string) {
           updatedAt: FieldValue.serverTimestamp(),
         });
         tx.update(tRef, {
-          members: [...resetTargetMembers, typeof moved === "string" ? moved : { ...moved, paid: false }],
+          members: [...resetTargetMembers, typeof moved === "string" ? moved : { ...moved, paid: true }],
           memberUIDs: [...targetPhones, movedPhone],
           membersCount: req,
           status: "ready",
@@ -275,11 +301,19 @@ export async function POST(req: Request) {
         .map((m: any) => (typeof m === "string" ? m : m?.phone || m?.uid || ""))
         .filter((p: string) => p && p.trim() !== "");
       const resetMembers = remaining.map((m: any) =>
-        typeof m === "string" ? m : { ...m, paid: false }
+        typeof m === "string" ? m : { ...m }
       );
+      // PAYMENT-FIRST: carry each remaining member's OWN paid entitlement
+      // into the fresh pairing — a partner leaving never erases a paid
+      // member's queue position. Unpaid members stay unpaid.
       const memberPayments: Record<string, any> = {};
       for (const p of remainingPhones) {
-        memberPayments[p] = { paid: false, pairingId: nextPairingId };
+        const prev = (data?.memberPayments || {})[p] || {};
+        memberPayments[p] = {
+          ...prev,
+          paid: prev.paid === true,
+          pairingId: nextPairingId,
+        };
       }
 
       if (newCount <= 0) {

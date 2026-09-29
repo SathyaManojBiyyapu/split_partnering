@@ -38,6 +38,7 @@ import {
   isPaidForPairing,
   chatUnlocked,
   activeMemberPhones,
+  paidMemberCountForPairing,
 } from "@/app/lib/groupMatching";
 
 function PaymentContent() {
@@ -52,6 +53,54 @@ function PaymentContent() {
     searchParams.get(
       "groupId"
     );
+
+  /* ============================================================
+     PAYMENT-FIRST MARKETPLACE ENTRY (Requirement 2)
+     /payment?category=…&option=…&collaboratorId=…&collaboratorName=…
+     (NO groupId) — the user pays to ENTER the paid matching/waiting
+     queue. The server resolves/creates the queue group AFTER the
+     payment verifies; this page then live-tracks that group's
+     "X/Y members paid" state until the match confirms.
+     ============================================================ */
+  const entryCategory =
+    searchParams.get("category") || "";
+  const entryOption =
+    searchParams.get("option") || "";
+  const entryCollaboratorId =
+    searchParams.get("collaboratorId") || "";
+  const entryCollaboratorName =
+    searchParams.get("collaboratorName") || "";
+  const isEntryMode =
+    !groupId && !!entryCategory && !!entryOption;
+    !groupId && !!entryCategory && !!entryOption;
+
+  const [
+    entryResult,
+    setEntryResult,
+  ] = useState<any>(null);
+
+  const [
+    activeGroupId,
+    setActiveGroupId,
+  ] = useState<string | null>(null);
+
+  const [
+    entryError,
+    setEntryError,
+  ] = useState<string | null>(null);
+
+  const [
+    userLoc,
+    setUserLoc,
+  ] = useState<{ state: string; district: string; city: string } | null>(null);
+
+  /* Optional group metadata (create-group flow) forwarded to the server so
+     the created queue group keeps the caller's custom fields. */
+  const entryRequiredSize = searchParams.get("requiredSize") || "";
+  const entryBudget = searchParams.get("budget") || "";
+  const entryDateTime = searchParams.get("dateTime") || "";
+  const entryDescription = searchParams.get("description") || "";
+  const entryNotes = searchParams.get("notes") || "";
 
   const [
     firebaseUser,
@@ -199,6 +248,35 @@ function PaymentContent() {
   }, [router]);
 
   /* -----------------------------
+     ENTRY MODE — load the saved profile location (display only; the
+     SERVER always re-reads the authoritative users doc itself).
+  ----------------------------- */
+
+  useEffect(() => {
+
+    if (!isEntryMode) return;
+
+    const loadLoc = async () => {
+      try {
+        const { fetchCurrentUserDoc } = await import("@/app/lib/userLookup");
+        const resolved = await fetchCurrentUserDoc();
+        if (resolved) {
+          const d = resolved.data as any;
+          setUserLoc({
+            state: d.state || "",
+            district: d.district || "",
+            city: d.city || "",
+          });
+        }
+      } catch {
+        /* display-only */
+      }
+    };
+    loadLoc();
+
+  }, [isEntryMode]);
+
+  /* -----------------------------
      LIVE GROUP + PAYMENT LISTENER
      onSnapshot keeps BOTH users' payment pages in sync: when the partner
      joins, pays, or leaves, this listener fires immediately — no manual
@@ -208,13 +286,16 @@ function PaymentContent() {
 
   useEffect(() => {
 
-    if (!groupId) {
+    /* Entry mode: nothing to watch until the verified payment resolves the
+       queue group (the verify response returns activeGroupId). */
+    const watchId = activeGroupId || groupId;
+    if (!watchId) {
       setLoading(false);
       return;
     }
 
     const unsub = onSnapshot(
-      doc(db, "groups", groupId),
+      doc(db, "groups", watchId),
       (snap) => {
         if (!snap.exists()) {
           /* Stale-link recovery: a FIFO rematch may have moved this user
@@ -235,7 +316,7 @@ function PaymentContent() {
                   )
                 );
                 const mine = qs.docs
-                  .filter((d) => d.id !== groupId)
+                  .filter((d) => d.id !== watchId)
                   .map((d) => ({ id: d.id, g: d.data() as any }))
                   .filter(
                     ({ g }) =>
@@ -296,7 +377,7 @@ function PaymentContent() {
 
     return () => unsub();
 
-  }, [groupId, phone, router]);
+  }, [groupId, activeGroupId, phone, router]);
 
   /* -----------------------------
      CHECK PAYMENT STATUS (best-effort fallback)
@@ -413,7 +494,8 @@ function PaymentContent() {
 
   useEffect(() => {
 
-    if (!successAnim || !groupId) return;
+    const chatTargetId = activeGroupId || groupId;
+    if (!successAnim || !chatTargetId) return;
 
     const latest =
       groupDataRef.current;
@@ -421,7 +503,7 @@ function PaymentContent() {
     if (!latest || !chatUnlocked(latest)) return; // wait for the live doc
 
     const t = setTimeout(() => {
-      router.push(`/chat/${groupId}`);
+      router.push(`/chat/${activeGroupId || groupId}`);
     }, 1500);
 
     return () => clearTimeout(t);
@@ -431,6 +513,27 @@ function PaymentContent() {
   /* -----------------------------
      STRIPE PAYMENT
   ----------------------------- */
+
+  const userId = getUserId();
+
+  /* Shared request body for order/session creation — entry mode sends the
+     marketplace key (server resolves location + duplicate guard); legacy
+     pairing mode sends the groupId. */
+  const orderBody = isEntryMode
+    ? {
+        mode: "entry",
+        category: entryCategory,
+        option: entryOption,
+        collaboratorId: entryCollaboratorId,
+        collaboratorName: entryCollaboratorName,
+        ...(entryRequiredSize ? { requiredSize: entryRequiredSize } : {}),
+        ...(entryBudget ? { budget: entryBudget } : {}),
+        ...(entryDateTime ? { dateTime: entryDateTime } : {}),
+        ...(entryDescription ? { description: entryDescription } : {}),
+        ...(entryNotes ? { notes: entryNotes } : {}),
+        uid: userId,
+      }
+    : { groupId, uid: userId };
 
   const handlePayment =
     async () => {
@@ -462,6 +565,11 @@ function PaymentContent() {
         // never block payment: /api/verify-razorpay-payment records the paid
         // doc server-side regardless.
         try {
+          if (isEntryMode) {
+            /* Entry payments are recorded by the SERVER (with the resolved
+               groupId) — there is no groupId at pending-doc time. */
+            throw new Error("entry-mode: skip pending doc");
+          }
           await addDoc(
           collection(
             db,
@@ -518,14 +626,7 @@ function PaymentContent() {
                   `Bearer ${await firebaseUser.getIdToken()}`,
               },
 
-              body: JSON.stringify(
-                {
-                  groupId,
-
-                  uid:
-                    userId,
-                }
-              ),
+              body: JSON.stringify(orderBody),
             }
           );
 
@@ -662,14 +763,7 @@ function PaymentContent() {
               },
 
               body:
-                JSON.stringify(
-                  {
-                    groupId,
-
-                    uid:
-                      userId,
-                  }
-                ),
+                JSON.stringify(orderBody),
             }
           );
 
@@ -682,6 +776,14 @@ function PaymentContent() {
         );
         
         if (!orderRes.ok) {
+        
+          if (isEntryMode) {
+            /* Duplicate-payment / validation guard surfaced by the server. */
+            setEntryError(
+              order?.error ||
+                "Could not start the payment. Please try again."
+            );
+          }
         
           alert(
             order?.error ||
@@ -727,6 +829,32 @@ function PaymentContent() {
             ) {
 
               try {
+                /* Entry mode: verify with the marketplace key (no groupId yet).
+                   Legacy pairing mode: verify against the group. */
+                const verifyBody = isEntryMode
+                  ? {
+                      razorpay_order_id: response.razorpay_order_id,
+                      razorpay_payment_id: response.razorpay_payment_id,
+                      razorpay_signature: response.razorpay_signature,
+                      uid: userId,
+                      mode: "entry",
+                      category: entryCategory,
+                      option: entryOption,
+                      collaboratorId: entryCollaboratorId,
+                      collaboratorName: entryCollaboratorName,
+                      ...(entryRequiredSize ? { requiredSize: entryRequiredSize } : {}),
+                      ...(entryBudget ? { budget: entryBudget } : {}),
+                      ...(entryDateTime ? { dateTime: entryDateTime } : {}),
+                      ...(entryDescription ? { description: entryDescription } : {}),
+                      ...(entryNotes ? { notes: entryNotes } : {}),
+                    }
+                  : {
+                      razorpay_order_id: response.razorpay_order_id,
+                      razorpay_payment_id: response.razorpay_payment_id,
+                      razorpay_signature: response.razorpay_signature,
+                      uid: userId,
+                      groupId,
+                    };
 
                 const verifyRes =
                   await fetch(
@@ -744,23 +872,7 @@ function PaymentContent() {
                         },
 
                       body:
-                        JSON.stringify(
-                          {
-                            razorpay_order_id:
-                              response.razorpay_order_id,
-
-                            razorpay_payment_id:
-                              response.razorpay_payment_id,
-
-                            razorpay_signature:
-                              response.razorpay_signature,
-
-                            uid:
-                              userId,
-
-                            groupId,
-                          }
-                        ),
+                        JSON.stringify(verifyBody),
                     }
                   );
 
@@ -788,6 +900,20 @@ function PaymentContent() {
                 setPaymentCompleted(
                   true
                 );
+
+                /* ---- ENTRY MODE: the payment has ENTERED (or completed) the
+                   paid waiting queue. Rebind to the resolved queue group and
+                   show the live WAITING AREA (never an instant match). ---- */
+                if (isEntryMode) {
+                  setEntryResult(verifyData);
+                  const g =
+                    verifyData.activeGroupId || verifyData.groupId || "";
+                  if (g) setActiveGroupId(g);
+                  if (verifyData.chatUnlocked) {
+                    setSuccessAnim(true);
+                  }
+                  return;
+                }
 
                 /* FIFO RE-MATCH: when the payer's old pairing is replaced
                    by a new paid pairing, the SERVER returns the NEW active
@@ -898,7 +1024,6 @@ function PaymentContent() {
      LIVE PAYMENT/GROUP STATE (derived from the shared group doc)
   ----------------------------- */
 
-  const userId = getUserId();
   const groupMatched = groupData ? isGroupMatched(groupData) : false;
   const mePaidForPair =
     !!(userId && groupData && isPaidForPairing(groupData, userId));
@@ -914,7 +1039,11 @@ function PaymentContent() {
     groupData && Number.isFinite(Number(groupData.membersCount))
       ? Number(groupData.membersCount)
       : (Array.isArray(groupData?.members) ? groupData.members.length : 0);
-  const requiredNow = Number(groupData?.requiredSize) || 2;
+  const requiredNow =
+    Number(groupData?.requiredSize) || Number(entryResult?.requiredSize) || 2;
+  const paidNow = groupData
+    ? paidMemberCountForPairing(groupData)
+    : Number(entryResult?.paidCount) || 0;
 
   /* -----------------------------
      LOADING
@@ -981,6 +1110,53 @@ function PaymentContent() {
         <p className="text-gray-400 text-sm mb-6">
           Unlock secure coordination and verified group benefits.
         </p>
+
+        {isEntryMode && !entryResult && (
+          <div className="mb-6 border border-[#E6C972]/20 rounded-xl p-4 bg-black/30">
+            <p className="text-gray-300 mb-1">
+              Category:
+              <span className="text-[#E6C972] ml-2">
+                {entryCategory.replace(/-/g, " ")}
+              </span>
+            </p>
+            <p className="text-gray-300 mb-1">
+              Partnership:
+              <span className="text-[#E6C972] ml-2">
+                {entryOption.replace(/-/g, " ")}
+              </span>
+            </p>
+            {entryCollaboratorName ? (
+              <p className="text-gray-300 mb-1">
+                Business:
+                <span className="text-[#E6C972] ml-2">
+                  {entryCollaboratorName}
+                </span>
+              </p>
+            ) : null}
+            {userLoc ? (
+              <p className="text-gray-400 text-xs mt-2">
+                📍 Marketplace: {userLoc.state} → {userLoc.district} → {userLoc.city}
+              </p>
+            ) : null}
+            <p className="text-gray-500 text-[11px] mt-2 leading-relaxed">
+              Pay once to enter the matching queue. You will be matched
+              automatically when the required number of compatible members
+              have paid — chat unlocks on match confirmation.
+            </p>
+          </div>
+        )}
+
+        {entryError && (
+          <div className="mb-4 border border-red-500/30 bg-red-500/10 rounded-xl p-3">
+            <p className="text-red-400 text-xs font-semibold">{entryError}</p>
+            <button
+              onClick={() => router.push("/dashboard")}
+              className="mt-2 text-[11px] text-gray-300 underline"
+            >
+              Go to My Matches
+            </button>
+          </div>
+        )}
 
         {groupData && (
 
@@ -1059,12 +1235,76 @@ function PaymentContent() {
           ₹29
         </div>
 
-        {chatReady ? (
+        {isEntryMode && entryResult ? (
+          entryResult.chatUnlocked || chatReady ? (
+            <>
+              <div className="mb-3 text-center">
+                <p className="text-green-400 font-bold text-sm">
+                  ✓ Match Confirmed
+                </p>
+                <p className="text-gray-400 text-xs mt-1">
+                  Payment Complete · Chat Unlocked
+                </p>
+              </div>
+              <button
+                onClick={() =>
+                  router.push(
+                    `/chat/${activeGroupId || groupId}`
+                  )
+                }
+                className="
+                  w-full py-3 rounded-xl
+                  bg-green-600
+                  text-white font-bold
+                "
+              >
+                Open Chat
+              </button>
+            </>
+          ) : (
+            <>
+              {/* MATCHING / WAITING AREA — paid but not yet matched.
+                  Live: groupData is watched by onSnapshot, so the moment a
+                  compatible partner pays, the required members are paid,
+                  the match confirms and chat unlocks — no refresh needed. */}
+              <div className="mb-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-center">
+                <p className="text-emerald-400 font-bold text-sm">🟢 PAID</p>
+                <p className="text-yellow-300 text-xs mt-1 font-semibold">
+                  ⏳ WAITING FOR PARTNER
+                </p>
+                <p className="text-white text-lg font-bold mt-2">
+                  {paidNow}/{requiredNow} MEMBERS PAID
+                </p>
+                <p className="text-gray-400 text-xs mt-2 leading-relaxed">
+                  Waiting for a compatible partner. You&apos;ll be matched
+                  automatically when the required members have paid.
+                </p>
+              </div>
+              <button
+                disabled
+                className="
+                  w-full py-3 rounded-xl
+                  bg-gray-800
+                  text-gray-400 font-bold
+                "
+              >
+                ⏳ Waiting for partner
+              </button>
+              <button
+                onClick={() => router.push("/dashboard")}
+                className="w-full mt-3 text-sm text-gray-400 hover:text-white transition"
+              >
+                View My Matches →
+              </button>
+            </>
+          )
+        ) : (
+          chatReady ? (
 
           <button
             onClick={() =>
               router.push(
-                `/chat/${groupId}`
+                `/chat/${activeGroupId || groupId}`
               )
             }
             className="
@@ -1119,7 +1359,7 @@ function PaymentContent() {
               Match complete ({membersNow}/{requiredNow}) — unlock chat for ₹29.
             </div>
 
-            {stripeEnabled ? (
+            {stripeEnabled && !isEntryMode ? (
               <button
                 onClick={
                   handlePayment
@@ -1167,6 +1407,7 @@ function PaymentContent() {
             </button>
 
           </>
+        )
         )}
 
         <button

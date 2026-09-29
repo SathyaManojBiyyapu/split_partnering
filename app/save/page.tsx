@@ -25,6 +25,7 @@ import {
   doc,
   updateDoc,
   getDoc,
+  onSnapshot,
 } from "firebase/firestore";
 
 import { categoryData, slugToCategoryName, masterCategories } from "@/app/data/subcategories";
@@ -40,6 +41,10 @@ import {
   resolveRequired,
   actualMemberCount,
   memberDisplayNames,
+  chatUnlocked,
+  isPaidForPairing,
+  activeMemberPhones,
+  paidMemberCountForPairing,
 } from "@/app/lib/groupMatching";
 import toast from "react-hot-toast";
 
@@ -161,6 +166,31 @@ async function createOrJoinGroup(
     groupId: data.groupId || "",
     requiredSize: Number(data.requiredSize) || getRequiredSize(option),
   };
+}
+
+/* -----------------------------------------
+   PAYMENT-FIRST MARKETPLACE ENTRY (Requirement 2)
+   Selecting a partnership routes through the payment page: the VERIFIED
+   payment enters the caller into the PAID matching/waiting queue on the
+   SERVER (FIFO pairing with other paid members; match confirms when the
+   required members have paid). The matching location is always re-read
+   server-side from the user's saved profile — never client state.
+------------------------------------------ */
+
+function makePartnerViaPayment(
+  router: any,
+  category: string,
+  option: string,
+  collaboratorId?: string,
+  collaboratorName?: string
+) {
+  const params = new URLSearchParams({
+    category,
+    option,
+    ...(collaboratorId ? { collaboratorId } : {}),
+    ...(collaboratorName ? { collaboratorName } : {}),
+  });
+  router.push(`/payment?${params.toString()}`);
 }
 
 /* -----------------------------------------
@@ -529,6 +559,12 @@ function SaveContent() {
     district: "",
     city: "",
   });
+  /* MARKETPLACE AVAILABILITY (live) — the three-zone model:
+     AVAILABLE   = compatible people who have NOT entered this paid queue
+     WAITING     = people who PAID and are waiting for compatible partners
+     CONFIRMED   = removed from both pools automatically (matched pairs) */
+  const [availableCount, setAvailableCount] = useState<number | null>(null);
+  const [waitingPaidCount, setWaitingPaidCount] = useState(0);
 
   const categoryName = slugToCategoryName[category] || category.replace("-", " ");
   const subcategoryName = getSubcategoryName(category, option) || option.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
@@ -622,6 +658,87 @@ function SaveContent() {
       cancelled = true;
     };
   }, [phone, category, option, selectedCollaboratorId, userLocation.state, userLocation.district, userLocation.city]);
+
+  /* -------- MARKETPLACE AVAILABILITY COUNTER (live) --------
+     Counts, for the CURRENT saved location + category + partnership key:
+       - available people: same state/district/city (+ same category when
+         their profile has one) who are NOT in a live group for this key;
+       - paid/waiting people: members of open (not-yet-confirmed) groups for
+         this key who have PAID for their pairing.
+     Confirmed pairs are excluded from BOTH counts automatically (their
+     group is no longer "waiting" and chat is unlocked), so the marketplace
+     count updates in real time when a match completes. */
+  useEffect(() => {
+    if (!phone || !category || !option) return;
+    if (!userLocation.state || !userLocation.district || !userLocation.city) return;
+    let cancelled = false;
+    let usersCache: any[] | null = null;
+    let groupsCache: any[] = [];
+
+    const normLoc = (v: any) => String(v || "").trim().toLowerCase();
+    const normPhoneKey = (v: any) => String(v || "").replace(/\D/g, "").slice(-10);
+
+    const recompute = () => {
+      if (!usersCache) return;
+      const waitingPaid = new Set<string>();
+      const inQueue = new Set<string>();
+      groupsCache.forEach((g: any) => {
+        if (isStaleGroup(g)) return;
+        if (!isOpen(g)) return;
+        if (!matchesLocation(g, userLocation.state, userLocation.district, userLocation.city)) return;
+        const phones = activeMemberPhones(g);
+        if (chatUnlocked(g)) {
+          // CONFIRMED — removed from the marketplace AND the waiting queue.
+          phones.forEach((p) => inQueue.add(p));
+          return;
+        }
+        // OPEN (waiting/legacy-pending) group for this key — members are no
+        // longer AVAILABLE; the PAID ones form the waiting queue.
+        phones.forEach((p) => {
+          inQueue.add(p);
+          if (isPaidForPairing(g, p)) waitingPaid.add(p);
+        });
+      });
+
+      let avail = 0;
+      usersCache.forEach((u: any) => {
+        const up = normPhoneKey(u?.phone || u?.uid || "");
+        if (!up || up === normPhoneKey(phone) || inQueue.has(up)) return;
+        if (normLoc(u?.state) !== normLoc(userLocation.state)) return;
+        if (normLoc(u?.district) !== normLoc(userLocation.district)) return;
+        if (normLoc(u?.city) !== normLoc(userLocation.city)) return;
+        if (u?.category && normLoc(u.category) !== normLoc(categoryName)) return;
+        avail++;
+      });
+      if (cancelled) return;
+      setAvailableCount(avail);
+      setWaitingPaidCount(waitingPaid.size);
+    };
+
+    const loadUsers = async () => {
+      try {
+        const snap = await getDocs(collection(db, "users"));
+        usersCache = snap.docs.map((d) => d.data() as any);
+        recompute();
+      } catch (err) {
+        console.error("Availability users error:", err);
+      }
+    };
+    loadUsers();
+
+    const unsub = onSnapshot(
+      query(collection(db, "groups"), where("category", "==", category), where("option", "==", option)),
+      (snap) => {
+        groupsCache = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+        recompute();
+      },
+      (err) => console.error("Availability groups error:", err)
+    );
+    return () => {
+      cancelled = true;
+      unsub();
+    };
+  }, [phone, category, option, categoryName, userLocation.state, userLocation.district, userLocation.city]);
 
   /* -------- FETCH ACTIVE SUBCATEGORIES -------- */
   useEffect(() => {
@@ -750,16 +867,15 @@ function SaveContent() {
         return;
       }
 
-      const result = await createOrJoinGroup(
+      // PAYMENT-FIRST MARKETPLACE: the verified payment enters the paid
+      // matching/waiting queue (never an instant match — 1 paid = WAITING).
+      makePartnerViaPayment(
+        router,
         category,
         option,
-        phone,
         selectedCollaboratorId || undefined,
         selectedCollaboratorName || undefined
       );
-
-      toast.success(`Partner saved! Status: ${result.status}`);
-      router.push("/dashboard");
     } catch (error: any) {
       console.error("SAVE ERROR:", error);
       toast.error(error?.message || error?.code || "Saving failed.");
@@ -823,8 +939,17 @@ function SaveContent() {
             <p className="text-emerald-400 font-bold text-base flex items-center gap-2">✅ Partner Already Saved</p>
             <p className="text-gray-300 text-xs mt-1">You have already saved a partner match for this option. Head to your dashboard to view or manage your match.</p>
             <p className="text-gray-400 text-[11px] mt-2">
-              Match status: {(Array.isArray(existingGroup.members) ? existingGroup.members.length : (existingGroup.membersCount || 1))}/{(existingGroup.requiredSize || getRequiredSize(option))} members
-              {String(existingGroup.status || "").toLowerCase() === "ready" ? " · Group complete — ready to unlock" : " · Still searching for a partner"}
+              {(() => {
+                const egReq = resolveRequired(existingGroup, option);
+                const egPaid = paidMemberCountForPairing(existingGroup);
+                if (chatUnlocked(existingGroup)) {
+                  return "✓ Match Confirmed · Payment Complete · Chat Unlocked — open chat from My Matches.";
+                }
+                if (isPaidForPairing(existingGroup, phone || "")) {
+                  return `🟢 You're PAID — ${egPaid}/${egReq} members paid · Waiting for a compatible partner.`;
+                }
+                return `⏳ ${egPaid}/${egReq} members paid · Complete your payment from My Matches to enter the matching queue.`;
+              })()}
             </p>
             <div className="mt-3 flex gap-2">
               <button onClick={() => router.push("/dashboard")} className="px-4 py-2 rounded-lg text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition">View My Dashboard →</button>
@@ -843,6 +968,28 @@ function SaveContent() {
               ))}
             </div>
             <p className="text-gray-500 text-[10px] mt-2">Joining one of these again will update the existing request instead of creating a new one.</p>
+          </div>
+        )}
+
+        {/* MARKETPLACE AVAILABILITY — "X compatible people available" (live) */}
+        {availableCount !== null && (
+          <div className="mb-4 border border-[#D4AF37]/20 bg-[#D4AF37]/[0.04] rounded-xl p-4">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <p className="text-[#FFD166] font-bold text-sm">
+                👥 {availableCount} compatible {availableCount === 1 ? "person" : "people"} available
+              </p>
+              {waitingPaidCount > 0 && (
+                <span className="text-[11px] text-blue-300 bg-blue-500/10 border border-blue-500/20 rounded-full px-2.5 py-1">
+                  ⏳ {waitingPaidCount} paid &amp; waiting for partners
+                </span>
+              )}
+            </div>
+            {userLocation.city && (
+              <p className="text-gray-500 text-[11px] mt-1">
+                📍 Marketplace: {userLocation.state} → {userLocation.district} → {userLocation.city}
+                {selectedCollaboratorName ? ` · ${selectedCollaboratorName}` : ""}
+              </p>
+            )}
           </div>
         )}
 
@@ -876,7 +1023,7 @@ function SaveContent() {
                 );
               })}
               <p className="text-gray-500 text-[11px] mt-2">
-                Select the same gym below and tap Make Partner to join this group instantly.
+                Select the same gym below and tap Make Partner — you&apos;ll pay once to enter this group&apos;s paid queue.
               </p>
             </div>
           ) : (
@@ -956,7 +1103,7 @@ function SaveContent() {
             subcategory={subcategoryName}
             buttonLabel="Make Partner →"
             onCountChange={setApprovedGymCount}
-            onMakePartner={async (business) => {
+            onMakePartner={(business) => {
               if (!mounted) return;
               if (!phone) {
                 toast.error("Please login first");
@@ -966,28 +1113,19 @@ function SaveContent() {
                 toast.error("User not logged in");
                 return;
               }
-              
-              try {
-                setLoading(true);
-                const collaboratorId = business.id || business.businessName;
-                const collaboratorName = business.businessName;
-                
-                const result = await createOrJoinGroup(
-                  category,
-                  option,
-                  phone,
-                  collaboratorId,
-                  collaboratorName
-                );
 
-                toast.success(`Partner saved! Status: ${result.status}`);
-                router.push("/dashboard");
-              } catch (error: any) {
-                console.error("MAKE PARTNER ERROR:", error);
-                toast.error(error?.message || error?.code || "Saving failed.");
-              } finally {
-                setLoading(false);
-              }
+              // PAYMENT-FIRST MARKETPLACE: pay once to enter the paid
+              // matching queue for THIS business — the server pairs paid
+              // members FIFO and confirms the match when 2/2 have paid.
+              const collaboratorId = business.id || business.businessName;
+              const collaboratorName = business.businessName;
+              makePartnerViaPayment(
+                router,
+                category,
+                option,
+                collaboratorId,
+                collaboratorName
+              );
             }}
             showAddButton={true}
             addButtonType="business"

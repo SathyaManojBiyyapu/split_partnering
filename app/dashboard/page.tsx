@@ -110,14 +110,26 @@ export default function DashboardPage() {
   function getGroupStatus(group: Group): { color: string; label: string } {
     const expiry = getExpiryStatus(group.createdAt);
     if (expiry.status === "expired") return { color: "bg-red-600/20 text-red-400 border border-red-500/30", label: "Expired" };
-    if (group.isPaid) return { color: "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30", label: "Paid ✅" };
+    /* PAYMENT-FIRST STATES (Requirement 2):
+       MATCH CONFIRMED  = required members have PAID → chat unlocked
+       AWAITING PAYMENT = full membership, not everyone paid (legacy path)
+       PAID / WAITING   = paid, but the required paid-member count is not met */
+    if (chatUnlocked(group))
+      return { color: "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30", label: "✓ Match Confirmed · Chat Unlocked" };
     const count = actualMemberCount(group);
     const required = group.requiredSize || 2;
+    const paidCount = paidMemberCountForPairing(group);
     if (count >= required)
       return {
         color: "bg-green-500/20 text-green-400 border border-green-500/30",
-        label: `${count}/${required} Matched · Ready to Unlock 🔓`,
+        label: `${paidCount}/${required} Paid · Awaiting Payments 🔒`,
       };
+    if (isPaidForPairing(group, phone || ""))
+      return {
+        color: "bg-yellow-500/20 text-yellow-300 border border-yellow-500/30",
+        label: `🟢 Paid · ${paidCount}/${required} Members Paid — Waiting for Partner`,
+      };
+    if (group.isPaid) return { color: "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30", label: "Paid ✅" };
     if (expiry.status === "expiring-soon") return { color: "bg-orange-500/20 text-orange-400 border border-orange-500/30", label: "Expiring Soon ⏳" };
     return {
       color: "bg-blue-500/20 text-blue-400 border border-blue-500/30",
@@ -610,7 +622,10 @@ export default function DashboardPage() {
               </div>
               {matchingCount < required && (
                 <p className="text-[10px] text-blue-400 mt-1.5">
-                  ⏳ {matchingCount}/{required} Waiting — waiting for {waitingFor} more {waitingFor === 1 ? "person" : "people"}
+                  {isPaidForPairing(group, phone || "")
+                    ? `🟢 You're PAID — ${paidForPair}/${required} members paid · `
+                    : `⏳ ${matchingCount}/${required} joined · `}
+                  waiting for {waitingFor} more compatible {waitingFor === 1 ? "partner" : "partners"}
                 </p>
               )}
             </div>
@@ -660,6 +675,17 @@ export default function DashboardPage() {
               </span>
             ) : null}
           </div>
+
+          {/* PAID PROGRESS — "X/Y members paid" for the CURRENT pairing.
+              Unpaid members NEVER count toward confirmation. */}
+          {!unlocked && !isExpiredGroup && (
+            <div className="mb-2">
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#D4AF37]/10 text-[#FFD166] border border-[#D4AF37]/20 text-[11px] font-semibold">
+                💳 {paidForPair}/{required} MEMBERS PAID
+                {paidForPair >= required ? " · Match Confirmed" : isSearching ? " · Waiting for partner" : " · Awaiting payments"}
+              </span>
+            </div>
+          )}
 
           {/* Created date */}
           <div className="text-[10px] text-gray-500">
@@ -786,7 +812,7 @@ export default function DashboardPage() {
           {pendingGroups.length > 0 && (
             <div>
               <h2 className="text-lg font-semibold text-[#FFD166] mb-4 flex items-center gap-2">
-                <span className="text-yellow-400">⏳</span> Pending Requests
+                <span className="text-yellow-400">⏳</span> Matching / Waiting Area
                 <span className="text-xs text-gray-500 font-normal">({pendingGroups.length})</span>
               </h2>
               <div className="space-y-4">
@@ -799,7 +825,7 @@ export default function DashboardPage() {
           {readyGroups.length > 0 && (
             <div>
               <h2 className="text-lg font-semibold text-[#FFD166] mb-4 flex items-center gap-2">
-                <span className="text-green-400">✅</span> Active Partnerships
+                <span className="text-green-400">🔒</span> Matched — Awaiting Payment
                 <span className="text-xs text-gray-500 font-normal">({readyGroups.length})</span>
               </h2>
               <div className="space-y-4">
@@ -812,7 +838,7 @@ export default function DashboardPage() {
           {completedGroups.length > 0 && (
             <div>
               <h2 className="text-lg font-semibold text-[#FFD166] mb-4 flex items-center gap-2">
-                <span className="text-emerald-400">🏆</span> Completed & Past Partnerships
+                <span className="text-emerald-400">✅</span> Confirmed Matches & Past
                 <span className="text-xs text-gray-500 font-normal">({completedGroups.length})</span>
               </h2>
               <div className="space-y-4">

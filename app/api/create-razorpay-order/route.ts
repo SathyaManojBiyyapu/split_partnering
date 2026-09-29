@@ -3,6 +3,15 @@ export const runtime = "nodejs";
 import { NextResponse } from "next/server";
 import Razorpay from "razorpay";
 import admin, { adminCredentialsConfigured } from "@/firebase/admin";
+import {
+  isMember as isGroupMember,
+  isOpen,
+  matchesGroupKey,
+  matchesLocation,
+  isPaidForPairing,
+  chatUnlocked,
+} from "@/app/lib/groupMatching";
+import { isGroupExpired } from "@/app/data/matchExpiry";
 
 /* =========================
    FIXED ACTIVATION PRICE
@@ -51,9 +60,28 @@ export async function POST(req: Request) {
     const razorpay = getRazorpay();
 
     const body = await req.json();
-    const { groupId } = body;
+    const {
+      groupId,
+      mode,
+      category,
+      option,
+      collaboratorId,
+      collaboratorName,
+      requiredSize,
+      budget,
+      dateTime,
+      description,
+      notes,
+    } = body || {};
 
-    if (!groupId) {
+    /* PAYMENT-FIRST MARKETPLACE ENTRY (Requirement 2):
+       mode="entry" — the caller is paying to ENTER the paid matching/waiting
+       queue for (location + category + option + gym). There is no groupId yet:
+       the queue group is resolved/created server-side AFTER payment
+       verification, so a payment can never fabricate a membership. */
+    const isEntryMode = String(mode || "") === "entry" || (!groupId && !!category && !!option);
+
+    if (!groupId && !isEntryMode) {
       return NextResponse.json(
         { error: "Missing required fields" },
         { status: 400 }
@@ -89,8 +117,109 @@ export async function POST(req: Request) {
       throw error;
     }
 
-    // Verify the user is actually a member of this group before creating an order
+    // Admin SDK handle — shared by the entry-mode checks and the legacy
+    // group-membership verification below.
     const { adminDb } = await import("@/firebase/admin");
+
+    /* =========================
+       ENTRY MODE — validate the marketplace queue entry BEFORE taking money:
+       1. the profile location (State/District/City) must be complete — it is
+          the authoritative marketplace/matching location;
+       2. duplicate-payment guard — a caller who ALREADY has a live PAID
+          waiting/matched entry for the same key must not pay twice.
+       The actual queue entry happens in /api/verify-razorpay-payment (and
+       idempotently in the webhook) AFTER the payment is verified.
+    ========================== */
+    if (isEntryMode) {
+      const entryCategory = String(category || "").trim();
+      const entryOption = String(option || "").trim();
+      if (!entryCategory || !entryOption) {
+        return NextResponse.json({ error: "Missing category or partnership type" }, { status: 400 });
+      }
+
+      // Resolve the caller's profile (canonical phone forms, same ladder as
+      // save-profile) — the users doc is the single source of truth for location.
+      let profile: any = null;
+      const phoneForms = [phone, uid].filter(Boolean);
+      for (const form of phoneForms) {
+        const snap = await adminDb.collection("users").doc(form).get().catch(() => null);
+        if (snap?.exists) { profile = snap.data(); break; }
+      }
+      if (!profile && phone) {
+        const q = await adminDb.collection("users").where("phone", "==", phone).limit(1).get();
+        if (!q.empty) profile = q.docs[0].data();
+      }
+      const state = String(profile?.state || "").trim();
+      const district = String(profile?.district || "").trim();
+      const city = String(profile?.city || "").trim();
+      if (!state || !district || !city) {
+        return NextResponse.json(
+          { error: "Complete your profile location (State, District, City) before paying." },
+          { status: 400 }
+        );
+      }
+
+      // Duplicate-payment guard: any LIVE open group with the same full key
+      // (location + category + option + gym) where this caller is ALREADY PAID.
+      const collabKey = String(collaboratorId || "").trim();
+      const mineSnap = await adminDb
+        .collection("groups")
+        .where("memberUIDs", "array-contains", phone || uid)
+        .limit(50)
+        .get();
+      const sameKeyEntry = mineSnap.docs
+        .map((d) => ({ id: d.id, g: d.data() }))
+        .filter(({ g }) => isOpen(g) && !isGroupExpired(g?.createdAt))
+        .filter(({ g }) => matchesLocation(g, state, district, city))
+        .filter(({ g }) => matchesGroupKey(g, collabKey))
+        .find(({ g }) => isPaidForPairing(g, phone || uid));
+
+      if (sameKeyEntry) {
+        const matched = chatUnlocked(sameKeyEntry.g);
+        return NextResponse.json(
+          {
+            error: matched
+              ? "This partnership is already matched and chat is unlocked — check My Matches."
+              : "You have already paid and are in the waiting queue for this partnership.",
+            code: "ALREADY_IN_QUEUE",
+            groupId: sameKeyEntry.id,
+            matched,
+          },
+          { status: 409 }
+        );
+      }
+
+      const order = await razorpay.orders.create({
+        amount: ACTIVATION_PRICE * 100,
+        currency: "INR",
+        receipt: `entry_${Date.now()}`,
+        notes: {
+          uid: phone || uid || "",
+          mode: "entry",
+          category: entryCategory,
+          option: entryOption,
+          collaboratorId: collabKey,
+          collaboratorName: String(collaboratorName || ""),
+          ...(requiredSize ? { requiredSize: String(requiredSize) } : {}),
+          ...(budget ? { budget: String(budget) } : {}),
+          ...(dateTime ? { dateTime: String(dateTime) } : {}),
+          ...(description ? { description: String(description) } : {}),
+          ...(notes ? { notes: String(notes) } : {}),
+          platform: "partnersync",
+          amount: String(ACTIVATION_PRICE),
+        },
+      });
+
+      return NextResponse.json({
+        success: true,
+        id: order.id,
+        amount: order.amount,
+        currency: order.currency,
+        mode: "entry",
+      });
+    }
+
+    // Verify the user is actually a member of this group before creating an order
     const groupRef = adminDb.collection("groups").doc(groupId);
     const groupSnap = await groupRef.get();
 
